@@ -1,0 +1,15 @@
+node_modules/
+.git/
+dist/
+build/
+.automation/
+
+# GBA build artifacts
+*.o
+*.d
+*.elf
+*.map
+*.gba
+*.sav
+tools/agbcc/
+tools/binutils/

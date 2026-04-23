@@ -1,0 +1,602 @@
+project:
+  name: "Pokémon FireRed Co-Op Multiplayer"
+
+phases:
+  # ──────────────────────────────────────────────────
+  # PHASE 0: Foundation
+  # ──────────────────────────────────────────────────
+  - name: "Foundation"
+    steps:
+      - id: "0.1"
+        name: "Enable FRLG build mode"
+        model: sonnet
+        substeps:
+          - "Read expansion docs to find FRLG build config flag"
+          - "Enable FRLG mode in the build configuration"
+          - "Run make and fix any build errors"
+          - "Verify ROM builds successfully (check output file exists and is >1MB)"
+
+      - id: "0.2"
+        name: "Verify clean boot"
+        model: sonnet
+        substeps:
+          - "Document the build output filename and SHA1"
+          - "Note any warnings from the build process"
+          - "Update README with build instructions specific to this project"
+
+      - id: "0.3"
+        name: "Set up project structure"
+        model: sonnet
+        substeps:
+          - "Create src/multiplayer.c and include/multiplayer.h with empty stubs"
+          - "Create include/constants/multiplayer.h with placeholder defines"
+          - "Add multiplayer.c to the Makefile/build system"
+          - "Verify project still builds cleanly with the new empty files"
+          - "Create .claudeignore to exclude build artifacts, .o files, and ROM binaries"
+
+      - id: "0.4"
+        name: "Set up test infrastructure"
+        model: opus
+        substeps:
+          - "Create test/ directory with Makefile for native C unit tests"
+          - "Create test/mocks/ with stub headers for GBA hardware registers"
+          - "Create test/test_runner.c with a minimal test framework (ASSERT macros)"
+          - "Create a trivial test_smoke.c that compiles and passes"
+          - "Verify tests build and run with gcc on the host machine"
+
+    gate:
+      required_files:
+        - "src/multiplayer.c"
+        - "include/multiplayer.h"
+        - "include/constants/multiplayer.h"
+        - "test/Makefile"
+        - "test/test_runner.c"
+        - ".claudeignore"
+      checks:
+        - "make"
+        - "cd test && make"
+
+  # ──────────────────────────────────────────────────
+  # PHASE 1: Ghost NPC
+  # ──────────────────────────────────────────────────
+  - name: "Ghost NPC"
+    steps:
+      - id: "1.1"
+        name: "Study object event system"
+        model: opus
+        substeps:
+          - "Read src/event_object_movement.c and document how ObjectEvents are created and moved"
+          - "Read include/global.fieldmap.h and document the ObjectEvent struct layout"
+          - "Read src/field_player_avatar.c and document how the player sprite is managed"
+          - "Write findings to docs/object-events.md for reference"
+
+      - id: "1.2"
+        name: "Define Player 2 graphics"
+        model: sonnet
+        substeps:
+          - "Choose an existing sprite (e.g. opposite gender player) for P2"
+          - "Define OBJ_EVENT_GFX_PLAYER2 constant"
+          - "Verify the sprite ID is valid and renders correctly"
+
+      - id: "1.3"
+        name: "Implement ghost NPC spawn/despawn"
+        model: opus
+        substeps:
+          - "Implement Multiplayer_SpawnGhostNPC(mapId, x, y, facing) in src/multiplayer.c"
+          - "Implement Multiplayer_DespawnGhost() in src/multiplayer.c"
+          - "Ghost should use the P2 sprite, be collidable, and NOT be interactable"
+          - "Test by hardcoding a ghost spawn on Route 1 at a fixed position"
+          - "Verify ghost renders, has collision, and doesn't trigger dialogue"
+
+      - id: "1.4"
+        name: "Implement ghost NPC movement"
+        model: opus
+        substeps:
+          - "Implement Multiplayer_UpdateGhostPosition(x, y, facing, spriteState)"
+          - "Ghost should smoothly interpolate between tile positions"
+          - "Ghost should play walk animations matching the facing direction"
+          - "Test by making the ghost walk a square loop via hardcoded movement data"
+          - "Verify animation plays correctly in all 4 directions"
+
+      - id: "1.5"
+        name: "Handle cross-map ghost"
+        model: sonnet
+        substeps:
+          - "When ghost's map ID differs from player's map, despawn the ghost"
+          - "When ghost's map ID matches player's map again, respawn at correct position"
+          - "Handle map transitions gracefully (no crashes on warp)"
+
+      - id: "1.6"
+        name: "Write ghost NPC tests"
+        model: sonnet
+        substeps:
+          - "Write C unit tests for spawn/despawn state management"
+          - "Write C unit tests for position update logic"
+          - "Write C unit tests for cross-map spawn/despawn transitions"
+          - "All tests pass"
+
+    gate:
+      required_files:
+        - "docs/object-events.md"
+        - "test/test_ghost_npc.c"
+      checks:
+        - "make"
+        - "cd test && make"
+
+  # ──────────────────────────────────────────────────
+  # PHASE 2: Serial Link Communication
+  # ──────────────────────────────────────────────────
+  - name: "Serial Link Communication"
+    steps:
+      - id: "2.1"
+        name: "Study link cable system"
+        model: opus
+        substeps:
+          - "Read src/link.c and document the existing serial protocol"
+          - "Read include/link.h and document data structures"
+          - "Identify the hook points for custom serial communication"
+          - "Write findings to docs/link-system.md"
+
+      - id: "2.2"
+        name: "Design packet format"
+        model: opus
+        substeps:
+          - "Define binary packet types in include/constants/multiplayer.h"
+          - "Design packet layout for: POSITION, FLAG_SET, VAR_SET, BOSS_READY, BOSS_CANCEL, SEED_SYNC, FULL_SYNC"
+          - "Document packet format in docs/packet-protocol.md"
+          - "Keep packets small — each must fit in the serial buffer"
+
+      - id: "2.3"
+        name: "Implement packet encoding/decoding"
+        model: sonnet
+        substeps:
+          - "Implement Multiplayer_EncodePositionPacket()"
+          - "Implement Multiplayer_DecodePositionPacket()"
+          - "Implement encode/decode for FLAG_SET, VAR_SET, SEED_SYNC packets"
+          - "Implement encode/decode for FULL_SYNC packet (variable length)"
+          - "Handle malformed/truncated packet errors gracefully"
+
+      - id: "2.4"
+        name: "Write packet tests"
+        model: sonnet
+        substeps:
+          - "Write round-trip tests for every packet type"
+          - "Write tests for malformed packet rejection"
+          - "Write tests for truncated packet rejection"
+          - "Write tests for boundary values (max map ID, max coords)"
+          - "All tests pass"
+
+      - id: "2.5"
+        name: "Implement serial send/receive"
+        model: opus
+        substeps:
+          - "Implement Multiplayer_SendPacket(type, data, len) using the link cable interface"
+          - "Implement Multiplayer_ReceivePacket(buffer) as non-blocking read"
+          - "Create a ring buffer for outgoing packets"
+          - "Create a ring buffer for incoming packets"
+          - "Hook into the SIO interrupt handler or polling loop"
+
+      - id: "2.6"
+        name: "Implement Multiplayer_Update loop"
+        model: opus
+        substeps:
+          - "Create Multiplayer_Update() called from the overworld main loop"
+          - "Send own position every 4 frames if position changed"
+          - "Process all incoming packets each frame"
+          - "Route incoming POSITION packets to ghost NPC update"
+          - "Hook Multiplayer_Update() into src/overworld.c main loop"
+
+      - id: "2.7"
+        name: "Test two-instance link"
+        model: sonnet
+        substeps:
+          - "Write docs/testing-link.md with instructions for testing in mGBA"
+          - "Verify two mGBA instances connected via link cable exchange position data"
+          - "Verify ghost NPC moves on both screens"
+          - "Document any issues or latency observations"
+
+    gate:
+      required_files:
+        - "docs/link-system.md"
+        - "docs/packet-protocol.md"
+        - "docs/testing-link.md"
+        - "test/test_packets.c"
+      checks:
+        - "make"
+        - "cd test && make"
+
+  # ──────────────────────────────────────────────────
+  # PHASE 3: Shared Flag/Variable Sync
+  # ──────────────────────────────────────────────────
+  - name: "Flag Sync"
+    steps:
+      - id: "3.1"
+        name: "Define syncable flag ranges"
+        model: opus
+        substeps:
+          - "Audit include/constants/flags.h to identify trainer, story, and item flag ranges"
+          - "Define SYNC_FLAG_TRAINERS_START/END in include/constants/multiplayer.h"
+          - "Define SYNC_FLAG_STORY_START/END"
+          - "Define SYNC_FLAG_ITEMS_START/END"
+          - "Implement IsSyncableFlag(flagId) inline function"
+          - "Document which flag ranges sync and which don't in docs/flag-sync.md"
+
+      - id: "3.2"
+        name: "Hook FlagSet and VarSet"
+        model: opus
+        substeps:
+          - "Add multiplayer broadcast hook to FlagSet() in src/event_data.c"
+          - "Add sIsRemoteUpdate guard to prevent re-broadcast loops"
+          - "Add multiplayer broadcast hook to VarSet() with same guard"
+          - "Implement Multiplayer_HandleRemoteFlagSet() and Multiplayer_HandleRemoteVarSet()"
+          - "Route incoming FLAG_SET and VAR_SET packets to these handlers"
+
+      - id: "3.3"
+        name: "Implement full sync on connect"
+        model: sonnet
+        substeps:
+          - "On connection established, host builds FULL_SYNC packet with all set syncable flags"
+          - "Guest receives FULL_SYNC and applies all flags/vars"
+          - "Handle the case where guest connects mid-game with existing progress"
+
+      - id: "3.4"
+        name: "Implement script mutex"
+        model: opus
+        substeps:
+          - "Add gIsInScript flag to multiplayer state"
+          - "When a player enters a script, set the flag and notify partner"
+          - "Partner's ghost NPC should not be able to trigger scripts while flag is set"
+          - "Clear the flag when script completes"
+
+      - id: "3.5"
+        name: "Write flag sync tests"
+        model: sonnet
+        substeps:
+          - "Write C unit tests for IsSyncableFlag with trainer, story, UI flags"
+          - "Write C unit tests for no-rebroadcast guard"
+          - "Write C unit tests for full sync application"
+          - "Write Lua integration test script for two-instance flag sync"
+          - "All tests pass"
+
+    gate:
+      required_files:
+        - "docs/flag-sync.md"
+        - "test/test_flag_sync.c"
+      checks:
+        - "make"
+        - "cd test && make"
+
+  # ──────────────────────────────────────────────────
+  # PHASE 4: Randomized Encounters
+  # ──────────────────────────────────────────────────
+  - name: "Randomized Encounters"
+    steps:
+      - id: "4.1"
+        name: "Study encounter system"
+        model: opus
+        substeps:
+          - "Read src/wild_encounter.c and document how encounters are generated"
+          - "Read the encounter table data structures"
+          - "Identify where species, level min, and level max are stored"
+          - "Count total encounter slots across all routes"
+          - "Document in docs/encounter-system.md"
+
+      - id: "4.2"
+        name: "Implement seeded PRNG"
+        model: sonnet
+        substeps:
+          - "Implement a simple xorshift32 PRNG in src/multiplayer.c"
+          - "Implement Multiplayer_SeedRng(seed) and Multiplayer_NextRandom()"
+          - "Write unit test confirming determinism (same seed = same sequence)"
+
+      - id: "4.3"
+        name: "Implement encounter randomizer"
+        model: opus
+        substeps:
+          - "Implement RandomizeEncounterTables(u32 seed)"
+          - "For each encounter slot, replace species with a random valid species"
+          - "Preserve original min/max levels in every slot"
+          - "Filter out SPECIES_NONE, SPECIES_EGG, and any invalid IDs"
+          - "Optional: weight by BST — early routes get basic-stage, late routes get evolved"
+
+      - id: "4.4"
+        name: "Implement seed sync"
+        model: sonnet
+        substeps:
+          - "Host generates a random seed on session start"
+          - "Host sends SEED_SYNC packet to guest on connect"
+          - "Guest receives seed and calls RandomizeEncounterTables()"
+          - "Both ROMs now have identical encounter tables"
+          - "Hook randomization into game init, AFTER seed received"
+
+      - id: "4.5"
+        name: "Write randomizer tests"
+        model: sonnet
+        substeps:
+          - "Write C unit test: same seed produces identical tables"
+          - "Write C unit test: different seeds produce different tables"
+          - "Write C unit test: levels preserved after randomization"
+          - "Write C unit test: no invalid species generated"
+          - "Write Lua test: both instances show same wild encounters on Route 1"
+          - "All tests pass"
+
+    gate:
+      required_files:
+        - "docs/encounter-system.md"
+        - "test/test_randomizer.c"
+      checks:
+        - "make"
+        - "cd test && make"
+
+  # ──────────────────────────────────────────────────
+  # PHASE 5: Boss Battle Readiness
+  # ──────────────────────────────────────────────────
+  - name: "Boss Battles"
+    steps:
+      - id: "5.1"
+        name: "Study gym leader scripts"
+        model: opus
+        substeps:
+          - "Read the battle script format for Brock's gym (data/maps/PewterCity_Gym/scripts.inc or equivalent FRLG path)"
+          - "Document how trainerbattle command works"
+          - "Identify all 8 gym leader script locations"
+          - "Identify Elite Four and Champion script locations"
+          - "Document in docs/boss-scripts.md"
+
+      - id: "5.2"
+        name: "Implement boss readiness protocol"
+        model: opus
+        substeps:
+          - "Add BOSS_READY and BOSS_CANCEL packet handling to Multiplayer_Update"
+          - "Add boss readiness state to multiplayer state struct"
+          - "Implement waiting UI: show 'Waiting for partner...' textbox"
+          - "On BOSS_START received, dismiss waiting UI and begin battle"
+          - "If player walks away from trigger, send BOSS_CANCEL"
+
+      - id: "5.3"
+        name: "Modify Brock's gym script (prototype)"
+        model: opus
+        substeps:
+          - "Modify Brock's pre-battle script to check multiplayer state"
+          - "After dialogue, send BOSS_READY instead of immediately starting battle"
+          - "Show waiting message until BOSS_START received"
+          - "On BOSS_START, begin the battle normally"
+          - "Test with two mGBA instances: both must interact to start"
+
+      - id: "5.4"
+        name: "Modify remaining gym leader scripts"
+        model: sonnet
+        substeps:
+          - "Apply same pattern to Misty (Cerulean Gym)"
+          - "Apply to Lt. Surge (Vermilion Gym)"
+          - "Apply to Erika (Celadon Gym)"
+          - "Apply to Koga (Fuchsia Gym)"
+          - "Apply to Sabrina (Saffron Gym)"
+          - "Apply to Blaine (Cinnabar Gym)"
+          - "Apply to Giovanni (Viridian Gym)"
+
+      - id: "5.5"
+        name: "Modify Elite Four and Champion"
+        model: sonnet
+        substeps:
+          - "Apply boss readiness to each Elite Four member"
+          - "Apply to Champion rival battle"
+          - "Ensure Victory Road gate checks work with shared flags"
+
+      - id: "5.6"
+        name: "Write boss readiness tests"
+        model: sonnet
+        substeps:
+          - "Write C unit test for boss ready/cancel state machine"
+          - "Write Lua test: both players interact → battle starts"
+          - "Write Lua test: one player cancels → other gets waiting state"
+          - "All tests pass"
+
+    gate:
+      required_files:
+        - "docs/boss-scripts.md"
+      checks:
+        - "make"
+        - "cd test && make"
+
+  # ──────────────────────────────────────────────────
+  # PHASE 6: Relay Server
+  # ──────────────────────────────────────────────────
+  - name: "Relay Server"
+    steps:
+      - id: "6.1"
+        name: "Set up PartyKit project"
+        model: sonnet
+        substeps:
+          - "Create relay-server/ directory in repo root"
+          - "Initialize PartyKit project with npx partykit init"
+          - "Implement server.ts with full relay logic (role assignment, position relay, flag sync, boss readiness, disconnect handling)"
+          - "Implement session_id validation in handshake: store session_id on first connection, reject subsequent connections where session_id doesn't match (respond with session_mismatch and close)"
+          - "Add package.json with partykit and vitest dependencies"
+
+      - id: "6.2"
+        name: "Write relay server tests"
+        model: sonnet
+        substeps:
+          - "Create server.test.ts with Vitest"
+          - "Test role assignment (host/guest)"
+          - "Test room capacity (reject 3rd player)"
+          - "Test session_id validation (reject mismatched session_id with session_mismatch message)"
+          - "Test position relay (forward, no echo)"
+          - "Test flag sync (store, broadcast, deduplicate)"
+          - "Test full sync on connect"
+          - "Test boss readiness state machine"
+          - "Test disconnect/reconnect handling"
+          - "All tests pass"
+
+      - id: "6.3"
+        name: "Local integration test"
+        model: sonnet
+        substeps:
+          - "Run partykit dev locally"
+          - "Write a simple WebSocket test client that simulates two players"
+          - "Verify messages relay correctly end-to-end"
+          - "Document local testing process in docs/relay-testing.md"
+
+    gate:
+      required_files:
+        - "relay-server/server.ts"
+        - "relay-server/server.test.ts"
+        - "relay-server/package.json"
+        - "docs/relay-testing.md"
+      checks:
+        - "cd relay-server && npm install && npx vitest run"
+
+  # ──────────────────────────────────────────────────
+  # PHASE 7: Tauri App Shell
+  # ──────────────────────────────────────────────────
+  - name: "Tauri App Shell"
+    steps:
+      - id: "7.1"
+        name: "Scaffold Tauri project"
+        model: opus
+        substeps:
+          - "Create tauri-app/ directory"
+          - "Initialize Tauri project with React + TypeScript frontend"
+          - "Set up project structure: src-tauri/ for Rust, src/ for frontend"
+          - "Verify bare Tauri app builds and launches"
+
+      - id: "7.2"
+        name: "Build host/join UI"
+        model: sonnet
+        substeps:
+          - "Create HostJoin.tsx with Host Game and Join Game buttons"
+          - "Add save file picker: 'New Game' or 'Load Save' (opens file dialog for .sav file)"
+          - "On New Game (host): generate session_id (UUID v4) and encounter_seed (u32), write .coop sidecar JSON alongside the chosen .sav path"
+          - "On Load Save: read .coop sidecar and display session metadata (date created) so player can confirm the right save"
+          - "Host flow: generate 6-char room code, display it"
+          - "Join flow: text input for room code, connect button, load .sav + .coop sidecar"
+          - "Add connection status indicator"
+          - "Style with a Pokémon-appropriate theme"
+
+      - id: "7.3"
+        name: "Implement WebSocket client"
+        model: opus
+        substeps:
+          - "Implement net.rs in src-tauri/ — WebSocket client connecting to PartyKit"
+          - "Room URL format: wss://project.partykit.dev/party/{code}"
+          - "Include session_id from .coop sidecar in the connection handshake message"
+          - "Handle session_mismatch response: surface error to UI ('This save was started with a different partner or session')"
+          - "Handle connection, disconnection, reconnection with backoff"
+          - "Expose connection state to frontend via Tauri commands"
+
+      - id: "7.4"
+        name: "Embed libmgba"
+        model: opus
+        substeps:
+          - "Add libmgba as a dependency (C library via Rust FFI or existing Rust bindings)"
+          - "Implement emulator.rs: ROM loading, frame stepping, input handling"
+          - "Render frames to a canvas element in the frontend"
+          - "Map keyboard input to GBA buttons"
+          - "Map USB gamepad input to GBA buttons"
+
+      - id: "7.5"
+        name: "Implement serial bridge"
+        model: opus
+        substeps:
+          - "Implement serial_bridge.rs — intercept libmgba SIO callbacks"
+          - "Route outgoing serial data to the WebSocket client"
+          - "Route incoming WebSocket data to the serial receive buffer"
+          - "Translate between binary serial packets and JSON WebSocket messages"
+
+      - id: "7.6"
+        name: "Bundle ROM and handle saves"
+        model: sonnet
+        substeps:
+          - "Copy built ROM into tauri-app/rom/ directory"
+          - "Configure Tauri to include ROM as a bundled resource"
+          - "Load ROM from bundled resources on app start"
+          - "On session end, write updated .sav back to the user's chosen file path"
+          - "Verify end-to-end: app launches, ROM boots, game is playable, save persists across restarts"
+
+      - id: "7.7"
+        name: "End-to-end test"
+        model: sonnet
+        substeps:
+          - "Build two copies of the Tauri app"
+          - "Host a new game on one, join on the other using the matching .coop sidecar"
+          - "Verify session_id is validated correctly on connect"
+          - "Verify ghost NPC appears and moves"
+          - "Verify flag sync works through the relay"
+          - "Verify .sav is written on exit and reloads correctly next session"
+          - "Document setup and testing in docs/app-testing.md"
+
+    gate:
+      required_files:
+        - "tauri-app/src-tauri/src/main.rs"
+        - "tauri-app/src-tauri/src/emulator.rs"
+        - "tauri-app/src-tauri/src/serial_bridge.rs"
+        - "tauri-app/src-tauri/src/net.rs"
+        - "tauri-app/src/App.tsx"
+        - "tauri-app/src/HostJoin.tsx"
+        - "docs/app-testing.md"
+      checks:
+        - "cd tauri-app && cargo build --release"
+
+  # ──────────────────────────────────────────────────
+  # PHASE 8: Deploy & Polish
+  # ──────────────────────────────────────────────────
+  - name: "Deploy & Polish"
+    steps:
+      - id: "8.1"
+        name: "Deploy relay server"
+        model: sonnet
+        substeps:
+          - "Run npx partykit deploy in relay-server/"
+          - "Note the deployment URL"
+          - "Hardcode URL in tauri-app/src-tauri/src/net.rs"
+          - "Add fallback direct-connect option for advanced users"
+
+      - id: "8.2"
+        name: "Set up CI"
+        model: sonnet
+        substeps:
+          - "Create .github/workflows/test.yml"
+          - "Job 1: C unit tests (gcc + make)"
+          - "Job 2: Relay server tests (Node + Vitest)"
+          - "Job 3: ROM build verification"
+          - "Job 4: mGBA integration tests (headless with xvfb)"
+          - "Verify all jobs pass on push"
+
+      - id: "8.3"
+        name: "Build distributable"
+        model: sonnet
+        substeps:
+          - "Configure Tauri for macOS, Windows, and Linux builds"
+          - "Set app name, icon, and metadata"
+          - "Build release binaries for each platform"
+          - "Test on at least one non-dev machine"
+
+      - id: "8.4"
+        name: "Write player documentation"
+        model: sonnet
+        substeps:
+          - "Create PLAYING.md with instructions for non-technical users"
+          - "Include: download, install, host a game, join a game, controls"
+          - "Include: known limitations and troubleshooting"
+          - "Keep it short and clear — target audience is non-technical"
+
+    gate:
+      required_files:
+        - ".github/workflows/test.yml"
+        - "PLAYING.md"
+      checks:
+        - "make"
+        - "cd test && make"
+        - "cd relay-server && npx vitest run"
+
+session:
+  max_turns: 75
+  permission_mode: "auto"
+
+review:
+  enabled: true
+  reviewer: "Reuben"
+
+slack:
+  enabled: true
