@@ -27,6 +27,8 @@ log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 get_current_step() { grep "^\- \*\*Active Step:\*\*" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null | sed 's/.*Active Step:\*\* //' | tr -d ' ' || echo "1.1"; }
 get_current_phase() { grep "^\- \*\*Active Phase:\*\*" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null | sed 's/.*Active Phase:\*\* //' | tr -d ' ' || echo "1"; }
 get_next_action() { grep "^\- \*\*Next Action:\*\*" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null | sed 's/.*Next Action:\*\* //' || echo "Begin"; }
+get_next_substep() { grep -m1 "^[[:space:]]*- \[ \]" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null | sed 's/.*\[ \] //' | xargs || echo ""; }
+get_substep_counts() { local done total; done=$(grep -c "\[x\]" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null || echo 0); total=$(grep -c "\[.\]" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null || echo 0); echo "${done}/${total}"; }
 is_project_complete() { grep -q "Active Step.*done\|Active Step.*complete" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null && echo "true" || echo "false"; }
 seconds_remaining() { echo $(( WINDOW_DURATION_SECONDS - ($(date +%s) - WINDOW_START) )); }
 select_model() { local s="$1"; for o in $OPUS_STEPS; do [[ "$s" == "$o" ]] && { echo "opus"; return; }; done; echo "$DEFAULT_MODEL"; }
@@ -42,40 +44,29 @@ check_stall() {
 build_prompt() {
     local step="$1" next_action="$2"
     local remaining_min=$(( $(seconds_remaining) / 60 ))
+    local next_substep=$(get_next_substep)
+    local substep_counts=$(get_substep_counts)
     cat <<PROMPT
-You are continuing autonomous work on this project.
+You are continuing autonomous work on this project. Session $((SESSION_COUNT + 1)).
 
 QUALITY NOTICE: Your code WILL be reviewed by Reuben after each phase. Do not cut corners.
 
-INSTRUCTIONS:
-1. Read PROGRESS.md FIRST — find where you left off.
-2. Read FEEDBACK.md — handle every [UNREAD] item first. Change to [READ].
-3. Read CLAUDE.md for conventions.
-4. Read relevant docs for your current task.
-5. Read docs/cookbook.md before debugging.
-6. Check docs/decisions.md before architectural decisions.
-7. Work autonomously — do NOT ask questions.
-8. MAXIMIZE OUTPUT — complete as many substeps as possible.
-
 CURRENT STATE:
 - Active Step: ${step}
+- Next substep to complete: ${next_substep:-"(check PROGRESS.md)"}
+- Progress: ${substep_counts} substeps done
 - Next Action: ${next_action}
-- Window remaining: ~${remaining_min} minutes
-- Session number: $((SESSION_COUNT + 1))
+- Time remaining: ~${remaining_min} min
 
-EXECUTION:
-- Jump into coding after reading docs. Don't over-plan.
-- After EACH substep is done: immediately mark it [x] in PROGRESS.md and commit.
-- If you finish a step, update Active Step in PROGRESS.md and start the next immediately.
-- Only mark [x] if verified (parses, correct structure, tested if possible).
-- Record architectural decisions in docs/decisions.md.
-- Record fixes in docs/cookbook.md.
+RULES:
+1. Check FEEDBACK.md for [UNREAD] items — handle them first, mark [READ].
+2. Do NOT re-read all docs every session. Read only what you need for the current substep.
+3. Work autonomously. Do not ask questions.
+4. After completing EACH substep: mark [x] in PROGRESS.md and commit immediately.
+5. If you finish the step, update Active Step/Next Action in PROGRESS.md.
+6. You may be cut off at any turn — commit frequently so nothing is lost.
 
-IMPORTANT — update PROGRESS.md throughout the session, not just at the end.
-You may be stopped at any turn. Commit after each substep so progress is never lost.
-- git add -A && git commit -m "descriptive message"
-
-Begin now. Go fast.
+START with the next substep listed above. Go directly to the work. Do not over-plan.
 PROMPT
 }
 

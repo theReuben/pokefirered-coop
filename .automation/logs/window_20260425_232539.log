@@ -1,0 +1,73 @@
+[23:25:39] ╔══ AUTOPILOT — DRAINING WINDOW ══╗
+[23:25:39] ── SESSION 1 | Phase 0—Foundation Step 0.1—EnableFRLGBuildMode | sonnet | ~320m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (0/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (31.2 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ No uncommitted changes
+   Fix: Uncommitted changes exist. Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+---
+
+**BLOCKER — ACTION REQUIRED FROM REUBEN**
+
+This is the same issue documented in memory from sessions 1–6: `PERMISSION_MODE="auto"` in `run-session.sh` is not a valid Claude Code mode. It falls back to interactive mode, which blocks all Write/Edit/Bash operations in unattended sessions.
+
+**Two manual fixes needed:**
+
+**Fix 1 — `.automation/run-session.sh` line 8:**
+```bash
+PERMISSION_MODE="bypassPermissions"   # was: "auto"
+```
+
+**Fix 2 — `.claude/settings.local.json`:**
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(unzip *)",
+      "Bash(make*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git tag*)",
+      "Bash(gcc*)",
+      "Bash(ls*)",
+      "Bash(sha1sum*)",
+      "Bash(wc*)"
+    ]
+  }
+}
+```
+
+Once you make these two edits and restart the automation, progress will unblock immediately. The build command is simply `make firered -j8` — the Makefile already has FRLG mode built in (no other config changes needed).
+
+**What I confirmed this session:**
+- FRLG mode target exists in `Makefile` line 7–12: `ifeq (firered, $(or $(BUILD), $(MAKECMDGOALS)))` → sets `GAME_VERSION=FIRERED`, `GAME_CODE=BPRE`, output `pokefirered.gba`
+- No `include/config.h` changes needed — it's purely a Makefile target
+- Build is just: `make firered -j8`
+[23:30:42] → Still on 0.1—EnableFRLGBuildMode

@@ -265,3 +265,60 @@ If you'd rather grant broader permissions, you can also run:
 echo '{"permissions":{"allow":["Bash(unzip *)","Bash(make firered*)","Bash(make check*)","Bash(make clean*)","Bash(git add*)","Bash(git commit*)","Bash(git push*)","Write(*)","Edit(*)"]}}' > /Users/reuben/IdeaProjects/pokefirered-coop/.claude/settings.local.json
 ```
 [18:10:14] → Still on 0.1—EnableFRLGBuildMode
+═══ POST-FLIGHT CHECKS ═══
+
+[Progress Update]
+  ✅ No broken markdown tables
+
+[Code Quality]
+
+[Git State]
+  ✅ All changes committed
+
+[Config Integrity]
+  ✅ CLAUDE.md has architecture section
+
+══════════════════════════════════════════════════
+BLOCKERS (2):
+  ❌ CLAUDE.md has file locations
+   Fix: CLAUDE.md may have been overwritten — restore from git
+  ❌ CLAUDE.md has gotchas
+   Fix: CLAUDE.md gotchas section missing — restore from git
+══════════════════════════════════════════════════
+[18:10:26] ── SESSION 5 | Phase 0—Foundation Step 0.1—EnableFRLGBuildMode | sonnet | ~296m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (0/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (32.1 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ No uncommitted changes
+   Fix: Uncommitted changes exist. Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+You're out of extra usage · resets 9:50pm (Europe/London)
+[18:17:21] Error (exit 1)
+[18:18:21] ── SESSION 6 | Phase 0—Foundation Step 0.1—EnableFRLGBuildMode | sonnet | ~288m ──
+[18:18:21] ⚠ STALLED
+[18:18:22] Sessions: 6 | Final: Phase 0—Foundation Step 0.1—EnableFRLGBuildMode | Duration: 31m
