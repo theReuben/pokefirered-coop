@@ -115,3 +115,86 @@ WARNINGS (1):
 ──────────────────────────────────────────────────
 Error: Reached max turns (75)[18:03:40] Max turns reached — treating as normal session end
 [18:03:40] → Still on 0.1—EnableFRLGBuildMode
+═══ POST-FLIGHT CHECKS ═══
+
+[Progress Update]
+  ✅ No broken markdown tables
+
+[Code Quality]
+
+[Git State]
+  ✅ All changes committed
+
+[Config Integrity]
+  ✅ CLAUDE.md has architecture section
+
+══════════════════════════════════════════════════
+BLOCKERS (2):
+  ❌ CLAUDE.md has file locations
+   Fix: CLAUDE.md may have been overwritten — restore from git
+  ❌ CLAUDE.md has gotchas
+   Fix: CLAUDE.md gotchas section missing — restore from git
+══════════════════════════════════════════════════
+[18:03:51] ── SESSION 3 | Phase 0—Foundation Step 0.1—EnableFRLGBuildMode | sonnet | ~303m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (0/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (32.0 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ No uncommitted changes
+   Fix: Uncommitted changes exist. Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+I cannot write to `.claude/settings.json` or edit `.claude/settings.local.json` without user approval — the project settings files themselves require a permission grant to modify.
+
+**What to add to `.claude/settings.local.json`** (already exists, just needs updating):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(unzip *)",
+      "Bash(make firered)",
+      "Bash(make check)",
+      "Bash(make clean)",
+      "Bash(make firered *)",
+      "Bash(/opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc *)"
+    ]
+  }
+}
+```
+
+**What I skipped and why:**
+- `ls`, `cat`, `head`, `tail`, `wc`, `find`, `grep`, `which`, `file`, `sha1sum`, `git log/show/diff/status`, `echo`, `printf` — all **auto-allowed**, no entry needed
+- `git add`, `git commit`, `git push`, `git tag` — **write/mutate** operations; not appropriate for read-only allowlist (need separate approval)
+- `make *` (wildcard) — too broad, grants arbitrary code execution via make recipes
+- `python3 *` — arbitrary code execution, must not be wildcarded
+
+The only commands that actually require a permission grant for this build session are:
+1. `make firered` (the ROM build)
+2. `git add -A && git commit` (committing progress) — these are already auto-approved by the automation script's `--permission-mode auto`
+
+The root issue: this appears to be an **interactive session**, not an automation session. In automation mode (`--permission-mode auto`), all these would be approved without prompts. The user should run via `.automation/run-session.sh` for fully autonomous operation.
+[18:06:26] → Still on 0.1—EnableFRLGBuildMode
