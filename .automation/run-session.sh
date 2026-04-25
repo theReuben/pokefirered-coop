@@ -2,7 +2,7 @@
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 AUTOPILOT_DIR="/Users/reuben/IdeaProjects/claude-autopilot"
-export GAME_AGENT_PROJECT_DIR="$PROJECT_DIR"
+export AUTOPILOT_PROJECT_DIR="$PROJECT_DIR"
 LOG_DIR="$PROJECT_DIR/.automation/logs"
 MAX_TURNS=75
 PERMISSION_MODE="auto"
@@ -65,13 +65,14 @@ CURRENT STATE:
 
 EXECUTION:
 - Jump into coding after reading docs. Don't over-plan.
-- If you finish a step, immediately start the next.
+- After EACH substep is done: immediately mark it [x] in PROGRESS.md and commit.
+- If you finish a step, update Active Step in PROGRESS.md and start the next immediately.
 - Only mark [x] if verified (parses, correct structure, tested if possible).
 - Record architectural decisions in docs/decisions.md.
 - Record fixes in docs/cookbook.md.
 
-BEFORE FINAL TURN:
-- Update PROGRESS.md (substeps, Active Step, Next Action, Session Log row).
+IMPORTANT — update PROGRESS.md throughout the session, not just at the end.
+You may be stopped at any turn. Commit after each substep so progress is never lost.
 - git add -A && git commit -m "descriptive message"
 
 Begin now. Go fast.
@@ -107,7 +108,10 @@ run_single_session() {
         local exit_code=0
         cd "$PROJECT_DIR"
         claude -p "$prompt" --model "$model" --permission-mode "$PERMISSION_MODE" --max-turns "$MAX_TURNS" --output-format text 2>&1 | tee -a "$LOG_FILE" || exit_code=$?
-        if [[ $exit_code -eq 0 ]]; then
+        local max_turns_hit=false
+        tail -5 "$LOG_FILE" | grep -qi "reached max turns\|max.turns" && max_turns_hit=true
+        if [[ $exit_code -eq 0 ]] || [[ "$max_turns_hit" == "true" ]]; then
+            [[ "$max_turns_hit" == "true" ]] && log "Max turns reached — treating as normal session end"
             local new_step=$(get_current_step)
             [[ "$new_step" != "$step" ]] && log "✓ Advanced: $step → $new_step" || log "→ Still on $step"
             cd "$PROJECT_DIR"

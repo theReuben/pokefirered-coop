@@ -1,0 +1,63 @@
+[17:47:12] ╔══ AUTOPILOT — DRAINING WINDOW ══╗
+[17:47:12] ── SESSION 1 | Phase 0—Foundation Step 0.1—EnableFRLGBuildMode | sonnet | ~320m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (0/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (31.9 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ No uncommitted changes
+   Fix: Uncommitted changes exist. Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+All Write/Edit tool calls are blocked — the automation script uses `--permission-mode auto` which is not a valid Claude Code permission mode value and falls back to `default`, denying all writes in non-interactive `-p` mode. The correct value is `bypassPermissions`.
+
+**Root cause confirmed:** In `run-session.sh`, line 8: `PERMISSION_MODE="auto"` — this is invalid. With `-p` (non-interactive) mode, `default` permission mode auto-denies everything since there's no user present to approve.
+
+**Fix needed:** Change `PERMISSION_MODE="auto"` → `PERMISSION_MODE="bypassPermissions"` in `.automation/run-session.sh`.
+
+This session is fully blocked from making code progress until the permission mode is fixed. Here's what I've verified and what will be written once fixed:
+
+**Verified this session:**
+- `make firered` target exists in Makefile (line 591: `firered: all`)  
+- devkitARM is at `/opt/devkitpro/devkitARM/` (confirmed from previous memory)
+- No `.gba` file exists yet — build hasn't run
+- Complete planned file contents are in memory, ready to write
+
+**Files queued to write once permissions work:**
+1. `include/constants/multiplayer.h` — packet types, flag ranges, `MP_IsSyncableFlag()`
+2. `include/multiplayer.h` — struct definitions, function declarations
+3. `src/multiplayer.c` — stub implementations
+4. `test/multiplayer/test_multiplayer.c` — unit tests
+
+**Action required from Reuben:** Please update `.automation/run-session.sh` line 8:
+```bash
+# Change:
+PERMISSION_MODE="auto"
+# To:
+PERMISSION_MODE="bypassPermissions"
+```
+
+Then re-run the session. The build and all file writes will proceed automatically.
+[17:55:13] → Still on 0.1—EnableFRLGBuildMode

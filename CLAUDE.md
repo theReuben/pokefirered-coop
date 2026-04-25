@@ -58,6 +58,7 @@ All messages are JSON over WebSocket. The ROM side packs/unpacks binary packets 
 - `boss_cancel` — player walked away from boss trigger
 - `battle_turn` — turn selection during synced double battle (encoded turn data)
 - `party_sync` — full party data snapshot (for double battle partner display)
+- `starter_pick` — player chose a starter (species ID: Bulbasaur, Charmander, or Squirtle)
 
 **Inbound (Server → ROM):**
 - `role` — whether this client is host or guest
@@ -68,6 +69,8 @@ All messages are JSON over WebSocket. The ROM side packs/unpacks binary packets 
 - `boss_waiting` — you're ready, partner isn't yet
 - `battle_turn` — partner's turn selection
 - `partner_connected` / `partner_disconnected`
+- `starter_taken` — partner has claimed a starter (species ID); lock that ball in the lab
+- `session_settings` — host's session settings (randomize_encounters bool, sent on connect)
 
 ## Repository Structure (Key Paths)
 
@@ -160,6 +163,94 @@ Only one player can be in a script interaction at a time. When a player triggers
 3. This prevents both players from talking to the same NPC simultaneously and corrupting script state
 4. Keep it simple: the lock is advisory, not enforced by the server
 
+### Co-op Starter Selection
+
+Both players choose from Oak's three starters; the rival gets whichever one neither player picked.
+
+**Flow:**
+
+1. Both players enter Oak's lab and approach the Poké Balls as normal.
+2. When a player selects a starter, the ROM immediately sends a `starter_pick` message with the species ID.
+3. The relay server records the pick and broadcasts `starter_taken` to the partner.
+4. The partner's ROM grays out / disables that ball so they cannot pick the same one.
+5. Once both players have picked, the rival's species is determined: the one remaining starter not chosen by either player.
+6. The rival's starter is stored in a save variable (`VAR_RIVAL_STARTER`) and used wherever the rival's first Pokémon is referenced.
+
+**Script changes (`data/maps/PalletTown_OaksLab/scripts.inc`):**
+
+- Intercept the moment the player confirms a ball selection (before the "So, you want X?" confirmation).
+- Block the confirmation until `starter_taken` is received (or immediately if partner hasn't connected yet and we're in single-player fallback mode).
+- After both players have confirmed, run a new `SetRivalStarter` script command that writes `VAR_RIVAL_STARTER` to the unchosen species.
+
+**Rival starter logic:**
+
+```c
+// After both picks are known:
+static const u16 sStarters[] = { SPECIES_BULBASAUR, SPECIES_CHARMANDER, SPECIES_SQUIRTLE };
+
+u16 GetRivalStarter(u16 p1Species, u16 p2Species) {
+    for (int i = 0; i < 3; i++) {
+        if (sStarters[i] != p1Species && sStarters[i] != p2Species)
+            return sStarters[i];
+    }
+    return SPECIES_BULBASAUR; // fallback, should never hit
+}
+```
+
+Everywhere the rival's starting species is hardcoded (battle setup, overworld scripts), replace it with a `VarGet(VAR_RIVAL_STARTER)` lookup.
+
+**Edge cases:**
+- If one player is not yet connected when the other approaches the balls, both balls remain available and the unconnected player's pick defaults so the rival always gets one.
+- If both players somehow pick simultaneously before `starter_taken` arrives, the relay server is authoritative: first `starter_pick` received wins; the server sends a `starter_denied` back to the slower player with the conflicting species.
+
+---
+
+### Randomization Settings
+
+Encounter randomization is **on by default**. The setting is configurable in the Tauri app and persisted in the ROM's save data so it survives reloads.
+
+**Tauri app UI:**
+
+- On the host/join screen, the host sees a toggle: "Randomize wild Pokémon (default: on)".
+- Guests see the setting as read-only — they inherit whatever the host chose.
+- The host's setting is broadcast to the guest via `session_settings` on connect.
+
+**Save data storage:**
+
+Use one of the unused bytes in a custom extra save section rather than touching the existing save layout. Define a dedicated save section (e.g., `SAVE_SECTION_COOP_SETTINGS`, placed in the last available slot):
+
+```c
+// include/constants/multiplayer.h
+#define SAVE_SECTION_COOP_SETTINGS  14  // use an unused section slot
+
+struct CoopSettings {
+    u8  randomizeEncounters : 1;  // 1 = on (default), 0 = off
+    u8  padding : 7;
+    u32 encounterSeed;            // shared seed set by host; 0 until session starts
+};
+
+extern struct CoopSettings gCoopSettings;
+```
+
+- On new game, `randomizeEncounters` defaults to `1`.
+- On session connect, the host's value in `session_settings` overwrites the local field (guests always mirror host).
+- The section is saved and loaded alongside the normal save via the standard `SaveGameData()` / `LoadGameData()` hooks — extend `src/save.c` minimally to include this section.
+- The encounter seed is NOT saved (it's session-only; a new seed is generated each session). Only the on/off toggle persists.
+
+**ROM randomization gate:**
+
+```c
+void MaybeRandomizeEncounters(u32 seed) {
+    if (gCoopSettings.randomizeEncounters)
+        RandomizeEncounters(seed);
+    // else: use original encounter tables unchanged
+}
+```
+
+**Note on the "Do NOT change save file format" rule:** That rule applies to the main trainer/Pokémon save data. Adding a single new save section for co-op settings is the minimal-impact approach and is explicitly allowed here. Do not alter existing section layouts.
+
+---
+
 ### Randomized Encounters
 
 - On session start, the host generates a random seed and sends it to the server
@@ -224,7 +315,7 @@ For this mod, we intercept at a higher level. Instead of modifying the hardware 
 ## DO NOTs
 
 - Do NOT modify the base battle engine beyond what's needed for multi battle setup
-- Do NOT change save file format — multiplayer state is session-only, not saved
+- Do NOT change save file format for existing sections — multiplayer session state (position, sync buffers) is not saved; the only exception is the `SAVE_SECTION_COOP_SETTINGS` extra section for persistent user preferences (randomizer toggle)
 - Do NOT sync every flag — only explicitly whitelisted ranges
 - Do NOT attempt to sync menu state, bag, or PC boxes between players
 - Do NOT assume both players are on the same map — the ghost NPC system must handle cross-map gracefully
@@ -249,10 +340,11 @@ Then point two Tauri app instances at `localhost:1999`.
 
 - [ ] Phase 0: Get pokeemerald-expansion building in FRLG mode, verify clean ROM output
 - [ ] Phase 1: Ghost NPC — spawn P2 on same map, move from hardcoded test data
+- [ ] Phase 1.5: Co-op starter selection — Oak's lab script, `starter_pick`/`starter_taken` messages, rival gets unchosen third
 - [ ] Phase 2: Serial hook — get two mGBA instances exchanging position data through link cable
 - [ ] Phase 3: Flag sync — trainer/story flags propagate between instances
-- [ ] Phase 4: Randomizer — seeded encounter table shuffle with full national dex
+- [ ] Phase 4: Randomizer — seeded encounter table shuffle with full national dex; `CoopSettings` save section; on by default
 - [ ] Phase 5: Boss readiness — gym leader scripts wait for both players, then start battle
-- [ ] Phase 6: Tauri app — bundle ROM + libmgba + WebSocket net adapter, host/join UI
+- [ ] Phase 6: Tauri app — bundle ROM + libmgba + WebSocket net adapter, host/join UI with randomizer toggle (on by default)
 - [ ] Phase 7: PartyKit deployment — deploy relay server, hardcode URL in app
 - [ ] Phase 8: Synced double battles (stretch goal) — real-time battle sync for boss fights
