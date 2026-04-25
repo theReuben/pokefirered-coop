@@ -8,9 +8,9 @@
 
 ## Current State
 - **Active Phase:** 1 — Ghost NPC
-- **Active Step:** 1.1 — Study Object Event System
+- **Active Step:** 1.2 — Define Player 2 Graphics
 - **Last Session Summary:** Completed Steps 0.1 and 0.2. `make firered -j4` builds cleanly → pokefirered.gba (32MB, SHA1: f1e8bd6aaecf9348fb1d13fc6162532a04854f85). Single expected linker warning (RWX ELF segment). ARM toolchain at /opt/devkitpro/devkitARM GCC 15.2.0.
-- **Next Action:** Read src/event_object_movement.c and include/global.fieldmap.h to document ObjectEvent struct and object event creation APIs.
+- **Next Action:** Define OBJ_EVENT_GFX_PLAYER2 and GHOST_LOCAL_ID in multiplayer.h; implement Spawn/Despawn/UpdatePosition; hook into CB2_Overworld.
 
 ---
 
@@ -58,16 +58,16 @@
 ## Phase 1: Ghost NPC
 
 ### Step 1.1: Study Object Event System
-- **Status:** in_progress
+- **Status:** done
 - **Substeps:**
-  - [ ] Read src/event_object_movement.c and document how ObjectEvents are created and moved
-  - [ ] Read include/global.fieldmap.h and document the ObjectEvent struct layout
-  - [ ] Read src/field_player_avatar.c and document how the player sprite is managed
-  - [ ] Write findings to docs/object-events.md for reference
-- **Notes:**
+  - [x] Read src/event_object_movement.c and document how ObjectEvents are created and moved
+  - [x] Read include/global.fieldmap.h and document the ObjectEvent struct layout
+  - [x] Read src/field_player_avatar.c and document how the player sprite is managed
+  - [x] Write findings to docs/object-events.md for reference
+- **Notes:** Key API: SpawnSpecialObjectEventParameterized, RemoveObjectEvent, MoveObjectEventToMapCoords. Ghost uses OBJ_EVENT_GFX_GREEN_NORMAL (251) with MOVEMENT_TYPE_NONE. Hook: CB2_Overworld → OverworldBasic. OBJECT_EVENTS_COUNT=16. See docs/object-events.md.
 
 ### Step 1.2: Define Player 2 Graphics
-- **Status:** not_started
+- **Status:** in_progress
 - **Substeps:**
   - [ ] Choose an existing sprite (e.g. opposite gender player) for P2
   - [ ] Define OBJ_EVENT_GFX_PLAYER2 constant
