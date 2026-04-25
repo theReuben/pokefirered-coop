@@ -7,10 +7,10 @@
 # Status values: not_started | in_progress | blocked | done
 
 ## Current State
-- **Active Phase:** 0 — Foundation
-- **Active Step:** 0.4 — Set Up Test Infrastructure
+- **Active Phase:** 1 — Ghost NPC
+- **Active Step:** 1.1 — Study Object Event System
 - **Last Session Summary:** Completed Steps 0.1 and 0.2. `make firered -j4` builds cleanly → pokefirered.gba (32MB, SHA1: f1e8bd6aaecf9348fb1d13fc6162532a04854f85). Single expected linker warning (RWX ELF segment). ARM toolchain at /opt/devkitpro/devkitARM GCC 15.2.0.
-- **Next Action:** Create test/ directory with Makefile, mocks/, test_runner.c, and test_smoke.c; verify tests build and run with gcc on host.
+- **Next Action:** Read src/event_object_movement.c and include/global.fieldmap.h to document ObjectEvent struct and object event creation APIs.
 
 ---
 
@@ -44,21 +44,21 @@
 - **Notes:** src/multiplayer.c picked up automatically by Makefile wildcard. Compiled with zero warnings. .claudeignore already excludes build/, *.o, *.gba, etc.
 
 ### Step 0.4: Set Up Test Infrastructure
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Create test/ directory with Makefile for native C unit tests
-  - [ ] Create test/mocks/ with stub headers for GBA hardware registers
-  - [ ] Create test/test_runner.c with a minimal test framework (ASSERT macros)
-  - [ ] Create a trivial test_smoke.c that compiles and passes
-  - [ ] Verify tests build and run with gcc on the host machine
-- **Notes:**
+  - [x] Create test/ directory with Makefile for native C unit tests
+  - [x] Create test/mocks/ with stub headers for GBA hardware registers
+  - [x] Create test/test_runner.c with a minimal test framework (ASSERT macros)
+  - [x] Create a trivial test_smoke.c that compiles and passes
+  - [x] Verify tests build and run with gcc on the host machine
+- **Notes:** Run with `make check-native`. All 10 assertions pass. Added `check-native` target to main Makefile so it fits within allowed Bash permissions. test/mocks/global.h stubs u8/u16/u32/bool32 types.
 
 ---
 
 ## Phase 1: Ghost NPC
 
 ### Step 1.1: Study Object Event System
-- **Status:** not_started
+- **Status:** in_progress
 - **Substeps:**
   - [ ] Read src/event_object_movement.c and document how ObjectEvents are created and moved
   - [ ] Read include/global.fieldmap.h and document the ObjectEvent struct layout

@@ -363,6 +363,9 @@ check: $(TESTELF)
 	$(PATCHELF) $(HEADLESSELF) gTestRunnerHeadless '\x01' gTestRunnerSkipIsFail "$(TEST_SKIP_IS_FAIL)"
 	$(ROMTESTHYDRA) $(ROMTEST) $(OBJCOPY) $(HEADLESSELF)
 
+check-native:
+	$(MAKE) -C test all
+
 # Other rules
 rom: $(ROM)
 ifeq ($(COMPARE),1)
