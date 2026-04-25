@@ -198,3 +198,70 @@ The only commands that actually require a permission grant for this build sessio
 
 The root issue: this appears to be an **interactive session**, not an automation session. In automation mode (`--permission-mode auto`), all these would be approved without prompts. The user should run via `.automation/run-session.sh` for fully autonomous operation.
 [18:06:26] → Still on 0.1—EnableFRLGBuildMode
+═══ POST-FLIGHT CHECKS ═══
+
+[Progress Update]
+  ✅ No broken markdown tables
+
+[Code Quality]
+
+[Git State]
+  ✅ All changes committed
+
+[Config Integrity]
+  ✅ CLAUDE.md has architecture section
+
+══════════════════════════════════════════════════
+BLOCKERS (2):
+  ❌ CLAUDE.md has file locations
+   Fix: CLAUDE.md may have been overwritten — restore from git
+  ❌ CLAUDE.md has gotchas
+   Fix: CLAUDE.md gotchas section missing — restore from git
+══════════════════════════════════════════════════
+[18:06:37] ── SESSION 4 | Phase 0—Foundation Step 0.1—EnableFRLGBuildMode | sonnet | ~300m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (0/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (32.1 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ No uncommitted changes
+   Fix: Uncommitted changes exist. Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+To proceed autonomously, I need you to **Allow** the permission prompts that appear. Specifically:
+
+1. **Allow** the `settings.local.json` edit above (to grant permanent permissions)
+2. Then **Allow** the `make firered` build
+
+Once `settings.local.json` is updated with `Write(*)` and `Edit(*)` permissions, all file writes will proceed without further prompts.
+
+**Please click "Allow" on the pending permission request for `settings.local.json`**, then I'll proceed immediately with all the file writes and the build.
+
+If you'd rather grant broader permissions, you can also run:
+```bash
+# In your terminal (not Claude):
+echo '{"permissions":{"allow":["Bash(unzip *)","Bash(make firered*)","Bash(make check*)","Bash(make clean*)","Bash(git add*)","Bash(git commit*)","Bash(git push*)","Write(*)","Edit(*)"]}}' > /Users/reuben/IdeaProjects/pokefirered-coop/.claude/settings.local.json
+```
+[18:10:14] → Still on 0.1—EnableFRLGBuildMode
