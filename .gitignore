@@ -47,6 +47,10 @@ prefabs.json
 src/data/map_group_count.h
 include/constants/heal_locations.h
 include/constants/script_commands.h
+
+# Native test build artifacts
+test/test_smoke
+test/test_smoke.dSYM/
 tools/trainerproc/trainerproc
 src/data/battle_partners.h
 src/data/pokemon/teachable_learnsets.h
