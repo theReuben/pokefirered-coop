@@ -1,0 +1,67 @@
+[23:37:56] ╔══ AUTOPILOT — DRAINING WINDOW ══╗
+[23:37:56] ── SESSION 1 | Phase 0—Foundation Step 0.1—EnableFRLGBuildMode | sonnet | ~320m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (0/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (31.2 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ Working tree clean (no uncommitted changes)
+   Fix: Uncommitted changes exist:
+M .automation/logs/window_20260425_232539.log
+?? .automation/logs/window_20260425_233756.log
+   Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+---
+
+**BLOCKER — SAME AS PREVIOUS 6+ SESSIONS**
+
+All file writes and `make` are blocked. The fix is straightforward and requires one manual action from Reuben:
+
+**Run this in terminal (outside Claude):**
+
+```bash
+echo '{"permissions":{"allow":["Bash(unzip *)","Bash(make firered*)","Bash(make check*)","Bash(make clean*)","Bash(git add*)","Bash(git commit*)","Bash(git push*)","Bash(git tag*)","Write(*)","Edit(*)"]}}' > /Users/reuben/IdeaProjects/pokefirered-coop/.claude/settings.local.json
+```
+
+**Or edit `.automation/run-session.sh` line 8:**
+```
+PERMISSION_MODE="bypassPermissions"   # was: "auto"
+```
+
+Either fix (or both) unblocks everything immediately.
+
+---
+
+**What I confirmed this session (read-only):**
+
+- FRLG config flag: `make firered` — no config header edits needed. Makefile lines 7–12 auto-set `GAME_VERSION=FIRERED`, `BUILD_NAME=firered`, `GAME_CODE=BPRE`, output `pokefirered.gba`
+- ARM toolchain memory location: `/opt/devkitpro/devkitARM/`
+- Build command once permissions work: `make firered -j8`
+- `settings.local.json` currently allows: `Bash(unzip *)` only
+- `.claude/settings.json` does not exist
+
+Substep 1 ("Find the FRLG config flag") is complete (information gathered). Substeps 2–4 require `make firered` to be allowed.
+[23:44:44] → Still on 0.1—EnableFRLGBuildMode

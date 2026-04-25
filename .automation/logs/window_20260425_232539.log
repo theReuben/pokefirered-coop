@@ -71,3 +71,56 @@ Once you make these two edits and restart the automation, progress will unblock 
 - No `include/config.h` changes needed — it's purely a Makefile target
 - Build is just: `make firered -j8`
 [23:30:42] → Still on 0.1—EnableFRLGBuildMode
+═══ POST-FLIGHT CHECKS ═══
+
+[Progress Update]
+  ✅ No broken markdown tables
+
+[Code Quality]
+
+[Git State]
+  ✅ All changes committed
+
+[Config Integrity]
+  ✅ CLAUDE.md has architecture section
+
+══════════════════════════════════════════════════
+BLOCKERS (2):
+  ❌ CLAUDE.md has file locations
+   Fix: CLAUDE.md may have been overwritten — restore from git
+  ❌ CLAUDE.md has gotchas
+   Fix: CLAUDE.md gotchas section missing — restore from git
+══════════════════════════════════════════════════
+[23:30:53] ── SESSION 2 | Phase 0—Foundation Step 0.1—EnableFRLGBuildMode | sonnet | ~314m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (0/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (31.2 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ No uncommitted changes
+   Fix: Uncommitted changes exist. Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+[23:31:07] Error (exit 130)
