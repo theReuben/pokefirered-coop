@@ -71,6 +71,7 @@
 #include "wild_encounter.h"
 #include "vs_seeker.h"
 #include "frontier_util.h"
+#include "multiplayer.h"
 #include "constants/abilities.h"
 #include "constants/event_object_movement.h"
 #include "constants/event_objects.h"
@@ -1829,6 +1830,7 @@ void CB2_Overworld(void)
     bool32 fading = (gPaletteFade.active != 0);
     if (fading)
         SetVBlankCallback(NULL);
+    Multiplayer_Update();
     OverworldBasic();
     if (fading)
     {

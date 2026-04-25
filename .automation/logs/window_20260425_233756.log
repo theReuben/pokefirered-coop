@@ -65,3 +65,56 @@ Either fix (or both) unblocks everything immediately.
 
 Substep 1 ("Find the FRLG config flag") is complete (information gathered). Substeps 2–4 require `make firered` to be allowed.
 [23:44:44] → Still on 0.1—EnableFRLGBuildMode
+═══ POST-FLIGHT CHECKS ═══
+
+[Progress Update]
+  ✅ No broken markdown tables
+
+[Code Quality]
+
+[Git State]
+  ✅ All changes committed
+
+[Config Integrity]
+  ✅ CLAUDE.md is non-empty
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ Session log updated today
+   Fix: Claude may not have updated PROGRESS.md before the session ended
+──────────────────────────────────────────────────
+[23:45:22] ── SESSION 2 | Phase 0—Foundation Step 0.1—EnableFRLGBuildMode | sonnet | ~312m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (0/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (30.2 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ Working tree clean (no uncommitted changes)
+   Fix: Uncommitted changes exist:
+M .automation/logs/window_20260425_233756.log
+   Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+[23:45:49] Error (exit 130)

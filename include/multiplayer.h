@@ -3,6 +3,14 @@
 
 #include "global.h"
 #include "constants/multiplayer.h"
+#include "constants/event_objects.h"
+
+// Ghost NPC uses the FRLG Green (Leaf) walking sprite — visually distinct from Red.
+#define OBJ_EVENT_GFX_PLAYER2      OBJ_EVENT_GFX_GREEN_NORMAL
+// LocalId 0xFE is above any map-defined NPC (maps rarely use IDs > 10).
+#define GHOST_LOCAL_ID             0xFE
+// Default elevation for overworld spawns.
+#define GHOST_ELEVATION            3
 
 struct CoopSettings {
     u8  randomizeEncounters : 1;
