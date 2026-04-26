@@ -195,15 +195,15 @@
 ## Phase 3: Shared Flag/Variable Sync
 
 ### Step 3.1: Define Syncable Flag Ranges
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Audit include/constants/flags.h to identify trainer, story, and item flag ranges
-  - [ ] Define SYNC_FLAG_TRAINERS_START/END in include/constants/multiplayer.h
-  - [ ] Define SYNC_FLAG_STORY_START/END
-  - [ ] Define SYNC_FLAG_ITEMS_START/END
-  - [ ] Implement IsSyncableFlag(flagId) inline function
-  - [ ] Document which flag ranges sync and which don't in docs/flag-sync.md
-- **Notes:**
+  - [x] Audit include/constants/flags.h to identify trainer, story, and item flag ranges
+  - [x] Define SYNC_FLAG_TRAINERS_START/END in include/constants/multiplayer.h
+  - [x] Define SYNC_FLAG_STORY_START/END
+  - [x] Define SYNC_FLAG_ITEMS_START/END
+  - [x] Implement IsSyncableFlag(flagId) inline function
+  - [x] Document which flag ranges sync and which don't in docs/flag-sync.md
+- **Notes:** 4 syncable ranges: story (0x020–0x2FF), hidden items (0x3E8–0x4A6), bosses (0x4B0–0x4BC), trainers (0x500–0x7FF). Temp (0x000–0x01F), daily, mystery gift, SYS_FLAGS (0x800+) excluded. IsSyncableFlag implemented in multiplayer.c. 16 unit tests in test_smoke.c cover all boundary values. docs/flag-sync.md documents rationale, wire protocol, and FULL_SYNC bitmap layout.
 
 ### Step 3.2: Hook FlagSet and VarSet
 - **Status:** not_started

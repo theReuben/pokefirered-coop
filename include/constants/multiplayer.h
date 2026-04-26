@@ -36,11 +36,35 @@
 // Save section for co-op persistent settings (last available slot)
 #define SAVE_SECTION_COOP_SETTINGS  14
 
-// Syncable flag ranges (filled in during Phase 3 — flag audit)
-// Placeholder values; updated when flags.h is audited.
-#define SYNC_FLAG_TRAINERS_START    0x0000
-#define SYNC_FLAG_TRAINERS_END      0x0000
-#define SYNC_FLAG_STORY_START       0x0000
-#define SYNC_FLAG_STORY_END         0x0000
+// ---------------------------------------------------------------------------
+// Syncable flag ranges (audited from include/constants/flags_frlg.h)
+//
+// NOT synced:
+//   0x000-0x01F   Temp flags  — cleared every map load; per-instance state
+//   0x300-0x38E   Unnamed gap — appears unused; skip to avoid surprises
+//   0x390-0x3CF   DAILY_FLAGS — per-player daily event state
+//   0x3D8-0x3E7   MYSTERY_GIFT flags — per-player
+//   0x800+        SYS_FLAGS   — safari mode, VS seeker, etc.; local state
+// ---------------------------------------------------------------------------
+
+// Story range: NPC hide/show (0x028), item ball pickups (0x154),
+//              and story quest flags (STORY_FLAGS_START=0x230) through 0x2FF.
+// We start at 0x020 (first named FRLG flag) to be safe about the gap 0x020-0x027.
+#define SYNC_FLAG_STORY_START       0x020
+#define SYNC_FLAG_STORY_END         0x2FF
+
+// Hidden ground items (A-button pickup spots).
+// FLAG_HIDDEN_ITEMS_START = 0x3E8; last used item is at offset 190 = 0x4A6.
+#define SYNC_FLAG_ITEMS_START       0x3E8
+#define SYNC_FLAG_ITEMS_END         0x4A6
+
+// Gym leader + Elite Four + Champion clear flags.
+#define SYNC_FLAG_BOSSES_START      0x4B0   // FLAG_DEFEATED_BROCK
+#define SYNC_FLAG_BOSSES_END        0x4BC   // FLAG_DEFEATED_CHAMP
+
+// Trainer defeat flags (one bit per trainer, 0x500–0x7FF for FRLG).
+// TRAINER_FLAGS_START / TRAINER_FLAGS_END from flags_frlg.h.
+#define SYNC_FLAG_TRAINERS_START    0x500
+#define SYNC_FLAG_TRAINERS_END      0x7FF
 
 #endif // GUARD_CONSTANTS_MULTIPLAYER_H

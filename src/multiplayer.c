@@ -497,7 +497,8 @@ void Multiplayer_SendBossCancel(void)
 
 bool32 IsSyncableFlag(u16 flagId)
 {
-    (void)flagId;
-    // Phase 3: return TRUE for flags in SYNC_FLAG_TRAINERS and SYNC_FLAG_STORY ranges.
-    return FALSE;
+    return (flagId >= SYNC_FLAG_STORY_START    && flagId <= SYNC_FLAG_STORY_END)
+        || (flagId >= SYNC_FLAG_ITEMS_START    && flagId <= SYNC_FLAG_ITEMS_END)
+        || (flagId >= SYNC_FLAG_BOSSES_START   && flagId <= SYNC_FLAG_BOSSES_END)
+        || (flagId >= SYNC_FLAG_TRAINERS_START && flagId <= SYNC_FLAG_TRAINERS_END);
 }

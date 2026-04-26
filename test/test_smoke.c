@@ -190,12 +190,40 @@ static void TestGhostMapCheckDespawnsWhenDisconnected(void)
     ASSERT_EQ(gObjectEvents[2].active, 0);
 }
 
-// ---- Step 3 stub (IsSyncableFlag) -----------------------------------------
+// ---- Step 3.1: IsSyncableFlag ---------------------------------------------
 
-static void TestIsSyncableFlagReturnsFalse(void)
+static void TestIsSyncableFlag(void)
 {
-    // Stub always returns FALSE until Phase 3 fills in the ranges.
+    // Temp flags (0x000-0x01F): NOT syncable.
     ASSERT_EQ(IsSyncableFlag(0x0000), FALSE);
+    ASSERT_EQ(IsSyncableFlag(0x001F), FALSE);
+
+    // Story range (0x020-0x2FF): syncable.
+    ASSERT_EQ(IsSyncableFlag(0x020),  TRUE);
+    ASSERT_EQ(IsSyncableFlag(0x028),  TRUE);  // FLAG_HIDE_BULBASAUR_BALL
+    ASSERT_EQ(IsSyncableFlag(0x230),  TRUE);  // STORY_FLAGS_START
+    ASSERT_EQ(IsSyncableFlag(0x2FF),  TRUE);  // last story flag
+
+    // Gap between story and items: NOT syncable.
+    ASSERT_EQ(IsSyncableFlag(0x300),  FALSE);
+    ASSERT_EQ(IsSyncableFlag(0x3E7),  FALSE);
+
+    // Hidden items (0x3E8-0x4A6): syncable.
+    ASSERT_EQ(IsSyncableFlag(0x3E8),  TRUE);  // FLAG_HIDDEN_ITEMS_START
+    ASSERT_EQ(IsSyncableFlag(0x4A6),  TRUE);  // last hidden item
+    ASSERT_EQ(IsSyncableFlag(0x4A7),  FALSE); // just past range
+
+    // Boss clear flags (0x4B0-0x4BC): syncable.
+    ASSERT_EQ(IsSyncableFlag(0x4B0),  TRUE);  // FLAG_DEFEATED_BROCK
+    ASSERT_EQ(IsSyncableFlag(0x4BC),  TRUE);  // FLAG_DEFEATED_CHAMP
+    ASSERT_EQ(IsSyncableFlag(0x4BD),  FALSE); // unused past bosses
+
+    // Trainer flags (0x500-0x7FF): syncable.
+    ASSERT_EQ(IsSyncableFlag(0x500),  TRUE);  // TRAINER_FLAGS_START
+    ASSERT_EQ(IsSyncableFlag(0x7FF),  TRUE);  // TRAINER_FLAGS_END
+
+    // SYS_FLAGS (0x800+): NOT syncable.
+    ASSERT_EQ(IsSyncableFlag(0x800),  FALSE);
     ASSERT_EQ(IsSyncableFlag(0xFFFF), FALSE);
 }
 
@@ -216,6 +244,6 @@ int main(void)
     TestGhostMapCheckSpawnsOnSameMap();
     TestGhostMapCheckDespawnsOnDifferentMap();
     TestGhostMapCheckDespawnsWhenDisconnected();
-    TestIsSyncableFlagReturnsFalse();
+    TestIsSyncableFlag();
     TEST_SUMMARY();
 }
