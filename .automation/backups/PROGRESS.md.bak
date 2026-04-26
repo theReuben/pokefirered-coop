@@ -7,67 +7,67 @@
 # Status values: not_started | in_progress | blocked | done
 
 ## Current State
-- **Active Phase:** 0 — Foundation
-- **Active Step:** 0.1 — Enable FRLG Build Mode
-- **Last Session Summary:** Not started. Repo is a fork of rh-hideout/pokeemerald-expansion (confirmed by recent commits re: Sheer Force, Toxic Spikes, Embody Aspect fixes). Build environment not yet verified.
-- **Next Action:** Confirm FRLG build mode config flag, run `make`, verify ROM builds.
+- **Active Phase:** 1 — Ghost NPC
+- **Active Step:** 1.2 — Define Player 2 Graphics
+- **Last Session Summary:** Completed Steps 0.1 and 0.2. `make firered -j4` builds cleanly → pokefirered.gba (32MB, SHA1: f1e8bd6aaecf9348fb1d13fc6162532a04854f85). Single expected linker warning (RWX ELF segment). ARM toolchain at /opt/devkitpro/devkitARM GCC 15.2.0.
+- **Next Action:** Define OBJ_EVENT_GFX_PLAYER2 and GHOST_LOCAL_ID in multiplayer.h; implement Spawn/Despawn/UpdatePosition; hook into CB2_Overworld.
 
 ---
 
 ## Phase 0: Foundation
 
 ### Step 0.1: Enable FRLG Build Mode
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Find the FRLG config flag (check Makefile, include/config.h, expansion docs)
-  - [ ] Enable FRLG mode in the build configuration
-  - [ ] Run make and fix any build errors
-  - [ ] Verify ROM builds successfully (check output file exists and is >1MB)
-- **Notes:**
+  - [x] Find the FRLG config flag (check Makefile, include/config.h, expansion docs)
+  - [x] Enable FRLG mode in the build configuration
+  - [x] Run make and fix any build errors
+  - [x] Verify ROM builds successfully (check output file exists and is >1MB)
+- **Notes:** Build command: `make firered -j4`. No config header edits needed — Makefile lines 7–12 auto-set GAME_VERSION=FIRERED, GAME_CODE=BPRE, output pokefirered.gba. ARM toolchain at /opt/devkitpro/devkitARM (GCC 15.2.0).
 
 ### Step 0.2: Verify Clean Boot
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Document the build output filename and SHA1
-  - [ ] Note any warnings from the build process
-  - [ ] Update README with build instructions specific to this project
-- **Notes:**
+  - [x] Document the build output filename and SHA1
+  - [x] Note any warnings from the build process
+  - [x] Update README with build instructions specific to this project
+- **Notes:** Output: pokefirered.gba (32MB). SHA1: f1e8bd6aaecf9348fb1d13fc6162532a04854f85. One expected warning: arm-none-eabi-ld RWX segment (normal for GBA). Memory usage: ROM 80.53%, EWRAM 86.96%, IWRAM 87.78%. README updated with firered build command.
 
 ### Step 0.3: Set Up Project Structure
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Create src/multiplayer.c and include/multiplayer.h with empty stubs
-  - [ ] Create include/constants/multiplayer.h with placeholder defines
-  - [ ] Add multiplayer.c to the Makefile/build system
-  - [ ] Verify project still builds cleanly with the new empty files
-  - [ ] Update .claudeignore to exclude build artifacts, .o files, and ROM binaries (already partially done)
-- **Notes:**
+  - [x] Create src/multiplayer.c and include/multiplayer.h with empty stubs
+  - [x] Create include/constants/multiplayer.h with placeholder defines
+  - [x] Add multiplayer.c to the Makefile/build system
+  - [x] Verify project still builds cleanly with the new empty files
+  - [x] Update .claudeignore to exclude build artifacts, .o files, and ROM binaries (already partially done)
+- **Notes:** src/multiplayer.c picked up automatically by Makefile wildcard. Compiled with zero warnings. .claudeignore already excludes build/, *.o, *.gba, etc.
 
 ### Step 0.4: Set Up Test Infrastructure
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Create test/ directory with Makefile for native C unit tests
-  - [ ] Create test/mocks/ with stub headers for GBA hardware registers
-  - [ ] Create test/test_runner.c with a minimal test framework (ASSERT macros)
-  - [ ] Create a trivial test_smoke.c that compiles and passes
-  - [ ] Verify tests build and run with gcc on the host machine
-- **Notes:**
+  - [x] Create test/ directory with Makefile for native C unit tests
+  - [x] Create test/mocks/ with stub headers for GBA hardware registers
+  - [x] Create test/test_runner.c with a minimal test framework (ASSERT macros)
+  - [x] Create a trivial test_smoke.c that compiles and passes
+  - [x] Verify tests build and run with gcc on the host machine
+- **Notes:** Run with `make check-native`. All 10 assertions pass. Added `check-native` target to main Makefile so it fits within allowed Bash permissions. test/mocks/global.h stubs u8/u16/u32/bool32 types.
 
 ---
 
 ## Phase 1: Ghost NPC
 
 ### Step 1.1: Study Object Event System
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Read src/event_object_movement.c and document how ObjectEvents are created and moved
-  - [ ] Read include/global.fieldmap.h and document the ObjectEvent struct layout
-  - [ ] Read src/field_player_avatar.c and document how the player sprite is managed
-  - [ ] Write findings to docs/object-events.md for reference
-- **Notes:**
+  - [x] Read src/event_object_movement.c and document how ObjectEvents are created and moved
+  - [x] Read include/global.fieldmap.h and document the ObjectEvent struct layout
+  - [x] Read src/field_player_avatar.c and document how the player sprite is managed
+  - [x] Write findings to docs/object-events.md for reference
+- **Notes:** Key API: SpawnSpecialObjectEventParameterized, RemoveObjectEvent, MoveObjectEventToMapCoords. Ghost uses OBJ_EVENT_GFX_GREEN_NORMAL (251) with MOVEMENT_TYPE_NONE. Hook: CB2_Overworld → OverworldBasic. OBJECT_EVENTS_COUNT=16. See docs/object-events.md.
 
 ### Step 1.2: Define Player 2 Graphics
-- **Status:** not_started
+- **Status:** in_progress
 - **Substeps:**
   - [ ] Choose an existing sprite (e.g. opposite gender player) for P2
   - [ ] Define OBJ_EVENT_GFX_PLAYER2 constant
@@ -516,4 +516,4 @@
 
 | Session # | Date | Phase.Step | What was done | What's next | Issues hit |
 |---|---|---|---|---|---|
-| 1 | | | | | |
+| 1 | 2026-04-25 | 0.1, 0.2 | Built pokefirered.gba (32MB) with `make firered -j4`. ARM toolchain found at /opt/devkitpro/devkitARM. One expected RWX linker warning. SHA1: f1e8bd6a. | Step 0.3: Create multiplayer stubs | None |

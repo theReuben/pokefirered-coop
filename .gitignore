@@ -69,3 +69,7 @@ tools/aif2pcm/aif2pcm
 *.smolTM
 __pycache__
 .map_version
+
+# Claude Autopilot — transient files                                                                                                                                                                    
+  .automation/logs/                                                                                                                                                                                       
+  .automation/backups/

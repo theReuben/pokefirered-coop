@@ -113,6 +113,8 @@ run_single_session() {
         fi
         if tail -30 "$LOG_FILE" | grep -qi "rate.limit\|too many requests\|429\|usage.limit"; then
             [[ $attempt -lt $MAX_RATE_LIMIT_RETRIES ]] && { log "Rate limited ($attempt). Waiting ${rate_pause}s..."; sleep "$rate_pause"; rate_pause=$((rate_pause * 2)); } || { log "Window exhausted."; return 2; }
+        elif tail -10 "$LOG_FILE" | grep -qi "stream.*idle\|idle.*timeout\|partial response\|connection.*reset\|broken pipe"; then
+            [[ $attempt -lt $MAX_RATE_LIMIT_RETRIES ]] && { log "Network timeout ($attempt). Retrying in 30s..."; sleep 30; } || { log "Error (exit $exit_code)"; return 1; }
         else
             log "Error (exit $exit_code)"; return 1
         fi

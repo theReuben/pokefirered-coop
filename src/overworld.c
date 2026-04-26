@@ -1882,6 +1882,7 @@ void CB2_NewGame(void)
     FieldClearVBlankHBlankCallbacks();
     StopMapMusic();
     ResetSafariZoneFlag_();
+    Multiplayer_Init();
     NewGameInitData();
     ResetInitialPlayerAvatarState();
     PlayTimeCounter_Start();
@@ -2068,6 +2069,7 @@ void CB2_ContinueSavedGame(void)
     FieldClearVBlankHBlankCallbacks();
     StopMapMusic();
     ResetSafariZoneFlag_();
+    Multiplayer_Init();
     if (gSaveFileStatus == SAVE_STATUS_ERROR)
         ResetWinStreaks();
 
