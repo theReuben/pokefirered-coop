@@ -1,6 +1,12 @@
 #include "global.h"
 #include "event_data.h"
 #include "pokedex.h"
+#include "multiplayer.h"
+
+// Guards against re-broadcasting a flag/var that was applied from a remote update.
+// Without this, applying a received FLAG_SET would trigger another outgoing FLAG_SET,
+// causing an infinite echo loop.
+static bool8 sIsRemoteUpdate;
 
 #define SPECIAL_FLAGS_SIZE  (NUM_SPECIAL_FLAGS / 8)  // 8 flags per byte
 #define TEMP_FLAGS_SIZE     (NUM_TEMP_FLAGS / 8)
@@ -216,6 +222,8 @@ bool8 VarSet(u16 id, u16 value)
     if (!ptr)
         return FALSE;
     *ptr = value;
+    if (!sIsRemoteUpdate && IsSyncableVar(id))
+        Multiplayer_SendVarSet(id, value);
     return TRUE;
 }
 
@@ -243,6 +251,8 @@ u8 FlagSet(u16 id)
     u8 *ptr = GetFlagPointer(id);
     if (ptr)
         *ptr |= 1 << (id & 7);
+    if (!sIsRemoteUpdate && IsSyncableFlag(id))
+        Multiplayer_SendFlagSet(id);
     return 0;
 }
 

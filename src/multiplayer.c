@@ -3,6 +3,7 @@
 #include "constants/multiplayer.h"
 #include "constants/event_object_movement.h"
 #include "event_object_movement.h"
+#include "event_data.h"
 
 // ---------------------------------------------------------------------------
 // Globals

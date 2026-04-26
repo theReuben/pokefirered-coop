@@ -154,7 +154,14 @@ void Multiplayer_SendVarSet(u16 varId, u16 value);
 void Multiplayer_SendBossReady(u8 bossId);
 void Multiplayer_SendBossCancel(void);
 
-// Flag sync helpers (stubs — implemented in Phase 3)
+// Flag/var sync helpers
 bool32 IsSyncableFlag(u16 flagId);
+bool32 IsSyncableVar(u16 varId);   // returns FALSE until var audit in Phase 3
+
+// Remote update handlers — called by ProcessOneRecvPacket when a FLAG_SET or
+// VAR_SET arrives from the partner. These set sIsRemoteUpdate before calling
+// FlagSet/VarSet so we don't echo the packet back.
+void Multiplayer_HandleRemoteFlagSet(u16 flagId);
+void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value);
 
 #endif // GUARD_MULTIPLAYER_H
