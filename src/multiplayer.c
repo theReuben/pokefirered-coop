@@ -16,7 +16,7 @@ void Multiplayer_Init(void)
     gMultiplayerState.targetX            = 0;
     gMultiplayerState.targetY            = 0;
     gMultiplayerState.targetFacing       = DIR_SOUTH;
-    gMultiplayerState.ghostObjectEventId = OBJECT_EVENTS_COUNT;
+    gMultiplayerState.ghostObjectEventId = GHOST_INVALID_SLOT;
     gMultiplayerState.bossReadyBossId    = 0;
     gMultiplayerState.isInScript         = FALSE;
     gCoopSettings.randomizeEncounters    = 1;
@@ -153,7 +153,7 @@ void Multiplayer_DespawnGhost(void)
     if (objId < OBJECT_EVENTS_COUNT && gObjectEvents[objId].active)
         RemoveObjectEvent(&gObjectEvents[objId]);
 
-    gMultiplayerState.ghostObjectEventId = OBJECT_EVENTS_COUNT;
+    gMultiplayerState.ghostObjectEventId = GHOST_INVALID_SLOT;
 }
 
 void Multiplayer_UpdateGhostPosition(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing)

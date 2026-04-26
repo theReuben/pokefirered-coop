@@ -1,11 +1,15 @@
-#ifndef GUARD_MOCK_GLOBAL_H
-#define GUARD_MOCK_GLOBAL_H
+#ifndef GUARD_GLOBAL_H
+#define GUARD_GLOBAL_H
 
-// Host-build stubs for GBA types. Used in native C unit tests only.
+// Host-build mock for GBA global.h. Used in native C unit tests only.
+// Uses GUARD_GLOBAL_H (same guard as the real header) so transitive includes
+// of global.h from within ../include/ files pick up this mock instead.
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 
+// GBA integer types
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -25,7 +29,11 @@ typedef u32 bool32;
 #define TRUE  1
 #define FALSE 0
 
-// Forward declarations for pointer-only uses in event_object_movement.h
+// Pull in OBJECT_EVENTS_COUNT, IS_FRLG, Direction enum, etc.
+// This is a pure-defines/enums file with no GBA hardware dependencies.
+#include "constants/global.h"
+
+// Forward declarations for pointer-only uses in headers we'll include later.
 struct Sprite;
 struct SpriteTemplate;
 struct SpriteFrameImage;
@@ -53,9 +61,8 @@ struct ObjectEvent {
     struct Coords16 previousCoords;
 };
 
-// OBJECT_EVENTS_COUNT comes from constants/global.h; declare the array here.
-// The literal 16 must match OBJECT_EVENTS_COUNT in constants/global.h.
-extern struct ObjectEvent gObjectEvents[16];
+// OBJECT_EVENTS_COUNT comes from constants/global.h (included above).
+extern struct ObjectEvent gObjectEvents[OBJECT_EVENTS_COUNT];
 
 // WarpData and minimal SaveBlock1 for GhostMapCheck
 struct WarpData { s8 mapGroup; s8 mapNum; s8 warpId; s16 x; s16 y; };
@@ -68,14 +75,4 @@ struct SaveBlock1 {
 
 extern struct SaveBlock1 *gSaveBlock1Ptr;
 
-// Direction enum — values must match include/constants/global.h exactly.
-enum Direction {
-    DIR_NONE   = 0,
-    DIR_SOUTH  = 1,
-    DIR_NORTH  = 2,
-    DIR_WEST   = 3,
-    DIR_EAST   = 4,
-    CARDINAL_DIRECTION_COUNT,
-};
-
-#endif // GUARD_MOCK_GLOBAL_H
+#endif // GUARD_GLOBAL_H

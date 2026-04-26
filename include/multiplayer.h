@@ -39,7 +39,7 @@ struct MultiplayerState {
     u8  targetX;         // target tile X for ghost (last received partner position)
     u8  targetY;         // target tile Y for ghost
     u8  targetFacing;    // facing direction to set when ghost reaches target
-    u8  ghostObjectEventId; // OBJECT_EVENTS_COUNT = not spawned
+    u8  ghostObjectEventId; // GHOST_INVALID_SLOT (0xFF) = not spawned
     u8  bossReadyBossId;    // 0 = not in readiness check
     u8  isInScript;
 };

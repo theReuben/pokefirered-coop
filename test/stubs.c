@@ -7,13 +7,22 @@
 struct ObjectEvent gObjectEvents[16];
 struct SaveBlock1 *gSaveBlock1Ptr;
 
+// Set this to a valid slot (0-15) before a test that exercises spawn; 16 = no slot.
+u8 gTestNextSpawnSlot = 16;
+
 // Object event stubs
 u8 SpawnSpecialObjectEventParameterized(u16 graphicsId, u8 movementBehavior,
                                          u8 localId, s16 x, s16 y, u8 elevation)
 {
-    (void)graphicsId; (void)movementBehavior; (void)localId;
-    (void)x; (void)y; (void)elevation;
-    return 16; // OBJECT_EVENTS_COUNT — "no free slot" for tests
+    (void)graphicsId; (void)movementBehavior; (void)localId; (void)elevation;
+    u8 slot = gTestNextSpawnSlot;
+    if (slot < 16)
+    {
+        gObjectEvents[slot].active = 1;
+        gObjectEvents[slot].currentCoords.x = x;
+        gObjectEvents[slot].currentCoords.y = y;
+    }
+    return slot;
 }
 
 void RemoveObjectEvent(struct ObjectEvent *objectEvent)

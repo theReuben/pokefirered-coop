@@ -1,5 +1,5 @@
 CC      := gcc
-CFLAGS  := -Wall -Wextra -std=gnu17 -g
+CFLAGS  := -Wall -Wextra -std=gnu17 -g -DFIRERED
 # test/mocks shadows GBA-specific headers; include/ provides the real headers
 INCLUDE := -I mocks -I ../include
 SRCDIR  := ../src
@@ -16,7 +16,9 @@ all: $(TESTS)
 	done
 	@echo "All tests passed."
 
-test_smoke: $(TESTDIR)/test_smoke.c $(SRCDIR)/multiplayer.c
+STUBS := $(TESTDIR)/stubs.c
+
+test_smoke: $(TESTDIR)/test_smoke.c $(SRCDIR)/multiplayer.c $(STUBS)
 	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $^
 
 clean:
