@@ -316,6 +316,135 @@ static void TestMultipleFlagSetsRouted(void)
     ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
 }
 
+// ---- Step 3.3: Full sync build and apply ----------------------------------
+
+static struct SaveBlock1 sSyncSave;
+
+static void TestFullSyncSendBuildsPacket(void)
+{
+    // Set a trainer flag and a story flag, then call SendFullSync.
+    // The send ring should contain a FULL_SYNC packet with those bits set.
+    u8 typeByte, lenHi, lenLo;
+    u16 dataLen;
+    u8 payload[FULL_SYNC_PAYLOAD_SIZE];
+    u16 i;
+
+    Multiplayer_Init();
+    ResetDispatch();
+    memset(&sSyncSave, 0, sizeof(sSyncSave));
+    gSaveBlock1Ptr = &sSyncSave;
+
+    // Set flag 0x500 (first trainer flag) — byte 160, bit 0
+    sSyncSave.flags[SYNC_FLAG_TRAINERS_START / 8] |= (1 << (SYNC_FLAG_TRAINERS_START & 7));
+    // Set flag 0x020 (first story flag) — byte 4, bit 0
+    sSyncSave.flags[SYNC_FLAG_STORY_START / 8] |= (1 << (SYNC_FLAG_STORY_START & 7));
+
+    Multiplayer_SendFullSync();
+
+    // Recv ring is still empty; send ring has the packet.
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)(MP_PKT_SIZE_FULL_SYNC_HDR + FULL_SYNC_PAYLOAD_SIZE));
+
+    // Parse: type byte
+    Mp_Pop(&gMpSendRing, &typeByte);
+    ASSERT_EQ(typeByte, MP_PKT_FULL_SYNC);
+
+    // Length
+    Mp_Pop(&gMpSendRing, &lenHi);
+    Mp_Pop(&gMpSendRing, &lenLo);
+    dataLen = ((u16)lenHi << 8) | lenLo;
+    ASSERT_EQ(dataLen, (u16)FULL_SYNC_PAYLOAD_SIZE);
+
+    // Drain payload
+    for (i = 0; i < dataLen; i++)
+        Mp_Pop(&gMpSendRing, &payload[i]);
+
+    // Story flag byte 4 should have bit 0 set.
+    ASSERT_NE(payload[0], 0); // story offset 0 = flags byte 4
+
+    // Trainer flag byte 160 is at payload offset FULL_SYNC_STORY_LEN+FULL_SYNC_ITEMS_LEN+FULL_SYNC_BOSSES_LEN
+    ASSERT_NE(payload[FULL_SYNC_STORY_LEN + FULL_SYNC_ITEMS_LEN + FULL_SYNC_BOSSES_LEN], 0);
+}
+
+static void TestFullSyncApplyORsFlags(void)
+{
+    // Build a payload with a trainer flag set; apply it to a save block
+    // that already has a story flag set.  Both flags should remain set.
+    u8 payload[FULL_SYNC_PAYLOAD_SIZE];
+    u16 trainerPayloadOffset;
+
+    memset(payload, 0, sizeof(payload));
+    memset(&sSyncSave, 0, sizeof(sSyncSave));
+    gSaveBlock1Ptr = &sSyncSave;
+
+    // Pre-set story flag 0x020 in sSyncSave.
+    sSyncSave.flags[SYNC_FLAG_STORY_START / 8] |= (1 << (SYNC_FLAG_STORY_START & 7));
+
+    // Payload has trainer flag 0x500 set (at payload byte FULL_SYNC_STORY_LEN+FULL_SYNC_ITEMS_LEN+FULL_SYNC_BOSSES_LEN).
+    trainerPayloadOffset = FULL_SYNC_STORY_LEN + FULL_SYNC_ITEMS_LEN + FULL_SYNC_BOSSES_LEN;
+    payload[trainerPayloadOffset] |= (1 << (SYNC_FLAG_TRAINERS_START & 7));
+
+    Multiplayer_ApplyFullSync(payload, FULL_SYNC_PAYLOAD_SIZE);
+
+    // Story flag should still be set (was pre-set, payload was 0 for that byte).
+    ASSERT_NE(sSyncSave.flags[SYNC_FLAG_STORY_START / 8] & (1 << (SYNC_FLAG_STORY_START & 7)), 0);
+    // Trainer flag should now be set (ORed in from payload).
+    ASSERT_NE(sSyncSave.flags[SYNC_FLAG_TRAINERS_START / 8] & (1 << (SYNC_FLAG_TRAINERS_START & 7)), 0);
+}
+
+static void TestFullSyncApplyRejectsWrongLength(void)
+{
+    u8 payload[FULL_SYNC_PAYLOAD_SIZE + 1];
+    memset(payload, 0xFF, sizeof(payload));
+    memset(&sSyncSave, 0, sizeof(sSyncSave));
+    gSaveBlock1Ptr = &sSyncSave;
+
+    // Wrong length — should be a no-op.
+    Multiplayer_ApplyFullSync(payload, FULL_SYNC_PAYLOAD_SIZE + 1);
+
+    // All flags should remain 0.
+    ASSERT_EQ(sSyncSave.flags[SYNC_FLAG_TRAINERS_START / 8], 0);
+}
+
+static void TestFullSyncRoundTrip(void)
+{
+    // Send → recv → apply: story flag 0x030 should appear on the other side.
+    u8 recvBuf[MP_PKT_SIZE_FULL_SYNC_HDR + FULL_SYNC_PAYLOAD_SIZE];
+    u8 applySave[256];
+    struct SaveBlock1 applyBlock;
+    u8 b;
+    u16 i, pktLen;
+
+    memset(&sSyncSave, 0, sizeof(sSyncSave));
+    gSaveBlock1Ptr = &sSyncSave;
+
+    // Set flag 0x030 on the sender side.
+    sSyncSave.flags[0x030 / 8] |= (1 << (0x030 & 7));
+
+    Multiplayer_Init();
+    ResetDispatch();
+    Multiplayer_SendFullSync();
+
+    pktLen = (u16)Mp_Available(&gMpSendRing);
+    ASSERT_EQ(pktLen, (u16)(MP_PKT_SIZE_FULL_SYNC_HDR + FULL_SYNC_PAYLOAD_SIZE));
+
+    // Copy send ring bytes into recv ring.
+    for (i = 0; i < pktLen; i++)
+    {
+        Mp_Pop(&gMpSendRing, &b);
+        Mp_Push(&gMpRecvRing, b);
+    }
+
+    // Switch gSaveBlock1Ptr to a clean block to simulate the receiver.
+    memset(&applyBlock, 0, sizeof(applyBlock));
+    (void)applySave;
+    gSaveBlock1Ptr = &applyBlock;
+
+    Multiplayer_Update(); // dispatches FULL_SYNC via ProcessOneRecvPacket
+
+    ASSERT_NE(applyBlock.flags[0x030 / 8] & (1 << (0x030 & 7)), 0);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0); // no re-broadcast
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -337,5 +466,9 @@ int main(void)
     TestRemoteFlagSetRouting();
     TestRemoteVarSetRouting();
     TestMultipleFlagSetsRouted();
+    TestFullSyncSendBuildsPacket();
+    TestFullSyncApplyORsFlags();
+    TestFullSyncApplyRejectsWrongLength();
+    TestFullSyncRoundTrip();
     TEST_SUMMARY();
 }

@@ -8,7 +8,7 @@
 
 ## Current State
 - **Active Phase:** 3
-- **Active Step:** 3.3—ImplementFullSyncOnConnect
+- **Active Step:** 3.4—ImplementScriptMutex
 - **Last Session Summary:** Session 5 completed Steps 3.1 and 3.2. Step 3.1 was already done from prior session. Step 3.2: implemented Multiplayer_HandleRemoteFlagSet/VarSet in event_data.c (uses sIsRemoteUpdate guard to block re-broadcast). Added IsSyncableVar (returns FALSE). Removed spurious event_data.h from multiplayer.c (fixed test build breakage from NUM_BADGES). Wired FLAG_SET/VAR_SET dispatch in ProcessOneRecvPacket. Added 3 routing tests in test_smoke.c — 62 assertions pass.
 - **Next Action:** Step 3.3 — implement full sync on connect
 
@@ -216,12 +216,12 @@
 - **Notes:** Handlers implemented in event_data.c (co-located with sIsRemoteUpdate). IsSyncableVar added to multiplayer.c (returns FALSE — var audit deferred). Removed spurious #include "event_data.h" from multiplayer.c, fixing test build break (NUM_BADGES). 3 new routing tests in test_smoke.c; 62 total assertions pass.
 
 ### Step 3.3: Implement Full Sync on Connect
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] On connection established, host builds FULL_SYNC packet with all set syncable flags
-  - [ ] Guest receives FULL_SYNC and applies all flags/vars
-  - [ ] Handle the case where guest connects mid-game with existing progress (union-wins: apply any flag set by either player)
-- **Notes:**
+  - [x] On connection established, host builds FULL_SYNC packet with all set syncable flags
+  - [x] Guest receives FULL_SYNC and applies all flags/vars
+  - [x] Handle the case where guest connects mid-game with existing progress (union-wins: apply any flag set by either player)
+- **Notes:** Multiplayer_SendFullSync() packs 4 flag byte ranges (214 bytes) into a FULL_SYNC packet and enqueues it to gMpSendRing. Multiplayer_ApplyFullSync() ORs received bytes into gSaveBlock1Ptr->flags (union-wins). FULL_SYNC recv case in ProcessOneRecvPacket now calls ApplyFullSync. FULL_SYNC_PAYLOAD_SIZE=214 defined as constants. Added flags[256] to test mock SaveBlock1. 4 new tests; 73 total assertions pass. Actual trigger (host calls SendFullSync on connect) wired in Phase 6 Tauri app.
 
 ### Step 3.4: Implement Script Mutex
 - **Status:** not_started

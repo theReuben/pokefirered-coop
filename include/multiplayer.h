@@ -154,6 +154,12 @@ void Multiplayer_SendVarSet(u16 varId, u16 value);
 void Multiplayer_SendBossReady(u8 bossId);
 void Multiplayer_SendBossCancel(void);
 
+// Full sync (Phase 3) — called by host on connect to bring guest up to date.
+// Builds a FULL_SYNC packet from the current flag state and enqueues it.
+// Receiver calls Multiplayer_ApplyFullSync to OR the payload into its flags.
+void Multiplayer_SendFullSync(void);
+void Multiplayer_ApplyFullSync(const u8 *payload, u16 payloadLen);
+
 // Flag/var sync helpers
 bool32 IsSyncableFlag(u16 flagId);
 bool32 IsSyncableVar(u16 varId);   // returns FALSE until var audit in Phase 3

@@ -76,7 +76,9 @@ struct WarpData { s8 mapGroup; s8 mapNum; s8 warpId; s16 x; s16 y; };
 struct SaveBlock1 {
     u32 _pad0;
     struct WarpData location;
-    // Additional fields omitted — multiplayer.c only reads location.
+    // flags[id/8] for id < SPECIAL_FLAGS_START (0x800 = 2048 bits = 256 bytes).
+    u8  flags[256];
+    // Additional fields omitted.
 };
 
 extern struct SaveBlock1 *gSaveBlock1Ptr;

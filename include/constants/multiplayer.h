@@ -67,4 +67,38 @@
 #define SYNC_FLAG_TRAINERS_START    0x500
 #define SYNC_FLAG_TRAINERS_END      0x7FF
 
+// ---------------------------------------------------------------------------
+// FULL_SYNC payload layout — four contiguous byte slices of flags[].
+// Applied on the receiver side with OR (union-wins: any flag set by either
+// player remains set).
+//
+//   Payload offset    flags[] byte range          Purpose
+//   0..91             [4..95]   (story)            NPC hide/show, items, story quest
+//   92..115           [125..148](hidden items)      ground item pickups
+//   116..117          [150..151](bosses)            gym leader / E4 / champion clears
+//   118..213          [160..255](trainers)          trainer defeat bits
+//   Total: 214 bytes
+// ---------------------------------------------------------------------------
+#define FULL_SYNC_STORY_BYTE_START      (SYNC_FLAG_STORY_START    / 8)  /*  4 */
+#define FULL_SYNC_STORY_BYTE_END        (SYNC_FLAG_STORY_END      / 8)  /* 95 */
+#define FULL_SYNC_ITEMS_BYTE_START      (SYNC_FLAG_ITEMS_START    / 8)  /* 125 */
+#define FULL_SYNC_ITEMS_BYTE_END        (SYNC_FLAG_ITEMS_END      / 8)  /* 148 */
+#define FULL_SYNC_BOSSES_BYTE_START     (SYNC_FLAG_BOSSES_START   / 8)  /* 150 */
+#define FULL_SYNC_BOSSES_BYTE_END       (SYNC_FLAG_BOSSES_END     / 8)  /* 151 */
+#define FULL_SYNC_TRAINERS_BYTE_START   (SYNC_FLAG_TRAINERS_START / 8)  /* 160 */
+#define FULL_SYNC_TRAINERS_BYTE_END     (SYNC_FLAG_TRAINERS_END   / 8)  /* 255 */
+
+#define FULL_SYNC_STORY_LEN    \
+    (FULL_SYNC_STORY_BYTE_END    - FULL_SYNC_STORY_BYTE_START    + 1)  /* 92  */
+#define FULL_SYNC_ITEMS_LEN    \
+    (FULL_SYNC_ITEMS_BYTE_END    - FULL_SYNC_ITEMS_BYTE_START    + 1)  /* 24  */
+#define FULL_SYNC_BOSSES_LEN   \
+    (FULL_SYNC_BOSSES_BYTE_END   - FULL_SYNC_BOSSES_BYTE_START   + 1)  /* 2   */
+#define FULL_SYNC_TRAINERS_LEN \
+    (FULL_SYNC_TRAINERS_BYTE_END - FULL_SYNC_TRAINERS_BYTE_START + 1)  /* 96  */
+
+// Total data bytes in a FULL_SYNC payload (fits within the 252-byte ring max).
+#define FULL_SYNC_PAYLOAD_SIZE \
+    (FULL_SYNC_STORY_LEN + FULL_SYNC_ITEMS_LEN + FULL_SYNC_BOSSES_LEN + FULL_SYNC_TRAINERS_LEN) /* 214 */
+
 #endif // GUARD_CONSTANTS_MULTIPLAYER_H

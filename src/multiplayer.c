@@ -255,8 +255,7 @@ static bool8 ProcessOneRecvPacket(void)
         fullPkt[2] = lenLo;
         for (i = 0; i < dataLen; i++)
             Mp_Pop(&gMpRecvRing, &fullPkt[3 + i]);
-        // Phase 3: pass fullPkt data to flag/var applicator
-        (void)fullPkt;
+        Multiplayer_ApplyFullSync(&fullPkt[3], dataLen);
         break;
     }
 
@@ -488,6 +487,53 @@ void Multiplayer_SendBossCancel(void)
     u8 pkt[MP_PKT_SIZE_BOSS_CANCEL];
     u8 len = Mp_EncodeBossCancel(pkt);
     MpRing_Write(&gMpSendRing, pkt, len);
+}
+
+// ---------------------------------------------------------------------------
+// Full sync — build and send, or apply on receipt
+// ---------------------------------------------------------------------------
+
+void Multiplayer_SendFullSync(void)
+{
+    // 3-byte header + 214-byte payload = 217 bytes, fits in the 255-byte ring.
+    u8 pkt[MP_PKT_SIZE_FULL_SYNC_HDR + FULL_SYNC_PAYLOAD_SIZE];
+    u8 payload[FULL_SYNC_PAYLOAD_SIZE];
+    u16 offset = 0;
+    u16 i;
+
+    if (!gSaveBlock1Ptr)
+        return;
+
+    for (i = FULL_SYNC_STORY_BYTE_START; i <= FULL_SYNC_STORY_BYTE_END; i++)
+        payload[offset++] = gSaveBlock1Ptr->flags[i];
+    for (i = FULL_SYNC_ITEMS_BYTE_START; i <= FULL_SYNC_ITEMS_BYTE_END; i++)
+        payload[offset++] = gSaveBlock1Ptr->flags[i];
+    for (i = FULL_SYNC_BOSSES_BYTE_START; i <= FULL_SYNC_BOSSES_BYTE_END; i++)
+        payload[offset++] = gSaveBlock1Ptr->flags[i];
+    for (i = FULL_SYNC_TRAINERS_BYTE_START; i <= FULL_SYNC_TRAINERS_BYTE_END; i++)
+        payload[offset++] = gSaveBlock1Ptr->flags[i];
+
+    Mp_EncodeFullSync(pkt, payload, offset);
+    MpRing_Write(&gMpSendRing, pkt, (u8)(MP_PKT_SIZE_FULL_SYNC_HDR + offset));
+}
+
+void Multiplayer_ApplyFullSync(const u8 *payload, u16 payloadLen)
+{
+    u16 offset = 0;
+    u16 i;
+
+    if (!gSaveBlock1Ptr || payloadLen != FULL_SYNC_PAYLOAD_SIZE)
+        return;
+
+    // OR into our flags so any flag set by either player remains set (union-wins).
+    for (i = FULL_SYNC_STORY_BYTE_START; i <= FULL_SYNC_STORY_BYTE_END; i++)
+        gSaveBlock1Ptr->flags[i] |= payload[offset++];
+    for (i = FULL_SYNC_ITEMS_BYTE_START; i <= FULL_SYNC_ITEMS_BYTE_END; i++)
+        gSaveBlock1Ptr->flags[i] |= payload[offset++];
+    for (i = FULL_SYNC_BOSSES_BYTE_START; i <= FULL_SYNC_BOSSES_BYTE_END; i++)
+        gSaveBlock1Ptr->flags[i] |= payload[offset++];
+    for (i = FULL_SYNC_TRAINERS_BYTE_START; i <= FULL_SYNC_TRAINERS_BYTE_END; i++)
+        gSaveBlock1Ptr->flags[i] |= payload[offset++];
 }
 
 bool32 IsSyncableFlag(u16 flagId)
