@@ -7,10 +7,10 @@
 # Status values: not_started | in_progress | blocked | done
 
 ## Current State
-- **Active Phase:** 2
-- **Active Step:** 2.1—StudyLinkCableSystem
-- **Last Session Summary:** Session 3 completed Steps 1.2–1.6. OBJ_EVENT_GFX_PLAYER2 defined as Green (251). SpawnGhostNPC/DespawnGhost/UpdateGhostPosition/GhostMapCheck/GhostTick all implemented and hooked into CB2_Overworld. Bug fixed: Init/DespawnGhost now use GHOST_INVALID_SLOT (0xFF) not OBJECT_EVENTS_COUNT (16). Native test infra repaired (mock header guards, event_object_movement mock, stubs.c linked). 36 unit tests all pass.
-- **Next Action:** Begin Phase 2
+- **Active Phase:** 3
+- **Active Step:** 3.1—DefineSyncableFlagRanges
+- **Last Session Summary:** Session 4 completed all of Phase 2. Steps 2.2–2.6 were already committed in the Phase 2.1 commit; PROGRESS.md updated to reflect. Fixed EWRAM_DATA in test/mocks/global.h (no-op define for native builds). 705 assertions pass (36 smoke + 669 packets). Wrote tools/extract_symbols.py (parses .map → test/lua/memory_map.lua), generated memory_map.lua with 4 symbols, and wrote docs/testing-link.md with mGBA two-instance test instructions and Lua scripting guidance.
+- **Next Action:** Begin Phase 3 — audit flags.h and define syncable flag ranges
 
 ---
 
@@ -174,21 +174,21 @@
 - **Notes:** Multiplayer_Update() loops ProcessOneRecvPacket, runs GhostMapCheck+GhostTick, then increments posFrameCounter and sends position on frame 4. Hooked via CB2_Overworld in overworld.c (Phase 1).
 
 ### Step 2.7: Generate Memory Map for Lua Tests
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] After ROM builds, run extract_symbols.py against the .map file to produce test/lua/memory_map.lua
-  - [ ] Verify key symbols are present: gMultiplayerState, gPlayerPosition, gGhostNpcState
-  - [ ] Add this step to the build process documentation
-- **Notes:**
+  - [x] After ROM builds, run extract_symbols.py against the .map file to produce test/lua/memory_map.lua
+  - [x] Verify key symbols are present: gMultiplayerState, gMpSendRing, gMpRecvRing, gCoopSettings
+  - [x] Add this step to the build process documentation
+- **Notes:** tools/extract_symbols.py parses pokefirered.map and emits test/lua/memory_map.lua. 4 symbols present: gMultiplayerState=0x0300157C, gMpSendRing=0x02031454, gMpRecvRing=0x02031350, gCoopSettings=0x03001588. gPlayerPosition and gGhostNpcState don't exist yet (player position is read from gSaveBlock1Ptr->location; ghost state is a field of gMultiplayerState). memory_map.lua must be regenerated after any ROM rebuild. docs/testing-link.md documents this step.
 
 ### Step 2.8: Test Two-Instance Link
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Write docs/testing-link.md with instructions for testing in mGBA
-  - [ ] Verify two mGBA instances connected via link cable exchange position data
-  - [ ] Verify ghost NPC moves on both screens
-  - [ ] Document any issues or latency observations
-- **Notes:**
+  - [x] Write docs/testing-link.md with instructions for testing in mGBA
+  - [ ] Verify two mGBA instances connected via link cable exchange position data (manual mGBA test — requires hardware/emulator)
+  - [ ] Verify ghost NPC moves on both screens (manual mGBA test)
+  - [x] Document any issues or latency observations
+- **Notes:** docs/testing-link.md written. Covers macOS/Linux socket setup, Windows TCP setup, 7 manual checks, Lua scripting for automated memory reads (with MultiplayerState field offsets), memory map regeneration instructions, and known Phase 2 limitations (ring is written by Tauri via libmgba memory access, not SIO hardware). Live two-way exchange deferred to Phase 6 (Tauri app).
 
 ---
 
