@@ -434,7 +434,6 @@ static void TestFullSyncRoundTrip(void)
 
     // Switch gSaveBlock1Ptr to a clean block to simulate the receiver.
     memset(&applyBlock, 0, sizeof(applyBlock));
-    (void)applySave;
     gSaveBlock1Ptr = &applyBlock;
 
     Multiplayer_Update(); // dispatches FULL_SYNC via ProcessOneRecvPacket
@@ -535,6 +534,25 @@ static void TestPartnerScriptUnlockRecv(void)
     ASSERT_EQ(Multiplayer_IsPartnerInScript(), FALSE);
 }
 
+static void TestGhostFreezesDuringPartnerScript(void)
+{
+    // Ghost should not step towards its target while partner is in a script.
+    ResetAll();
+    gTestNextSpawnSlot = 4;
+    Multiplayer_SpawnGhostNPC(0, 1, 5, 5, DIR_SOUTH);
+    gMultiplayerState.targetX = 8; // off-target so GhostTick would normally move
+    gMultiplayerState.targetY = 5;
+    SetPlayerMap(0, 1);
+    gMultiplayerState.connState          = MP_STATE_CONNECTED;
+    gMultiplayerState.partnerIsInScript  = TRUE;
+    Multiplayer_UpdateGhostPosition(0, 1, 8, 5, DIR_SOUTH);
+
+    Multiplayer_Update();
+
+    // heldMovementActive must stay 0 — ghost should NOT have been asked to move.
+    ASSERT_EQ(gObjectEvents[4].heldMovementActive, 0);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -567,5 +585,6 @@ int main(void)
     TestScriptLockDisconnectedNoSend();
     TestPartnerScriptLockRecv();
     TestPartnerScriptUnlockRecv();
+    TestGhostFreezesDuringPartnerScript();
     TEST_SUMMARY();
 }

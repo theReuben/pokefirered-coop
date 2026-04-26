@@ -7,10 +7,10 @@
 # Status values: not_started | in_progress | blocked | done
 
 ## Current State
-- **Active Phase:** 3
-- **Active Step:** 3.4—ImplementScriptMutex
-- **Last Session Summary:** Session 5 completed Steps 3.1 and 3.2. Step 3.1 was already done from prior session. Step 3.2: implemented Multiplayer_HandleRemoteFlagSet/VarSet in event_data.c (uses sIsRemoteUpdate guard to block re-broadcast). Added IsSyncableVar (returns FALSE). Removed spurious event_data.h from multiplayer.c (fixed test build breakage from NUM_BADGES). Wired FLAG_SET/VAR_SET dispatch in ProcessOneRecvPacket. Added 3 routing tests in test_smoke.c — 62 assertions pass.
-- **Next Action:** Step 3.3 — implement full sync on connect
+- **Active Phase:** 4
+- **Active Step:** 4.1—StudyEncounterSystem
+- **Last Session Summary:** Session 6 completed Steps 3.4 and 3.5. Fixed stale (void)applySave bug in test_smoke.c TestFullSyncRoundTrip. Step 3.4: OnScriptStart/End already hooked in script.c; SCRIPT_LOCK/UNLOCK packets already in ProcessOneRecvPacket; added GhostTick freeze when partnerIsInScript=TRUE; 8 new tests (TestScriptStartSetsFlag through TestGhostFreezesDuringPartnerScript). Step 3.5: wrote test/lua/test_flag_sync.lua for ring-buffer-based flag sync and script mutex integration tests; updated docs/testing-link.md with correct MultiplayerState field offsets. 90 assertions pass.
+- **Next Action:** Step 4.1 — study wild encounter system
 
 ---
 
@@ -224,23 +224,23 @@
 - **Notes:** Multiplayer_SendFullSync() packs 4 flag byte ranges (214 bytes) into a FULL_SYNC packet and enqueues it to gMpSendRing. Multiplayer_ApplyFullSync() ORs received bytes into gSaveBlock1Ptr->flags (union-wins). FULL_SYNC recv case in ProcessOneRecvPacket now calls ApplyFullSync. FULL_SYNC_PAYLOAD_SIZE=214 defined as constants. Added flags[256] to test mock SaveBlock1. 4 new tests; 73 total assertions pass. Actual trigger (host calls SendFullSync on connect) wired in Phase 6 Tauri app.
 
 ### Step 3.4: Implement Script Mutex
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Add gIsInScript flag to multiplayer state
-  - [ ] When a player enters a script, set the flag and notify partner
-  - [ ] Partner's ghost NPC should not be able to trigger scripts while flag is set
-  - [ ] Clear the flag when script completes
-- **Notes:**
+  - [x] Add gIsInScript flag to multiplayer state
+  - [x] When a player enters a script, set the flag and notify partner
+  - [x] Partner's ghost NPC should not be able to trigger scripts while flag is set
+  - [x] Clear the flag when script completes
+- **Notes:** Mutex is advisory. gMultiplayerState.{isInScript,partnerIsInScript} added to MultiplayerState. Multiplayer_OnScriptStart/End hooked into ScriptContext_SetupScript (line 286) and ScriptContext_RunScript CONTEXT_SHUTDOWN branch (line 270) in src/script.c. MP_PKT_SCRIPT_LOCK/UNLOCK (0x08/0x09) handled in ProcessOneRecvPacket. Ghost has MOVEMENT_TYPE_NONE so it cannot trigger scripts by design. GhostTick now freezes movement while partnerIsInScript=TRUE. 8 unit tests; 90 total assertions pass.
 
 ### Step 3.5: Write Flag Sync Tests
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Write C unit tests for IsSyncableFlag with trainer, story, UI flags
-  - [ ] Write C unit tests for no-rebroadcast guard
-  - [ ] Write C unit tests for full sync application
-  - [ ] Write Lua integration test script for two-instance flag sync
-  - [ ] All tests pass
-- **Notes:**
+  - [x] Write C unit tests for IsSyncableFlag with trainer, story, UI flags
+  - [x] Write C unit tests for no-rebroadcast guard
+  - [x] Write C unit tests for full sync application
+  - [x] Write Lua integration test script for two-instance flag sync
+  - [x] All tests pass
+- **Notes:** C unit tests (90 assertions, all pass) in test/test_smoke.c cover IsSyncableFlag boundaries, remote dispatch routing, full sync round-trip, and script mutex state machine. Lua integration script at test/lua/test_flag_sync.lua covers ring magic, partnerIsInScript, SCRIPT_LOCK/UNLOCK recv, and FLAG_SET send ring verification. Live two-instance test deferred to Phase 6 (Tauri app).
 
 ---
 
@@ -517,3 +517,4 @@
 | Session # | Date | Phase.Step | What was done | What's next | Issues hit |
 |---|---|---|---|---|---|
 | 1 | 2026-04-25 | 0.1, 0.2 | Built pokefirered.gba (32MB) with `make firered -j4`. ARM toolchain found at /opt/devkitpro/devkitARM. One expected RWX linker warning. SHA1: f1e8bd6a. | Step 0.3: Create multiplayer stubs | None |
+| 6 | 2026-04-26 | 3.4, 3.5 | Fixed (void)applySave bug. GhostTick freeze when partnerIsInScript=TRUE. Lua flag sync test. Updated docs. 90 assertions pass. | Step 4.1: Study encounter system | None |

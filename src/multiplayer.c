@@ -306,6 +306,10 @@ static void GhostTick(void)
     if (objId >= OBJECT_EVENTS_COUNT || !gObjectEvents[objId].active)
         return;
 
+    // Freeze ghost movement while partner is in a script interaction.
+    if (gMultiplayerState.partnerIsInScript)
+        return;
+
     ghost = &gObjectEvents[objId];
 
     ObjectEventClearHeldMovementIfFinished(ghost);

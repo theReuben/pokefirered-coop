@@ -106,7 +106,19 @@ The offsets for `MultiplayerState` fields are:
 | ghostObjectEventId | 7 |
 | bossReadyBossId | 8 |
 | isInScript | 9 |
-| posFrameCounter | 10 |
+| partnerIsInScript | 10 |
+| posFrameCounter | 11 |
+
+### Flag Sync and Script Mutex Tests
+
+A dedicated Lua test script is available at `test/lua/test_flag_sync.lua`.
+Load it in the scripting console to verify:
+
+- Ring buffer magic bytes are correct
+- `partnerIsInScript` starts `FALSE`
+- Writing `SCRIPT_LOCK` to `gMpRecvRing` sets `partnerIsInScript` after one frame
+- Writing `SCRIPT_UNLOCK` clears it
+- Defeating a trainer writes a `FLAG_SET` packet to `gMpSendRing`
 
 ---
 
