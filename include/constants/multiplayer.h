@@ -9,19 +9,23 @@
 #define MP_PKT_BOSS_CANCEL  0x05   // 1 byte total
 #define MP_PKT_SEED_SYNC    0x06   // 5 bytes total
 #define MP_PKT_FULL_SYNC    0x07   // 3+len bytes total (variable)
+#define MP_PKT_SCRIPT_LOCK  0x08   // 1 byte — player entered a script interaction
+#define MP_PKT_SCRIPT_UNLOCK 0x09  // 1 byte — player left the script interaction
 
 // Ring buffer constants
 #define MP_RING_SIZE        256    // power-of-2; u8 head/tail wrap naturally
 #define MP_RING_MAGIC       0xC0   // sanity sentinel for Tauri to locate buffer
 
 // Fixed packet sizes (type byte included)
-#define MP_PKT_SIZE_POSITION    6
-#define MP_PKT_SIZE_FLAG_SET    3
-#define MP_PKT_SIZE_VAR_SET     5
-#define MP_PKT_SIZE_BOSS_READY  2
-#define MP_PKT_SIZE_BOSS_CANCEL 1
-#define MP_PKT_SIZE_SEED_SYNC   5
+#define MP_PKT_SIZE_POSITION      6
+#define MP_PKT_SIZE_FLAG_SET      3
+#define MP_PKT_SIZE_VAR_SET       5
+#define MP_PKT_SIZE_BOSS_READY    2
+#define MP_PKT_SIZE_BOSS_CANCEL   1
+#define MP_PKT_SIZE_SEED_SYNC     5
 #define MP_PKT_SIZE_FULL_SYNC_HDR 3  // type + len_hi + len_lo; data follows
+#define MP_PKT_SIZE_SCRIPT_LOCK   1
+#define MP_PKT_SIZE_SCRIPT_UNLOCK 1
 
 // Player roles assigned by relay server
 #define MP_ROLE_NONE        0

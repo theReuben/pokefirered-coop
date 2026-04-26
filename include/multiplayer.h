@@ -129,7 +129,8 @@ struct MultiplayerState {
     u8  targetFacing;    // facing direction to set when ghost reaches target
     u8  ghostObjectEventId; // GHOST_INVALID_SLOT (0xFF) = not spawned
     u8  bossReadyBossId;    // 0 = not in readiness check
-    u8  isInScript;
+    u8  isInScript;         // TRUE while local player is executing a script
+    u8  partnerIsInScript;  // TRUE while partner has sent SCRIPT_LOCK
     u8  posFrameCounter;    // counts frames; send position every 4 frames
 };
 
@@ -169,5 +170,11 @@ bool32 IsSyncableVar(u16 varId);   // returns FALSE until var audit in Phase 3
 // FlagSet/VarSet so we don't echo the packet back.
 void Multiplayer_HandleRemoteFlagSet(u16 flagId);
 void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value);
+
+// Script mutex — called from ScriptContext_SetupScript / ScriptContext_RunScript.
+// Advisory only: sends SCRIPT_LOCK / SCRIPT_UNLOCK to inform the partner.
+void Multiplayer_OnScriptStart(void);
+void Multiplayer_OnScriptEnd(void);
+bool32 Multiplayer_IsPartnerInScript(void);
 
 #endif // GUARD_MULTIPLAYER_H

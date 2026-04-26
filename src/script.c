@@ -1,6 +1,7 @@
 #include "global.h"
 #include "script.h"
 #include "event_data.h"
+#include "multiplayer.h"
 #include "field_screen_effect.h"
 #include "mystery_gift.h"
 #include "random.h"
@@ -266,6 +267,7 @@ bool8 ScriptContext_RunScript(void)
     {
         sGlobalScriptContextStatus = CONTEXT_SHUTDOWN;
         UnlockPlayerFieldControls();
+        Multiplayer_OnScriptEnd();
         return FALSE;
     }
 
@@ -281,6 +283,7 @@ void ScriptContext_SetupScript(const u8 *ptr)
     if (OW_FOLLOWERS_SCRIPT_MOVEMENT)
         FlagSet(FLAG_SAFE_FOLLOWER_MOVEMENT);
     sGlobalScriptContextStatus = CONTEXT_RUNNING;
+    Multiplayer_OnScriptStart();
 }
 
 // Moves a script from a local context to the global context and enables it.

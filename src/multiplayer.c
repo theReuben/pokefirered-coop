@@ -224,6 +224,14 @@ static bool8 ProcessOneRecvPacket(void)
         // 1-byte packet — type byte already consumed
         break;
 
+    case MP_PKT_SCRIPT_LOCK:
+        gMultiplayerState.partnerIsInScript = TRUE;
+        break;
+
+    case MP_PKT_SCRIPT_UNLOCK:
+        gMultiplayerState.partnerIsInScript = FALSE;
+        break;
+
     case MP_PKT_SEED_SYNC:
         if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_SEED_SYNC - 1)
             return FALSE;
@@ -365,6 +373,7 @@ void Multiplayer_Init(void)
     gMultiplayerState.ghostObjectEventId = GHOST_INVALID_SLOT;
     gMultiplayerState.bossReadyBossId    = 0;
     gMultiplayerState.isInScript         = FALSE;
+    gMultiplayerState.partnerIsInScript  = FALSE;
     gMultiplayerState.posFrameCounter    = 0;
     gCoopSettings.randomizeEncounters    = 1;
     gCoopSettings.encounterSeed          = 0;
@@ -549,4 +558,46 @@ bool32 IsSyncableVar(u16 varId)
 {
     (void)varId;
     return FALSE;
+}
+
+// ---------------------------------------------------------------------------
+// Script mutex — advisory lock so each player knows when the other is
+// executing a script interaction (prevents both talking to the same NPC).
+// ---------------------------------------------------------------------------
+
+void Multiplayer_OnScriptStart(void)
+{
+    u8 pkt;
+
+    if (gMultiplayerState.isInScript)
+        return; // already locked; don't double-send
+
+    gMultiplayerState.isInScript = TRUE;
+
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED)
+        return;
+
+    pkt = MP_PKT_SCRIPT_LOCK;
+    MpRing_Write(&gMpSendRing, &pkt, MP_PKT_SIZE_SCRIPT_LOCK);
+}
+
+void Multiplayer_OnScriptEnd(void)
+{
+    u8 pkt;
+
+    if (!gMultiplayerState.isInScript)
+        return; // was not locked; don't double-send
+
+    gMultiplayerState.isInScript = FALSE;
+
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED)
+        return;
+
+    pkt = MP_PKT_SCRIPT_UNLOCK;
+    MpRing_Write(&gMpSendRing, &pkt, MP_PKT_SIZE_SCRIPT_UNLOCK);
+}
+
+bool32 Multiplayer_IsPartnerInScript(void)
+{
+    return gMultiplayerState.partnerIsInScript;
 }

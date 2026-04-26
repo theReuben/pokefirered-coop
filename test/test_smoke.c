@@ -408,8 +408,6 @@ static void TestFullSyncApplyRejectsWrongLength(void)
 static void TestFullSyncRoundTrip(void)
 {
     // Send → recv → apply: story flag 0x030 should appear on the other side.
-    u8 recvBuf[MP_PKT_SIZE_FULL_SYNC_HDR + FULL_SYNC_PAYLOAD_SIZE];
-    u8 applySave[256];
     struct SaveBlock1 applyBlock;
     u8 b;
     u16 i, pktLen;
@@ -445,6 +443,98 @@ static void TestFullSyncRoundTrip(void)
     ASSERT_EQ(Mp_Available(&gMpSendRing), 0); // no re-broadcast
 }
 
+// ---- Step 3.4: Script mutex state machine ---------------------------------
+
+static void TestScriptStartSetsFlag(void)
+{
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    ResetDispatch();
+
+    ASSERT_EQ(gMultiplayerState.isInScript, FALSE);
+    Multiplayer_OnScriptStart();
+    ASSERT_EQ(gMultiplayerState.isInScript, TRUE);
+    // SCRIPT_LOCK packet should be in the send ring.
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_SCRIPT_LOCK);
+    { u8 b; Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, MP_PKT_SCRIPT_LOCK); }
+}
+
+static void TestScriptEndClearsFlag(void)
+{
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gMultiplayerState.isInScript = TRUE;
+    ResetDispatch();
+
+    Multiplayer_OnScriptEnd();
+    ASSERT_EQ(gMultiplayerState.isInScript, FALSE);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_SCRIPT_UNLOCK);
+    { u8 b; Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, MP_PKT_SCRIPT_UNLOCK); }
+}
+
+static void TestScriptLockNoDuplicateSend(void)
+{
+    // Calling OnScriptStart twice should only send one packet.
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    ResetDispatch();
+
+    Multiplayer_OnScriptStart();
+    Multiplayer_OnScriptStart(); // second call — no-op
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_SCRIPT_LOCK);
+}
+
+static void TestScriptLockUnlockNoDuplicateUnlock(void)
+{
+    // OnScriptEnd when not in script should not send.
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gMultiplayerState.isInScript = FALSE;
+    ResetDispatch();
+
+    Multiplayer_OnScriptEnd();
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
+}
+
+static void TestScriptLockDisconnectedNoSend(void)
+{
+    // When disconnected, SCRIPT_LOCK should still set the flag but not send.
+    Multiplayer_Init();
+    // connState stays DISCONNECTED
+    ResetDispatch();
+
+    Multiplayer_OnScriptStart();
+    ASSERT_EQ(gMultiplayerState.isInScript, TRUE);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
+}
+
+static void TestPartnerScriptLockRecv(void)
+{
+    // Receiving SCRIPT_LOCK sets partnerIsInScript.
+    u8 pkt = MP_PKT_SCRIPT_LOCK;
+    Multiplayer_Init();
+    ResetDispatch();
+    ASSERT_EQ(gMultiplayerState.partnerIsInScript, FALSE);
+
+    Mp_Push(&gMpRecvRing, pkt);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerIsInScript, TRUE);
+    ASSERT_EQ(Multiplayer_IsPartnerInScript(), TRUE);
+}
+
+static void TestPartnerScriptUnlockRecv(void)
+{
+    u8 pkt = MP_PKT_SCRIPT_UNLOCK;
+    Multiplayer_Init();
+    gMultiplayerState.partnerIsInScript = TRUE;
+    ResetDispatch();
+
+    Mp_Push(&gMpRecvRing, pkt);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerIsInScript, FALSE);
+    ASSERT_EQ(Multiplayer_IsPartnerInScript(), FALSE);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -470,5 +560,12 @@ int main(void)
     TestFullSyncApplyORsFlags();
     TestFullSyncApplyRejectsWrongLength();
     TestFullSyncRoundTrip();
+    TestScriptStartSetsFlag();
+    TestScriptEndClearsFlag();
+    TestScriptLockNoDuplicateSend();
+    TestScriptLockUnlockNoDuplicateUnlock();
+    TestScriptLockDisconnectedNoSend();
+    TestPartnerScriptLockRecv();
+    TestPartnerScriptUnlockRecv();
     TEST_SUMMARY();
 }
