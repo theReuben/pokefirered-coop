@@ -125,53 +125,53 @@
 - **Notes:** We do NOT use gLink/gSendCmd. Instead: two EWRAM ring buffers (gMpSendRing / gMpRecvRing), 256 bytes each. ROM writes to send ring; Tauri reads. Tauri writes to recv ring; ROM reads. u8 head/tail pointers wrap at 256 automatically. See docs/link-system.md for full design.
 
 ### Step 2.2: Design Packet Format
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Define binary packet types in include/constants/multiplayer.h
-  - [ ] Design packet layout for: POSITION, FLAG_SET, VAR_SET, BOSS_READY, BOSS_CANCEL, SEED_SYNC, FULL_SYNC
-  - [ ] Document packet format in docs/packet-protocol.md
-  - [ ] Keep packets small — each must fit in the serial buffer
-- **Notes:**
+  - [x] Define binary packet types in include/constants/multiplayer.h
+  - [x] Design packet layout for: POSITION, FLAG_SET, VAR_SET, BOSS_READY, BOSS_CANCEL, SEED_SYNC, FULL_SYNC
+  - [x] Document packet format in docs/packet-protocol.md
+  - [x] Keep packets small — each must fit in the serial buffer
+- **Notes:** All 7 packet types defined. Fixed packets: 1–6 bytes. FULL_SYNC is variable-length (3-byte header + N-byte payload, max ~252 B). All fit in the 256-byte ring. Full layout documented in docs/packet-protocol.md.
 
 ### Step 2.3: Implement Packet Encoding/Decoding
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Implement Multiplayer_EncodePositionPacket()
-  - [ ] Implement Multiplayer_DecodePositionPacket()
-  - [ ] Implement encode/decode for FLAG_SET, VAR_SET, SEED_SYNC packets
-  - [ ] Implement encode/decode for FULL_SYNC packet (variable length)
-  - [ ] Handle malformed/truncated packet errors gracefully
-- **Notes:**
+  - [x] Implement Multiplayer_EncodePositionPacket()
+  - [x] Implement Multiplayer_DecodePositionPacket()
+  - [x] Implement encode/decode for FLAG_SET, VAR_SET, SEED_SYNC packets
+  - [x] Implement encode/decode for FULL_SYNC packet (variable length)
+  - [x] Handle malformed/truncated packet errors gracefully
+- **Notes:** All encode helpers return byte count written. All decode helpers return FALSE on truncated input. MpRing_Write drops entire packet if ring is full (no partial writes). Unknown type drains ring to re-sync.
 
 ### Step 2.4: Write Packet Tests
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Write round-trip tests for every packet type
-  - [ ] Write tests for malformed packet rejection
-  - [ ] Write tests for truncated packet rejection
-  - [ ] Write tests for boundary values (max map ID, max coords)
-  - [ ] All tests pass
-- **Notes:**
+  - [x] Write round-trip tests for every packet type
+  - [x] Write tests for malformed packet rejection
+  - [x] Write tests for truncated packet rejection
+  - [x] Write tests for boundary values (max map ID, max coords)
+  - [x] All tests pass
+- **Notes:** test/test_packets.c — 669 assertions, all pass. Covers ring buffer push/pop/wrap, encode/decode round-trips, truncated-input rejection, boundary values (0x00/0xFF), integration tests (send ring write, recv ring dispatch, unknown type drain). Fixed: EWRAM_DATA not defined in test/mocks/global.h — added no-op define.
 
 ### Step 2.5: Implement Serial Send/Receive
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Implement Multiplayer_SendPacket(type, data, len) using the link cable interface
-  - [ ] Implement Multiplayer_ReceivePacket(buffer) as non-blocking read
-  - [ ] Create a ring buffer for outgoing packets
-  - [ ] Create a ring buffer for incoming packets
-  - [ ] Hook into the SIO interrupt handler or polling loop
-- **Notes:**
+  - [x] Implement Multiplayer_SendPacket(type, data, len) using the link cable interface
+  - [x] Implement Multiplayer_ReceivePacket(buffer) as non-blocking read
+  - [x] Create a ring buffer for outgoing packets
+  - [x] Create a ring buffer for incoming packets
+  - [x] Hook into the SIO interrupt handler or polling loop
+- **Notes:** Two EWRAM ring buffers: gMpSendRing (ROM→Tauri) and gMpRecvRing (Tauri→ROM). Each 256 bytes with u8 head/tail and magic=0xC0. MpRing_Write encodes then pushes; ProcessOneRecvPacket pops and dispatches. No SIO interrupt needed — Tauri reads EWRAM directly via libmgba memory access.
 
 ### Step 2.6: Implement Multiplayer_Update Loop
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Create Multiplayer_Update() called from the overworld main loop
-  - [ ] Send own position every 4 frames if position changed
-  - [ ] Process all incoming packets each frame
-  - [ ] Route incoming POSITION packets to ghost NPC update
-  - [ ] Hook Multiplayer_Update() into src/overworld.c main loop
-- **Notes:**
+  - [x] Create Multiplayer_Update() called from the overworld main loop
+  - [x] Send own position every 4 frames if position changed
+  - [x] Process all incoming packets each frame
+  - [x] Route incoming POSITION packets to ghost NPC update
+  - [x] Hook Multiplayer_Update() into src/overworld.c main loop
+- **Notes:** Multiplayer_Update() loops ProcessOneRecvPacket, runs GhostMapCheck+GhostTick, then increments posFrameCounter and sends position on frame 4. Hooked via CB2_Overworld in overworld.c (Phase 1).
 
 ### Step 2.7: Generate Memory Map for Lua Tests
 - **Status:** not_started

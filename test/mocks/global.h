@@ -29,6 +29,12 @@ typedef u32 bool32;
 #define TRUE  1
 #define FALSE 0
 
+// GBA memory-section attributes — no-ops for native host builds.
+#define EWRAM_DATA
+#define IWRAM_DATA
+#define EWRAM_CODE
+#define IWRAM_CODE
+
 // Pull in OBJECT_EVENTS_COUNT, IS_FRLG, Direction enum, etc.
 // This is a pure-defines/enums file with no GBA hardware dependencies.
 #include "constants/global.h"
