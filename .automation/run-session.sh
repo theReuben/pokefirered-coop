@@ -29,7 +29,7 @@ get_current_phase() { grep "^\- \*\*Active Phase:\*\*" "$PROJECT_DIR/PROGRESS.md
 get_next_action() { grep "^\- \*\*Next Action:\*\*" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null | sed 's/.*Next Action:\*\* //' || echo "Begin"; }
 get_next_substep() { grep -m1 "^[[:space:]]*- \[ \]" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null | sed 's/.*\[ \] //' | xargs || echo ""; }
 get_substep_counts() { local done total; done=$(grep -c "\[x\]" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null || echo 0); total=$(grep -c "\[.\]" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null || echo 0); echo "${done}/${total}"; }
-is_project_complete() { grep -q "Active Step.*done\|Active Step.*complete" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null && echo "true" || echo "false"; }
+is_project_complete() { grep -qE "\*\*Active Step:\*\*\s*done\s*$" "$PROJECT_DIR/PROGRESS.md" 2>/dev/null && echo "true" || echo "false"; }
 seconds_remaining() { echo $(( WINDOW_DURATION_SECONDS - ($(date +%s) - WINDOW_START) )); }
 select_model() { local s="$1"; for o in $OPUS_STEPS; do [[ "$s" == "$o" ]] && { echo "opus"; return; }; done; echo "$DEFAULT_MODEL"; }
 
@@ -63,8 +63,10 @@ RULES:
 2. Do NOT re-read all docs every session. Read only what you need for the current substep.
 3. Work autonomously. Do not ask questions.
 4. After completing EACH substep: mark [x] in PROGRESS.md and commit immediately.
-5. If you finish the step, update Active Step/Next Action in PROGRESS.md.
-6. You may be cut off at any turn — commit frequently so nothing is lost.
+5. If you finish a step, update Active Step to the next step ID and continue.
+6. If you finish a phase, update Active Phase to the next phase number and Active Step to the first step ID of that phase. Do NOT write "done" in Active Step unless the entire project is complete.
+7. Only set Active Step to exactly "done" when ALL phases are fully complete.
+8. You may be cut off at any turn — commit frequently so nothing is lost.
 
 START with the next substep listed above. Go directly to the work. Do not over-plan.
 PROMPT

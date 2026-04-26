@@ -103,6 +103,13 @@ u8 Mp_EncodeBossCancel(u8 *out);
 u8 Mp_EncodeSeedSync(u8 *out, u32 seed);
 bool8 Mp_DecodeSeedSync(const u8 *in, u8 len, u32 *seed);
 
+// Full-sync packet: [type][len_hi][len_lo][data...] (variable length)
+// Encode writes the 3-byte header + dataLen data bytes; returns total bytes written.
+u16 Mp_EncodeFullSync(u8 *out, const u8 *data, u16 dataLen);
+// Decode parses the header; sets *dataOut to in[3] and *dataLen to declared length.
+// Returns FALSE if the buffer is too short for the declared payload.
+bool8 Mp_DecodeFullSync(const u8 *in, u16 len, const u8 **dataOut, u16 *dataLen);
+
 // ---------------------------------------------------------------------------
 // Structures
 // ---------------------------------------------------------------------------

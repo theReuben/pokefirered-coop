@@ -5,7 +5,7 @@ INCLUDE := -I mocks -I ../include
 SRCDIR  := ../src
 TESTDIR := .
 
-TESTS   := test_smoke
+TESTS   := test_smoke test_packets
 
 .PHONY: all clean
 
@@ -19,6 +19,9 @@ all: $(TESTS)
 STUBS := $(TESTDIR)/stubs.c
 
 test_smoke: $(TESTDIR)/test_smoke.c $(SRCDIR)/multiplayer.c $(STUBS)
+	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $^
+
+test_packets: $(TESTDIR)/test_packets.c $(SRCDIR)/multiplayer.c $(STUBS)
 	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $^
 
 clean:

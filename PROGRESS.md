@@ -7,10 +7,10 @@
 # Status values: not_started | in_progress | blocked | done
 
 ## Current State
-- **Active Phase:** 1 — Ghost NPC
-- **Active Step:** done — all Phase 1 substeps complete; Phase 2 is next
+- **Active Phase:** 2
+- **Active Step:** 2.1—StudyLinkCableSystem
 - **Last Session Summary:** Session 3 completed Steps 1.2–1.6. OBJ_EVENT_GFX_PLAYER2 defined as Green (251). SpawnGhostNPC/DespawnGhost/UpdateGhostPosition/GhostMapCheck/GhostTick all implemented and hooked into CB2_Overworld. Bug fixed: Init/DespawnGhost now use GHOST_INVALID_SLOT (0xFF) not OBJECT_EVENTS_COUNT (16). Native test infra repaired (mock header guards, event_object_movement mock, stubs.c linked). 36 unit tests all pass.
-- **Next Action:** Begin Phase 2: Step 2.1 — Study link cable system (src/link.c, include/link.h).
+- **Next Action:** Begin Phase 2
 
 ---
 

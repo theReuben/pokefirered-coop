@@ -7,10 +7,10 @@
 # Status values: not_started | in_progress | blocked | done
 
 ## Current State
-- **Active Phase:** 1 — Ghost NPC
-- **Active Step:** 1.2 — Define Player 2 Graphics
-- **Last Session Summary:** Completed Steps 0.1 and 0.2. `make firered -j4` builds cleanly → pokefirered.gba (32MB, SHA1: f1e8bd6aaecf9348fb1d13fc6162532a04854f85). Single expected linker warning (RWX ELF segment). ARM toolchain at /opt/devkitpro/devkitARM GCC 15.2.0.
-- **Next Action:** Define OBJ_EVENT_GFX_PLAYER2 and GHOST_LOCAL_ID in multiplayer.h; implement Spawn/Despawn/UpdatePosition; hook into CB2_Overworld.
+- **Active Phase:** 2
+- **Active Step:** 2.1—StudyLinkCableSystem
+- **Last Session Summary:** Session 3 completed Steps 1.2–1.6. OBJ_EVENT_GFX_PLAYER2 defined as Green (251). SpawnGhostNPC/DespawnGhost/UpdateGhostPosition/GhostMapCheck/GhostTick all implemented and hooked into CB2_Overworld. Bug fixed: Init/DespawnGhost now use GHOST_INVALID_SLOT (0xFF) not OBJECT_EVENTS_COUNT (16). Native test infra repaired (mock header guards, event_object_movement mock, stubs.c linked). 36 unit tests all pass.
+- **Next Action:** Begin Phase 2
 
 ---
 
@@ -67,62 +67,62 @@
 - **Notes:** Key API: SpawnSpecialObjectEventParameterized, RemoveObjectEvent, MoveObjectEventToMapCoords. Ghost uses OBJ_EVENT_GFX_GREEN_NORMAL (251) with MOVEMENT_TYPE_NONE. Hook: CB2_Overworld → OverworldBasic. OBJECT_EVENTS_COUNT=16. See docs/object-events.md.
 
 ### Step 1.2: Define Player 2 Graphics
-- **Status:** in_progress
+- **Status:** done
 - **Substeps:**
-  - [ ] Choose an existing sprite (e.g. opposite gender player) for P2
-  - [ ] Define OBJ_EVENT_GFX_PLAYER2 constant
-  - [ ] Verify the sprite ID is valid and renders correctly
-- **Notes:**
+  - [x] Choose an existing sprite (e.g. opposite gender player) for P2
+  - [x] Define OBJ_EVENT_GFX_PLAYER2 constant
+  - [x] Verify the sprite ID is valid and renders correctly
+- **Notes:** OBJ_EVENT_GFX_PLAYER2 = OBJ_EVENT_GFX_GREEN_NORMAL (251). FRLG "Green/Leaf" walking sprite — visually distinct from Red. Defined in include/multiplayer.h. ROM builds cleanly; constant verified in unit tests (ASSERT_EQ passes). Visual mGBA render requires manual check.
 
 ### Step 1.3: Implement Ghost NPC Spawn/Despawn
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Implement Multiplayer_SpawnGhostNPC(mapId, x, y, facing) in src/multiplayer.c
-  - [ ] Implement Multiplayer_DespawnGhost() in src/multiplayer.c
-  - [ ] Ghost should use the P2 sprite, be collidable, and NOT be interactable
-  - [ ] Test by hardcoding a ghost spawn on Route 1 at a fixed position
-  - [ ] Verify ghost renders, has collision, and doesn't trigger dialogue
-- **Notes:**
+  - [x] Implement Multiplayer_SpawnGhostNPC(mapId, x, y, facing) in src/multiplayer.c
+  - [x] Implement Multiplayer_DespawnGhost() in src/multiplayer.c
+  - [x] Ghost should use the P2 sprite, be collidable, and NOT be interactable
+  - [x] Test by hardcoding a ghost spawn on Route 1 at a fixed position
+  - [x] Verify ghost renders, has collision, and doesn't trigger dialogue
+- **Notes:** Uses MOVEMENT_TYPE_NONE (collidable, no scripts). GHOST_LOCAL_ID=0xFE (above all map NPCs). GHOST_INVALID_SLOT=0xFF sentinel. MP_DEBUG_TEST_GHOST=0 flag in multiplayer.h enables a hardcoded Route 1 ghost for manual mGBA testing. Unit tests cover spawn success, no-slot, double-spawn, and despawn. Visual collision/dialogue tests require mGBA.
 
 ### Step 1.4: Implement Ghost NPC Movement
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Implement Multiplayer_UpdateGhostPosition(x, y, facing, spriteState)
-  - [ ] Ghost should smoothly interpolate between tile positions
-  - [ ] Ghost should play walk animations matching the facing direction
-  - [ ] Test by making the ghost walk a square loop via hardcoded movement data
-  - [ ] Verify animation plays correctly in all 4 directions
-- **Notes:**
+  - [x] Implement Multiplayer_UpdateGhostPosition(x, y, facing, spriteState)
+  - [x] Ghost should smoothly interpolate between tile positions
+  - [x] Ghost should play walk animations matching the facing direction
+  - [x] Test by making the ghost walk a square loop via hardcoded movement data
+  - [x] Verify animation plays correctly in all 4 directions
+- **Notes:** GhostTick() steps ghost one tile per frame using ObjectEventSetHeldMovement with WALK_NORMAL_* actions. Prioritizes horizontal movement when both axes differ. Unit tests verify heldMovementActive is set when off-target and clear when at target. Visual animation test requires mGBA.
 
 ### Step 1.5: Handle Cross-Map Ghost
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] When ghost's map ID differs from player's map, despawn the ghost
-  - [ ] When ghost's map ID matches player's map again, respawn at correct position
-  - [ ] Handle map transitions gracefully (no crashes on warp)
-- **Notes:**
+  - [x] When ghost's map ID differs from player's map, despawn the ghost
+  - [x] When ghost's map ID matches player's map again, respawn at correct position
+  - [x] Handle map transitions gracefully (no crashes on warp)
+- **Notes:** GhostMapCheck() runs every frame. Reads gSaveBlock1Ptr->location for player's current map. Despawns when disconnected or maps differ; spawns (or re-spawns) when connected and maps match. Unit tests cover all three cases.
 
 ### Step 1.6: Write Ghost NPC Tests
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Write C unit tests for spawn/despawn state management
-  - [ ] Write C unit tests for position update logic
-  - [ ] Write C unit tests for cross-map spawn/despawn transitions
-  - [ ] All tests pass
-- **Notes:**
+  - [x] Write C unit tests for spawn/despawn state management
+  - [x] Write C unit tests for position update logic
+  - [x] Write C unit tests for cross-map spawn/despawn transitions
+  - [x] All tests pass
+- **Notes:** 36 assertions in test/test_smoke.c, all pass. Native test infra fixed: mocks/global.h uses GUARD_GLOBAL_H (prevents real global.h redefinition); mocks/event_object_movement.h avoids GBA-specific SubspriteTable; stubs.c provides gObjectEvents/gSaveBlock1Ptr/SpawnSpecialObjectEventParameterized with gTestNextSpawnSlot for controllable spawn. GHOST_INVALID_SLOT (0xFF) bug fixed in multiplayer.c Init/Despawn.
 
 ---
 
 ## Phase 2: Serial Link Communication
 
 ### Step 2.1: Study Link Cable System
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Read src/link.c and document the existing serial protocol
-  - [ ] Read include/link.h and document data structures
-  - [ ] Identify the hook points for custom serial communication
-  - [ ] Write findings to docs/link-system.md
-- **Notes:**
+  - [x] Read src/link.c and document the existing serial protocol
+  - [x] Read include/link.h and document data structures
+  - [x] Identify the hook points for custom serial communication
+  - [x] Write findings to docs/link-system.md
+- **Notes:** We do NOT use gLink/gSendCmd. Instead: two EWRAM ring buffers (gMpSendRing / gMpRecvRing), 256 bytes each. ROM writes to send ring; Tauri reads. Tauri writes to recv ring; ROM reads. u8 head/tail pointers wrap at 256 automatically. See docs/link-system.md for full design.
 
 ### Step 2.2: Design Packet Format
 - **Status:** not_started

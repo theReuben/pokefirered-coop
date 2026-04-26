@@ -123,6 +123,30 @@ bool8 Mp_DecodeSeedSync(const u8 *in, u8 len, u32 *seed)
     return TRUE;
 }
 
+u16 Mp_EncodeFullSync(u8 *out, const u8 *data, u16 dataLen)
+{
+    u16 i;
+    out[0] = MP_PKT_FULL_SYNC;
+    out[1] = (u8)(dataLen >> 8);
+    out[2] = (u8)(dataLen);
+    for (i = 0; i < dataLen; i++)
+        out[3 + i] = data[i];
+    return (u16)(MP_PKT_SIZE_FULL_SYNC_HDR + dataLen);
+}
+
+bool8 Mp_DecodeFullSync(const u8 *in, u16 len, const u8 **dataOut, u16 *dataLen)
+{
+    u16 declared;
+    if (len < MP_PKT_SIZE_FULL_SYNC_HDR)
+        return FALSE;
+    declared = ((u16)in[1] << 8) | in[2];
+    if ((u16)(MP_PKT_SIZE_FULL_SYNC_HDR + declared) > len)
+        return FALSE;
+    *dataOut  = &in[3];
+    *dataLen  = declared;
+    return TRUE;
+}
+
 // ---------------------------------------------------------------------------
 // Push a flat packet (already encoded) into a ring buffer byte-by-byte.
 // Drops the packet silently if the ring is full.
@@ -143,7 +167,9 @@ static void MpRing_Write(struct MpRingBuf *ring, const u8 *data, u8 len)
 // ---------------------------------------------------------------------------
 static bool8 ProcessOneRecvPacket(void)
 {
-    u8 pkt[MP_PKT_SIZE_SEED_SYNC]; // sized to largest fixed packet
+    // Largest fixed packet is POSITION (6 bytes).
+    // FULL_SYNC is variable; we use a separate local for it.
+    u8 pkt[MP_PKT_SIZE_POSITION];
     u8 typeByte;
     u8 mapGroup, mapNum, x, y, facing;
     u16 flagId, varId, val;
@@ -211,6 +237,33 @@ static bool8 ProcessOneRecvPacket(void)
         if (Mp_DecodeSeedSync(pkt, MP_PKT_SIZE_SEED_SYNC, &seed))
             gCoopSettings.encounterSeed = seed;
         break;
+
+    case MP_PKT_FULL_SYNC:
+    {
+        // Read 2-byte length header, then payload.
+        // Max payload that fits in a 256-byte ring: 252 bytes.
+        u8 lenHi = 0, lenLo = 0;
+        u16 dataLen;
+        u8 fullPkt[3 + 252]; // header + max payload
+        u16 i;
+
+        if (Mp_Available(&gMpRecvRing) < 2)
+            return FALSE; // truncated header
+        Mp_Pop(&gMpRecvRing, &lenHi);
+        Mp_Pop(&gMpRecvRing, &lenLo);
+        dataLen = ((u16)lenHi << 8) | lenLo;
+
+        if (dataLen > 252 || Mp_Available(&gMpRecvRing) < (u8)dataLen)
+            return FALSE; // truncated or oversized payload
+        fullPkt[0] = typeByte;
+        fullPkt[1] = lenHi;
+        fullPkt[2] = lenLo;
+        for (i = 0; i < dataLen; i++)
+            Mp_Pop(&gMpRecvRing, &fullPkt[3 + i]);
+        // Phase 3: pass fullPkt data to flag/var applicator
+        (void)fullPkt;
+        break;
+    }
 
     default:
         // Unknown type — can't recover sync; drain ring to avoid stall.

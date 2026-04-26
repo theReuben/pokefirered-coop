@@ -85,3 +85,16 @@ M .automation/logs/window_20260426_115932.log
 ──────────────────────────────────────────────────
 Error: Reached max turns (75)[12:33:28] Max turns reached — treating as normal session end
 [12:33:28] ✓ Advanced: 1.2—DefinePlayer2Graphics → done—allPhase1substepscomplete;Phase2isnext
+═══ POST-FLIGHT CHECKS ═══
+
+[Progress Update]
+Traceback (most recent call last):
+  File "/Users/reuben/IdeaProjects/claude-autopilot/healthcheck.py", line 346, in <module>
+    postflight()
+  File "/Users/reuben/IdeaProjects/claude-autopilot/healthcheck.py", line 158, in postflight
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                                  ^^^^^^^^^
+NameError: name 'timedelta' is not defined
+[12:33:40] ── SESSION 3 | Phase 1—GhostNPC Step done—allPhase1substepscomplete;Phase2isnext | sonnet | ~285m ──
+[12:33:40] ✓ COMPLETE
+[12:33:41] Sessions: 3 | Final: Phase 1—GhostNPC Step done—allPhase1substepscomplete;Phase2isnext | Duration: 34m
