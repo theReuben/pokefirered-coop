@@ -25,6 +25,87 @@
 #define MP_DEBUG_TEST_X            8
 #define MP_DEBUG_TEST_Y            5
 
+// ---------------------------------------------------------------------------
+// Ring buffer — shared memory interface between ROM and Tauri host app.
+//
+// gMpSendRing: ROM writes outgoing packets; Tauri reads and forwards to relay.
+// gMpRecvRing: Tauri writes incoming packets from relay; ROM reads/processes.
+//
+// Tauri locates each buffer via ELF symbol; magic==MP_RING_MAGIC is a sanity
+// check.  u8 head/tail wrap at MP_RING_SIZE (256) with no modulo needed.
+// Empty: head==tail.  Full: (head+1)==tail.
+// ---------------------------------------------------------------------------
+struct MpRingBuf {
+    u8 buf[MP_RING_SIZE]; // circular byte storage
+    u8 head;              // producer increments (ROM for send; Tauri for recv)
+    u8 tail;              // consumer increments (Tauri for send; ROM for recv)
+    u8 magic;             // MP_RING_MAGIC (0xC0) when valid
+    u8 _pad;
+};
+
+extern struct MpRingBuf gMpSendRing;
+extern struct MpRingBuf gMpRecvRing;
+
+// Low-level ring operations (inline for speed; used inside multiplayer.c).
+// Returns TRUE if the byte was pushed; FALSE if ring was full.
+static inline bool8 Mp_Push(struct MpRingBuf *ring, u8 byte)
+{
+    u8 next = ring->head + 1; // wraps at 256 automatically (u8 arithmetic)
+    if (next == ring->tail)
+        return FALSE; // full
+    ring->buf[ring->head] = byte;
+    ring->head = next;
+    return TRUE;
+}
+
+// Returns TRUE if a byte was popped into *out; FALSE if ring was empty.
+static inline bool8 Mp_Pop(struct MpRingBuf *ring, u8 *out)
+{
+    if (ring->head == ring->tail)
+        return FALSE; // empty
+    *out = ring->buf[ring->tail];
+    ring->tail++;
+    return TRUE;
+}
+
+// Bytes available to read.
+static inline u8 Mp_Available(const struct MpRingBuf *ring)
+{
+    return (u8)(ring->head - ring->tail);
+}
+
+// ---------------------------------------------------------------------------
+// Packet encode/decode helpers.  These write to / read from a caller-supplied
+// byte buffer.  Returns the number of bytes consumed/produced (0 on error).
+// ---------------------------------------------------------------------------
+
+// Position packet: [type][mapGroup][mapNum][x][y][facing]  (6 bytes)
+u8 Mp_EncodePosition(u8 *out, u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);
+bool8 Mp_DecodePosition(const u8 *in, u8 len,
+                        u8 *mapGroup, u8 *mapNum, u8 *x, u8 *y, u8 *facing);
+
+// Flag-set packet: [type][flagId_hi][flagId_lo]  (3 bytes)
+u8 Mp_EncodeFlagSet(u8 *out, u16 flagId);
+bool8 Mp_DecodeFlagSet(const u8 *in, u8 len, u16 *flagId);
+
+// Var-set packet: [type][varId_hi][varId_lo][value_hi][value_lo]  (5 bytes)
+u8 Mp_EncodeVarSet(u8 *out, u16 varId, u16 value);
+bool8 Mp_DecodeVarSet(const u8 *in, u8 len, u16 *varId, u16 *value);
+
+// Boss-ready packet: [type][bossId]  (2 bytes)
+u8 Mp_EncodeBossReady(u8 *out, u8 bossId);
+bool8 Mp_DecodeBossReady(const u8 *in, u8 len, u8 *bossId);
+
+// Boss-cancel packet: [type]  (1 byte)
+u8 Mp_EncodeBossCancel(u8 *out);
+
+// Seed-sync packet: [type][seed3][seed2][seed1][seed0]  big-endian (5 bytes)
+u8 Mp_EncodeSeedSync(u8 *out, u32 seed);
+bool8 Mp_DecodeSeedSync(const u8 *in, u8 len, u32 *seed);
+
+// ---------------------------------------------------------------------------
+// Structures
+// ---------------------------------------------------------------------------
 struct CoopSettings {
     u8  randomizeEncounters : 1;
     u8  padding : 7;
@@ -42,12 +123,15 @@ struct MultiplayerState {
     u8  ghostObjectEventId; // GHOST_INVALID_SLOT (0xFF) = not spawned
     u8  bossReadyBossId;    // 0 = not in readiness check
     u8  isInScript;
+    u8  posFrameCounter;    // counts frames; send position every 4 frames
 };
 
 extern struct MultiplayerState gMultiplayerState;
 extern struct CoopSettings gCoopSettings;
 
+// ---------------------------------------------------------------------------
 // Core lifecycle
+// ---------------------------------------------------------------------------
 void Multiplayer_Init(void);
 void Multiplayer_Update(void);
 
@@ -56,7 +140,7 @@ void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);
 void Multiplayer_DespawnGhost(void);
 void Multiplayer_UpdateGhostPosition(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);
 
-// Packet send helpers (stubs — implemented in Phase 2)
+// Packet send helpers (Phase 2 — now implemented via ring buffer)
 void Multiplayer_SendPosition(void);
 void Multiplayer_SendFlagSet(u16 flagId);
 void Multiplayer_SendVarSet(u16 varId, u16 value);

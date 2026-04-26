@@ -1,14 +1,27 @@
 #ifndef GUARD_CONSTANTS_MULTIPLAYER_H
 #define GUARD_CONSTANTS_MULTIPLAYER_H
 
-// Packet types sent/received over the serial link
-#define MP_PKT_POSITION     0x01
-#define MP_PKT_FLAG_SET     0x02
-#define MP_PKT_VAR_SET      0x03
-#define MP_PKT_BOSS_READY   0x04
-#define MP_PKT_BOSS_CANCEL  0x05
-#define MP_PKT_SEED_SYNC    0x06
-#define MP_PKT_FULL_SYNC    0x07
+// Packet types sent/received over the ring buffer interface
+#define MP_PKT_POSITION     0x01   // 6 bytes total
+#define MP_PKT_FLAG_SET     0x02   // 3 bytes total
+#define MP_PKT_VAR_SET      0x03   // 5 bytes total
+#define MP_PKT_BOSS_READY   0x04   // 2 bytes total
+#define MP_PKT_BOSS_CANCEL  0x05   // 1 byte total
+#define MP_PKT_SEED_SYNC    0x06   // 5 bytes total
+#define MP_PKT_FULL_SYNC    0x07   // 3+len bytes total (variable)
+
+// Ring buffer constants
+#define MP_RING_SIZE        256    // power-of-2; u8 head/tail wrap naturally
+#define MP_RING_MAGIC       0xC0   // sanity sentinel for Tauri to locate buffer
+
+// Fixed packet sizes (type byte included)
+#define MP_PKT_SIZE_POSITION    6
+#define MP_PKT_SIZE_FLAG_SET    3
+#define MP_PKT_SIZE_VAR_SET     5
+#define MP_PKT_SIZE_BOSS_READY  2
+#define MP_PKT_SIZE_BOSS_CANCEL 1
+#define MP_PKT_SIZE_SEED_SYNC   5
+#define MP_PKT_SIZE_FULL_SYNC_HDR 3  // type + len_hi + len_lo; data follows
 
 // Player roles assigned by relay server
 #define MP_ROLE_NONE        0

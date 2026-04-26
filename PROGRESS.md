@@ -116,13 +116,13 @@
 ## Phase 2: Serial Link Communication
 
 ### Step 2.1: Study Link Cable System
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Read src/link.c and document the existing serial protocol
-  - [ ] Read include/link.h and document data structures
-  - [ ] Identify the hook points for custom serial communication
-  - [ ] Write findings to docs/link-system.md
-- **Notes:**
+  - [x] Read src/link.c and document the existing serial protocol
+  - [x] Read include/link.h and document data structures
+  - [x] Identify the hook points for custom serial communication
+  - [x] Write findings to docs/link-system.md
+- **Notes:** We do NOT use gLink/gSendCmd. Instead: two EWRAM ring buffers (gMpSendRing / gMpRecvRing), 256 bytes each. ROM writes to send ring; Tauri reads. Tauri writes to recv ring; ROM reads. u8 head/tail pointers wrap at 256 automatically. See docs/link-system.md for full design.
 
 ### Step 2.2: Design Packet Format
 - **Status:** not_started
