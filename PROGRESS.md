@@ -8,9 +8,9 @@
 
 ## Current State
 - **Active Phase:** 3
-- **Active Step:** 3.1—DefineSyncableFlagRanges
-- **Last Session Summary:** Session 4 completed all of Phase 2. Steps 2.2–2.6 were already committed in the Phase 2.1 commit; PROGRESS.md updated to reflect. Fixed EWRAM_DATA in test/mocks/global.h (no-op define for native builds). 705 assertions pass (36 smoke + 669 packets). Wrote tools/extract_symbols.py (parses .map → test/lua/memory_map.lua), generated memory_map.lua with 4 symbols, and wrote docs/testing-link.md with mGBA two-instance test instructions and Lua scripting guidance.
-- **Next Action:** Begin Phase 3 — audit flags.h and define syncable flag ranges
+- **Active Step:** 3.3—ImplementFullSyncOnConnect
+- **Last Session Summary:** Session 5 completed Steps 3.1 and 3.2. Step 3.1 was already done from prior session. Step 3.2: implemented Multiplayer_HandleRemoteFlagSet/VarSet in event_data.c (uses sIsRemoteUpdate guard to block re-broadcast). Added IsSyncableVar (returns FALSE). Removed spurious event_data.h from multiplayer.c (fixed test build breakage from NUM_BADGES). Wired FLAG_SET/VAR_SET dispatch in ProcessOneRecvPacket. Added 3 routing tests in test_smoke.c — 62 assertions pass.
+- **Next Action:** Step 3.3 — implement full sync on connect
 
 ---
 
@@ -206,14 +206,14 @@
 - **Notes:** 4 syncable ranges: story (0x020–0x2FF), hidden items (0x3E8–0x4A6), bosses (0x4B0–0x4BC), trainers (0x500–0x7FF). Temp (0x000–0x01F), daily, mystery gift, SYS_FLAGS (0x800+) excluded. IsSyncableFlag implemented in multiplayer.c. 16 unit tests in test_smoke.c cover all boundary values. docs/flag-sync.md documents rationale, wire protocol, and FULL_SYNC bitmap layout.
 
 ### Step 3.2: Hook FlagSet and VarSet
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Add multiplayer broadcast hook to FlagSet() in src/event_data.c
-  - [ ] Add sIsRemoteUpdate guard to prevent re-broadcast loops
-  - [ ] Add multiplayer broadcast hook to VarSet() with same guard
-  - [ ] Implement Multiplayer_HandleRemoteFlagSet() and Multiplayer_HandleRemoteVarSet()
-  - [ ] Route incoming FLAG_SET and VAR_SET packets to these handlers
-- **Notes:**
+  - [x] Add multiplayer broadcast hook to FlagSet() in src/event_data.c
+  - [x] Add sIsRemoteUpdate guard to prevent re-broadcast loops
+  - [x] Add multiplayer broadcast hook to VarSet() with same guard
+  - [x] Implement Multiplayer_HandleRemoteFlagSet() and Multiplayer_HandleRemoteVarSet()
+  - [x] Route incoming FLAG_SET and VAR_SET packets to these handlers
+- **Notes:** Handlers implemented in event_data.c (co-located with sIsRemoteUpdate). IsSyncableVar added to multiplayer.c (returns FALSE — var audit deferred). Removed spurious #include "event_data.h" from multiplayer.c, fixing test build break (NUM_BADGES). 3 new routing tests in test_smoke.c; 62 total assertions pass.
 
 ### Step 3.3: Implement Full Sync on Connect
 - **Status:** not_started

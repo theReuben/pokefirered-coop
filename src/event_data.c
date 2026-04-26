@@ -284,3 +284,22 @@ bool8 FlagGet(u16 id)
 
     return TRUE;
 }
+
+// ---------------------------------------------------------------------------
+// Remote update handlers — called by ProcessOneRecvPacket when a FLAG_SET or
+// VAR_SET arrives from the partner.  sIsRemoteUpdate suppresses the outgoing
+// broadcast that FlagSet/VarSet would normally emit, preventing echo loops.
+// ---------------------------------------------------------------------------
+void Multiplayer_HandleRemoteFlagSet(u16 flagId)
+{
+    sIsRemoteUpdate = TRUE;
+    FlagSet(flagId);
+    sIsRemoteUpdate = FALSE;
+}
+
+void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value)
+{
+    sIsRemoteUpdate = TRUE;
+    VarSet(varId, value);
+    sIsRemoteUpdate = FALSE;
+}

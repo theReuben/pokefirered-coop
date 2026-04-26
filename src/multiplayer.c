@@ -3,7 +3,6 @@
 #include "constants/multiplayer.h"
 #include "constants/event_object_movement.h"
 #include "event_object_movement.h"
-#include "event_data.h"
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -198,10 +197,7 @@ static bool8 ProcessOneRecvPacket(void)
         pkt[0] = typeByte;
         { u8 i; for (i = 1; i < MP_PKT_SIZE_FLAG_SET; i++) Mp_Pop(&gMpRecvRing, &pkt[i]); }
         if (Mp_DecodeFlagSet(pkt, MP_PKT_SIZE_FLAG_SET, &flagId))
-        {
-            // Phase 3: apply flag on our side if syncable
-            (void)flagId;
-        }
+            Multiplayer_HandleRemoteFlagSet(flagId);
         break;
 
     case MP_PKT_VAR_SET:
@@ -210,9 +206,7 @@ static bool8 ProcessOneRecvPacket(void)
         pkt[0] = typeByte;
         { u8 i; for (i = 1; i < MP_PKT_SIZE_VAR_SET; i++) Mp_Pop(&gMpRecvRing, &pkt[i]); }
         if (Mp_DecodeVarSet(pkt, MP_PKT_SIZE_VAR_SET, &varId, &val))
-        {
-            (void)varId; (void)val; // Phase 3
-        }
+            Multiplayer_HandleRemoteVarSet(varId, val);
         break;
 
     case MP_PKT_BOSS_READY:
@@ -502,4 +496,11 @@ bool32 IsSyncableFlag(u16 flagId)
         || (flagId >= SYNC_FLAG_ITEMS_START    && flagId <= SYNC_FLAG_ITEMS_END)
         || (flagId >= SYNC_FLAG_BOSSES_START   && flagId <= SYNC_FLAG_BOSSES_END)
         || (flagId >= SYNC_FLAG_TRAINERS_START && flagId <= SYNC_FLAG_TRAINERS_END);
+}
+
+// Var sync audit deferred to Phase 3 step 3.2+; no vars synced yet.
+bool32 IsSyncableVar(u16 varId)
+{
+    (void)varId;
+    return FALSE;
 }

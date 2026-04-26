@@ -7,6 +7,13 @@
 // Declared in stubs.c so tests can control spawn behaviour.
 extern u8 gTestNextSpawnSlot;
 
+// Stub counters for remote handler dispatch tests.
+extern u8  gTestRemoteFlagSetCallCount;
+extern u16 gTestLastRemoteFlagId;
+extern u8  gTestRemoteVarSetCallCount;
+extern u16 gTestLastRemoteVarId;
+extern u16 gTestLastRemoteVarValue;
+
 // ---- Test helpers --------------------------------------------------------
 
 static struct SaveBlock1 sTestSave;
@@ -227,6 +234,88 @@ static void TestIsSyncableFlag(void)
     ASSERT_EQ(IsSyncableFlag(0xFFFF), FALSE);
 }
 
+// ---- Step 3.2: FLAG_SET / VAR_SET recv routing ----------------------------
+
+// Helper: reset rings and dispatch counters.
+static void ResetDispatch(void)
+{
+    gMpSendRing.head = gMpSendRing.tail = 0;
+    gMpRecvRing.head = gMpRecvRing.tail = 0;
+    gMpSendRing.magic = MP_RING_MAGIC;
+    gMpRecvRing.magic = MP_RING_MAGIC;
+    gTestRemoteFlagSetCallCount = 0;
+    gTestLastRemoteFlagId       = 0;
+    gTestRemoteVarSetCallCount  = 0;
+    gTestLastRemoteVarId        = 0;
+    gTestLastRemoteVarValue     = 0;
+}
+
+static void TestRemoteFlagSetRouting(void)
+{
+    // Push a FLAG_SET packet into the recv ring; Multiplayer_Update should
+    // dispatch it to Multiplayer_HandleRemoteFlagSet exactly once.
+    u8 pkt[MP_PKT_SIZE_FLAG_SET];
+    u8 i;
+
+    Multiplayer_Init();
+    ResetDispatch();
+    // connState stays DISCONNECTED — no position packet will pollute send ring.
+
+    Mp_EncodeFlagSet(pkt, SYNC_FLAG_TRAINERS_START + 5);
+    for (i = 0; i < MP_PKT_SIZE_FLAG_SET; i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+
+    Multiplayer_Update();
+
+    ASSERT_EQ(gTestRemoteFlagSetCallCount, 1);
+    ASSERT_EQ(gTestLastRemoteFlagId, SYNC_FLAG_TRAINERS_START + 5);
+    // Send ring must be empty — no re-broadcast.
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
+}
+
+static void TestRemoteVarSetRouting(void)
+{
+    u8 pkt[MP_PKT_SIZE_VAR_SET];
+    u8 i;
+
+    Multiplayer_Init();
+    ResetDispatch();
+
+    Mp_EncodeVarSet(pkt, 0x4001, 0x0007);
+    for (i = 0; i < MP_PKT_SIZE_VAR_SET; i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+
+    Multiplayer_Update();
+
+    ASSERT_EQ(gTestRemoteVarSetCallCount, 1);
+    ASSERT_EQ(gTestLastRemoteVarId,    0x4001);
+    ASSERT_EQ(gTestLastRemoteVarValue, 0x0007);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
+}
+
+static void TestMultipleFlagSetsRouted(void)
+{
+    // Two FLAG_SET packets in the recv ring; both should be dispatched.
+    u8 pkt[MP_PKT_SIZE_FLAG_SET];
+    u8 i;
+
+    Multiplayer_Init();
+    ResetDispatch();
+
+    Mp_EncodeFlagSet(pkt, SYNC_FLAG_BOSSES_START);
+    for (i = 0; i < MP_PKT_SIZE_FLAG_SET; i++) Mp_Push(&gMpRecvRing, pkt[i]);
+
+    Mp_EncodeFlagSet(pkt, SYNC_FLAG_BOSSES_START + 1);
+    for (i = 0; i < MP_PKT_SIZE_FLAG_SET; i++) Mp_Push(&gMpRecvRing, pkt[i]);
+
+    Multiplayer_Update();
+
+    // Both dispatched; last call carries the second flag.
+    ASSERT_EQ(gTestRemoteFlagSetCallCount, 2);
+    ASSERT_EQ(gTestLastRemoteFlagId, SYNC_FLAG_BOSSES_START + 1);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -245,5 +334,8 @@ int main(void)
     TestGhostMapCheckDespawnsOnDifferentMap();
     TestGhostMapCheckDespawnsWhenDisconnected();
     TestIsSyncableFlag();
+    TestRemoteFlagSetRouting();
+    TestRemoteVarSetRouting();
+    TestMultipleFlagSetsRouted();
     TEST_SUMMARY();
 }

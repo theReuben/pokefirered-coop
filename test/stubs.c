@@ -1,6 +1,7 @@
 // No-op stubs for GBA engine functions called by multiplayer.c.
 // These exist so the native unit tests link cleanly without the full ROM build.
 #include "global.h"
+#include "multiplayer.h"
 #include "event_object_movement.h"
 
 // Global arrays / pointers referenced by multiplayer.c
@@ -62,4 +63,29 @@ bool8 ObjectEventSetHeldMovement(struct ObjectEvent *objectEvent, u8 movementAct
     if (objectEvent)
         objectEvent->heldMovementActive = 1;
     return TRUE;
+}
+
+// ---------------------------------------------------------------------------
+// Stubs for event_data.c functions (not compiled in test builds).
+// These let test_smoke and test_packets link without the full ROM source.
+// ---------------------------------------------------------------------------
+
+// Counters exposed so test_smoke.c can verify correct dispatch.
+u8  gTestRemoteFlagSetCallCount = 0;
+u16 gTestLastRemoteFlagId       = 0;
+u8  gTestRemoteVarSetCallCount  = 0;
+u16 gTestLastRemoteVarId        = 0;
+u16 gTestLastRemoteVarValue     = 0;
+
+void Multiplayer_HandleRemoteFlagSet(u16 flagId)
+{
+    gTestRemoteFlagSetCallCount++;
+    gTestLastRemoteFlagId = flagId;
+}
+
+void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value)
+{
+    gTestRemoteVarSetCallCount++;
+    gTestLastRemoteVarId    = varId;
+    gTestLastRemoteVarValue = value;
 }
