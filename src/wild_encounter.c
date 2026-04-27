@@ -20,6 +20,7 @@
 #include "script.h"
 #include "tv.h"
 #include "wild_encounter.h"
+#include "multiplayer.h"
 #include "battle_debug.h"
 #include "battle_pike.h"
 #include "battle_pyramid.h"
@@ -537,14 +538,23 @@ static bool8 TryGenerateWildMon(const struct WildPokemonInfo *wildMonInfo, enum 
     if (gMapHeader.mapLayoutId != LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_WILD_MONS && flags & WILD_CHECK_KEEN_EYE && !IsAbilityAllowingEncounter(level))
         return FALSE;
 
-    CreateWildMon(wildMonInfo->wildPokemon[wildMonIndex].species, level);
+    {
+        u16 species = Multiplayer_GetRandomizedSpecies(
+                            (u32)wildMonInfo->wildPokemon, wildMonIndex);
+        if (!species)
+            species = wildMonInfo->wildPokemon[wildMonIndex].species;
+        CreateWildMon(species, level);
+    }
     return TRUE;
 }
 
 static u16 GenerateFishingWildMon(const struct WildPokemonInfo *wildMonInfo, u8 rod)
 {
     u8 wildMonIndex = ChooseWildMonIndex_Fishing(rod);
-    u16 wildMonSpecies = wildMonInfo->wildPokemon[wildMonIndex].species;
+    u16 wildMonSpecies = Multiplayer_GetRandomizedSpecies(
+                            (u32)wildMonInfo->wildPokemon, wildMonIndex);
+    if (!wildMonSpecies)
+        wildMonSpecies = wildMonInfo->wildPokemon[wildMonIndex].species;
     u8 level = ChooseWildMonLevel(wildMonInfo->wildPokemon, wildMonIndex, WILD_AREA_FISHING);
 
     UpdateChainFishingStreak();
