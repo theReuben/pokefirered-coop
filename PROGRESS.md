@@ -299,14 +299,14 @@
 ## Phase 5: Boss Battle Readiness
 
 ### Step 5.1: Study Gym Leader Scripts
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Read the battle script format for Brock's gym
-  - [ ] Document how trainerbattle command works
-  - [ ] Identify all 8 gym leader script locations
-  - [ ] Identify Elite Four and Champion script locations
-  - [ ] Document in docs/boss-scripts.md
-- **Notes:**
+  - [x] Read the battle script format for Brock's gym
+  - [x] Document how trainerbattle command works
+  - [x] Identify all 8 gym leader script locations
+  - [x] Identify Elite Four and Champion script locations
+  - [x] Document in docs/boss-scripts.md
+- **Notes:** trainerbattle_single expands to TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC; all 8 gyms in data/maps/XCity_Gym_Frlg/scripts.inc. FLAG_DEFEATED_* flags (0x4B0-0x4BC) are in SYNC_FLAG_BOSSES range — synced automatically. Elite Four use trainerbattle_no_intro. Boss IDs 1-13 defined (gym leaders 1-8, E4+Champion 9-13). Script modification plan: use existing special/msgbox/goto_if_ne commands with VAR_BOSS_BATTLE_STATE polling; no new bytecode needed.
 
 ### Step 5.2: Implement Boss Readiness Protocol
 - **Status:** not_started
