@@ -8,9 +8,9 @@
 
 ## Current State
 - **Active Phase:** 4
-- **Active Step:** 4.1—StudyEncounterSystem
-- **Last Session Summary:** Session 6 completed Steps 3.4 and 3.5. Fixed stale (void)applySave bug in test_smoke.c TestFullSyncRoundTrip. Step 3.4: OnScriptStart/End already hooked in script.c; SCRIPT_LOCK/UNLOCK packets already in ProcessOneRecvPacket; added GhostTick freeze when partnerIsInScript=TRUE; 8 new tests (TestScriptStartSetsFlag through TestGhostFreezesDuringPartnerScript). Step 3.5: wrote test/lua/test_flag_sync.lua for ring-buffer-based flag sync and script mutex integration tests; updated docs/testing-link.md with correct MultiplayerState field offsets. 90 assertions pass.
-- **Next Action:** Step 4.1 — study wild encounter system
+- **Active Step:** 4.2—ImplementSeededPRNG
+- **Last Session Summary:** Session 7 completed Step 4.1. Studied wild encounter system: WildPokemon{minLevel,maxLevel,species} const ROM arrays, 132 FIRERED headers in gWildMonHeaders, OW_TIME_OF_DAY_ENCOUNTERS=FALSE (only TIME_MORNING used), hook points at TryGenerateWildMon:540 and GenerateFishingWildMon:547. Hash-on-demand design chosen (no EWRAM table). docs/encounter-system.md fully documented.
+- **Next Action:** Step 4.2 — implement seeded PRNG (xorshift32) in src/multiplayer.c
 
 ---
 
@@ -247,14 +247,14 @@
 ## Phase 4: Randomized Encounters
 
 ### Step 4.1: Study Encounter System
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Read src/wild_encounter.c and document how encounters are generated
-  - [ ] Read the encounter table data structures
-  - [ ] Identify where species, level min, and level max are stored
-  - [ ] Count total encounter slots across all routes
-  - [ ] Document in docs/encounter-system.md
-- **Notes:**
+  - [x] Read src/wild_encounter.c and document how encounters are generated
+  - [x] Read the encounter table data structures
+  - [x] Identify where species, level min, and level max are stored
+  - [x] Count total encounter slots across all routes
+  - [x] Document in docs/encounter-system.md
+- **Notes:** WildPokemon{minLevel,maxLevel,species} arrays are const ROM data. 132 FIRERED headers in gWildMonHeaders. OW_TIME_OF_DAY_ENCOUNTERS=FALSE so only encounterTypes[0] (TIME_MORNING) is used. Hook points: TryGenerateWildMon:540 and GenerateFishingWildMon:547 (both read wildPokemon[idx].species). ~1945 max encounter slots across land/water/fish/rock/hidden. Design: hash-on-demand (seed XOR tableAddr XOR slotIndex) → sValidSpecies[hash % count], no EWRAM table needed. NUM_SPECIES=1573, valid pool 1–493 for v1. See docs/encounter-system.md.
 
 ### Step 4.2: Implement Seeded PRNG
 - **Status:** not_started
