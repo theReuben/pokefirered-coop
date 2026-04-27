@@ -3,6 +3,12 @@
 #include "global.h"
 #include "multiplayer.h"
 #include "event_object_movement.h"
+#include "random.h"
+
+// Controllable Random32 return value — set in tests before calling
+// Multiplayer_GenerateSeed().  Default is non-zero so stub never generates
+// a zero seed in tests that don't care about the specific value.
+u32 gTestRandom32Value = 0x11223344u;
 
 // Global arrays / pointers referenced by multiplayer.c
 struct ObjectEvent gObjectEvents[16];

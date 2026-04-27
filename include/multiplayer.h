@@ -188,4 +188,10 @@ u32  Multiplayer_NextRandom(void);
 // tableAddr is the ROM address of the WildPokemon[] array for this encounter table.
 u16  Multiplayer_GetRandomizedSpecies(u32 tableAddr, u8 slotIndex);
 
+// Seed sync (Phase 4) — host calls GenerateSeed() on session start, then
+// broadcasts it with SendSeedSync().  Guest's ProcessOneRecvPacket applies the
+// received seed to gCoopSettings.encounterSeed automatically.
+u32  Multiplayer_GenerateSeed(void);
+void Multiplayer_SendSeedSync(u32 seed);
+
 #endif // GUARD_MULTIPLAYER_H

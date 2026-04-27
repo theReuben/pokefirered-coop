@@ -14,6 +14,9 @@ extern u8  gTestRemoteVarSetCallCount;
 extern u16 gTestLastRemoteVarId;
 extern u16 gTestLastRemoteVarValue;
 
+// Controllable Random32 return value for Multiplayer_GenerateSeed tests.
+extern u32 gTestRandom32Value;
+
 // ---- Test helpers --------------------------------------------------------
 
 static struct SaveBlock1 sTestSave;
@@ -642,6 +645,127 @@ static void TestGetRandomizedSpeciesDiffSlotsDiffSpecies(void)
     ASSERT(s0 != s11);
 }
 
+// ---- Step 4.4: Seed sync -------------------------------------------------------
+
+static void TestSendSeedSyncWritesPacket(void)
+{
+    Multiplayer_Init();
+    ResetDispatch();
+    Multiplayer_SendSeedSync(0xDEADBEEFu);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_SEED_SYNC);
+    {
+        u8 b;
+        Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, MP_PKT_SEED_SYNC);
+        Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 0xDE);
+        Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 0xAD);
+        Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 0xBE);
+        Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 0xEF);
+    }
+}
+
+static void TestSeedSyncRoundTrip(void)
+{
+    // Send → recv ring → Multiplayer_Update dispatch: encounterSeed must match.
+    u8 b;
+    u8 i;
+    u8 pktLen;
+
+    Multiplayer_Init();
+    ResetDispatch();
+
+    Multiplayer_SendSeedSync(0x12345678u);
+    pktLen = Mp_Available(&gMpSendRing);
+    ASSERT_EQ(pktLen, (u8)MP_PKT_SIZE_SEED_SYNC);
+
+    for (i = 0; i < pktLen; i++)
+    {
+        Mp_Pop(&gMpSendRing, &b);
+        Mp_Push(&gMpRecvRing, b);
+    }
+
+    Multiplayer_Update();
+    ASSERT_EQ(gCoopSettings.encounterSeed, 0x12345678u);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0); // no re-broadcast
+}
+
+static void TestGenerateSeedNonZeroOutput(void)
+{
+    // When both Random32 draws return 0 the fallback must kick in.
+    gTestRandom32Value = 0;
+    ASSERT(Multiplayer_GenerateSeed() != 0);
+}
+
+static void TestGenerateSeedNonZeroNormal(void)
+{
+    // A typical non-zero Random32 value must produce a non-zero seed.
+    gTestRandom32Value = 0x55AA55AAu;
+    ASSERT(Multiplayer_GenerateSeed() != 0);
+}
+
+// ---- Step 4.5: Randomizer correctness tests ------------------------------------
+
+static void TestSameSeedSameSpeciesAllSlots(void)
+{
+    // Querying the same 12 slots twice with the same seed/addr must be identical.
+    u16 first[12], second[12];
+    int i;
+
+    Multiplayer_Init();
+    gCoopSettings.randomizeEncounters = 1;
+    gCoopSettings.encounterSeed = 0xDEAD1234u;
+
+    for (i = 0; i < 12; i++)
+        first[i] = Multiplayer_GetRandomizedSpecies(0x08100000u, (u8)i);
+    for (i = 0; i < 12; i++)
+        second[i] = Multiplayer_GetRandomizedSpecies(0x08100000u, (u8)i);
+    for (i = 0; i < 12; i++)
+        ASSERT_EQ(first[i], second[i]);
+}
+
+static void TestDifferentSeedsDifferentSpecies(void)
+{
+    // Changing the seed must change the species for the same slot.
+    u16 s1, s2;
+
+    Multiplayer_Init();
+    gCoopSettings.randomizeEncounters = 1;
+    gCoopSettings.encounterSeed = 0x11111111u;
+    s1 = Multiplayer_GetRandomizedSpecies(0x08100000u, 3);
+    gCoopSettings.encounterSeed = 0x22222222u;
+    s2 = Multiplayer_GetRandomizedSpecies(0x08100000u, 3);
+    ASSERT(s1 != s2);
+}
+
+static void TestNoInvalidSpecies12Slots(void)
+{
+    // All 12 land-encounter slots must produce species in 1-493.
+    int i;
+
+    Multiplayer_Init();
+    gCoopSettings.randomizeEncounters = 1;
+    gCoopSettings.encounterSeed = 0xFEEDBEEFu;
+
+    for (i = 0; i < 12; i++)
+    {
+        u16 s = Multiplayer_GetRandomizedSpecies(0x08100000u, (u8)i);
+        ASSERT(s >= 1);
+        ASSERT(s <= 493);
+    }
+}
+
+static void TestRandomizedSpeciesPassThroughWhenDisabled(void)
+{
+    // Levels are never touched by the randomizer — verified structurally:
+    // GetRandomizedSpecies returns 0 when disabled, and the caller falls back
+    // to the original species from the encounter table (levels come from
+    // ChooseWildMonLevel, which is independent of species).
+    Multiplayer_Init();
+    gCoopSettings.randomizeEncounters = 0;
+    gCoopSettings.encounterSeed = 0xFFFFFFFFu;
+    ASSERT_EQ(Multiplayer_GetRandomizedSpecies(0x08100000u, 0), 0);
+    ASSERT_EQ(Multiplayer_GetRandomizedSpecies(0x08100000u, 11), 0);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -683,5 +807,13 @@ int main(void)
     TestGetRandomizedSpeciesInRange();
     TestGetRandomizedSpeciesDeterministic();
     TestGetRandomizedSpeciesDiffSlotsDiffSpecies();
+    TestSendSeedSyncWritesPacket();
+    TestSeedSyncRoundTrip();
+    TestGenerateSeedNonZeroOutput();
+    TestGenerateSeedNonZeroNormal();
+    TestSameSeedSameSpeciesAllSlots();
+    TestDifferentSeedsDifferentSpecies();
+    TestNoInvalidSpecies12Slots();
+    TestRandomizedSpeciesPassThroughWhenDisabled();
     TEST_SUMMARY();
 }

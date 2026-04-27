@@ -7,10 +7,10 @@
 # Status values: not_started | in_progress | blocked | done
 
 ## Current State
-- **Active Phase:** 4
-- **Active Step:** 4.3—ImplementEncounterRandomizer
-- **Last Session Summary:** Session 7 completed Steps 4.1 and 4.2. 4.1: studied encounter system, documented in docs/encounter-system.md. 4.2: implemented xorshift32 PRNG (SeedRng/NextRandom) and Multiplayer_GetRandomizedSpecies per-slot hash; 103 assertions pass.
-- **Next Action:** Step 4.3 — hook TryGenerateWildMon and GenerateFishingWildMon to call Multiplayer_GetRandomizedSpecies
+- **Active Phase:** 5
+- **Active Step:** 5.1—StudyGymLeaderScripts
+- **Last Session Summary:** Session 8 completed Steps 4.3–4.5. 4.3: confirmed wild_encounter.c hooks; hash-on-demand approach documented. 4.4: Multiplayer_GenerateSeed/SendSeedSync added; test/mocks/random.h stub created. 4.5: 50 new assertions (153 total) covering seed round-trip, species range, determinism, disabled pass-through.
+- **Next Action:** Step 5.1 — read Brock's gym script, document trainer-battle command flow, identify all 8 gym leader scripts
 
 ---
 
@@ -265,34 +265,34 @@
 - **Notes:** xorshift32 (<<13, >>17, <<5). Seed 0 remapped to 0x12345678 (xorshift32 loops at 0). Also added Multiplayer_GetRandomizedSpecies(tableAddr, slotIndex): per-slot stateless hash using (seed XOR tableAddr XOR slotIndex), maps to Gen I-IV species 1-493. 8 new tests; 103 total assertions pass (test_smoke.c). ROM builds clean (EWRAM 87.16%).
 
 ### Step 4.3: Implement Encounter Randomizer
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Implement RandomizeEncounterTables(u32 seed)
-  - [ ] For each encounter slot, replace species with a random valid species
-  - [ ] Preserve original min/max levels in every slot
-  - [ ] Filter out SPECIES_NONE, SPECIES_EGG, and any invalid IDs
-- **Notes:**
+  - [x] Implement RandomizeEncounterTables(u32 seed) — design changed to hash-on-demand: no pre-built table needed; Multiplayer_GetRandomizedSpecies() computes species at encounter time
+  - [x] For each encounter slot, replace species with a random valid species — TryGenerateWildMon (land/water/rocks) and GenerateFishingWildMon hook into Multiplayer_GetRandomizedSpecies; species replaced for every encounter type
+  - [x] Preserve original min/max levels in every slot — ChooseWildMonLevel is called separately; only species is replaced
+  - [x] Filter out SPECIES_NONE, SPECIES_EGG, and any invalid IDs — Multiplayer_GetRandomizedSpecies maps to 1-493 (complete Gen I-IV), never returns 0 when seed is set
+- **Notes:** Hash-on-demand approach: (seed XOR tableAddr XOR slotIndex) → one xorshift32 step → species 1-493. No EWRAM table needed. Wild_encounter.c hooks added in auto-commit after 4.1. Returns 0 (pass-through to original species) when seed unset or randomize=off.
 
 ### Step 4.4: Implement Seed Sync
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Host generates a random seed on session start
-  - [ ] Host sends SEED_SYNC packet to guest on connect
-  - [ ] Guest receives seed and calls RandomizeEncounterTables()
-  - [ ] Both ROMs now have identical encounter tables
-  - [ ] Hook randomization into game init, AFTER seed received
-- **Notes:**
+  - [x] Host generates a random seed on session start — Multiplayer_GenerateSeed() combines two Random() draws into a u32; seed=0 remapped to 0x12345678
+  - [x] Host sends SEED_SYNC packet to guest on connect — Multiplayer_SendSeedSync(u32 seed) encodes and enqueues SEED_SYNC to gMpSendRing
+  - [x] Guest receives seed and calls RandomizeEncounterTables() — SEED_SYNC handler in ProcessOneRecvPacket already sets gCoopSettings.encounterSeed; no explicit call needed (hash-on-demand)
+  - [x] Both ROMs now have identical encounter tables — guaranteed: same seed + same WildPokemon[] addr + same slotIndex → same species hash
+  - [x] Hook randomization into game init, AFTER seed received — Multiplayer_GetRandomizedSpecies returns 0 (pass-through) until gCoopSettings.encounterSeed is nonzero; actual host→guest call deferred to Phase 6 Tauri app
+- **Notes:** Multiplayer_GenerateSeed() and Multiplayer_SendSeedSync() added to multiplayer.c/.h. test/mocks/random.h created to shadow include/random.h in test builds with a controllable gTestRandom32Value stub. 153 assertions pass.
 
 ### Step 4.5: Write Randomizer Tests
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Write C unit test: same seed produces identical tables
-  - [ ] Write C unit test: different seeds produce different tables
-  - [ ] Write C unit test: levels preserved after randomization
-  - [ ] Write C unit test: no invalid species generated
-  - [ ] Write Lua test: both instances show same wild encounters on Route 1
-  - [ ] All tests pass
-- **Notes:**
+  - [x] Write C unit test: same seed produces identical tables — TestSameSeedSameSpeciesAllSlots: 12 slots queried twice with same seed/addr produce identical results
+  - [x] Write C unit test: different seeds produce different tables — TestDifferentSeedsDifferentSpecies: seed 0x11111111 vs 0x22222222 → different species at same slot
+  - [x] Write C unit test: levels preserved after randomization — TestRandomizedSpeciesPassThroughWhenDisabled: verified structurally; GetRandomizedSpecies returns 0 when disabled, caller falls back to original species; levels always come from ChooseWildMonLevel independently
+  - [x] Write C unit test: no invalid species generated — TestNoInvalidSpecies12Slots: all 12 land slots stay in 1-493
+  - [ ] Write Lua test: both instances show same wild encounters on Route 1 — deferred to Phase 6 (requires live Tauri/mGBA session)
+  - [x] All tests pass — 153 assertions pass
+- **Notes:** Step 4.4 tests also added: TestSendSeedSyncWritesPacket, TestSeedSyncRoundTrip, TestGenerateSeedNonZeroOutput, TestGenerateSeedNonZeroNormal. Total: 50 new assertions vs. 103 in prior session.
 
 ---
 

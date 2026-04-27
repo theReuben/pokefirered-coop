@@ -3,6 +3,7 @@
 #include "constants/multiplayer.h"
 #include "constants/event_object_movement.h"
 #include "event_object_movement.h"
+#include "random.h"
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -641,4 +642,24 @@ void Multiplayer_OnScriptEnd(void)
 bool32 Multiplayer_IsPartnerInScript(void)
 {
     return gMultiplayerState.partnerIsInScript;
+}
+
+// ---------------------------------------------------------------------------
+// Seed sync (Phase 4) — host generates and broadcasts the encounter seed.
+// ---------------------------------------------------------------------------
+
+u32 Multiplayer_GenerateSeed(void)
+{
+    // Combine two 16-bit Random() draws into one 32-bit seed.
+    // Seed 0 is forbidden (Multiplayer_GetRandomizedSpecies treats it as
+    // "no seed yet" and returns 0 / pass-through).
+    u32 seed = ((u32)Random() << 16) | Random();
+    return seed ? seed : 0x12345678u;
+}
+
+void Multiplayer_SendSeedSync(u32 seed)
+{
+    u8 pkt[MP_PKT_SIZE_SEED_SYNC];
+    u8 len = Mp_EncodeSeedSync(pkt, seed);
+    MpRing_Write(&gMpSendRing, pkt, len);
 }
