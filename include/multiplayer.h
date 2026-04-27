@@ -177,4 +177,15 @@ void Multiplayer_OnScriptStart(void);
 void Multiplayer_OnScriptEnd(void);
 bool32 Multiplayer_IsPartnerInScript(void);
 
+// Seeded PRNG (xorshift32) — used for the encounter randomizer.
+// Multiplayer_SeedRng initialises the state; seed 0 is mapped to a nonzero value.
+// Multiplayer_NextRandom advances and returns the next value.
+void Multiplayer_SeedRng(u32 seed);
+u32  Multiplayer_NextRandom(void);
+
+// Per-slot species hash.  Returns SPECIES_NONE (0) if randomisation is
+// disabled or the encounter seed is unset; otherwise a Gen I-IV species (1-493).
+// tableAddr is the ROM address of the WildPokemon[] array for this encounter table.
+u16  Multiplayer_GetRandomizedSpecies(u32 tableAddr, u8 slotIndex);
+
 #endif // GUARD_MULTIPLAYER_H

@@ -565,6 +565,43 @@ bool32 IsSyncableVar(u16 varId)
 }
 
 // ---------------------------------------------------------------------------
+// Seeded PRNG — xorshift32
+// State is kept in EWRAM; seed 0 is forbidden (xorshift32 loops at 0).
+// ---------------------------------------------------------------------------
+
+static u32 sMpRngState;
+
+void Multiplayer_SeedRng(u32 seed)
+{
+    sMpRngState = seed ? seed : 0x12345678u;
+}
+
+u32 Multiplayer_NextRandom(void)
+{
+    sMpRngState ^= sMpRngState << 13;
+    sMpRngState ^= sMpRngState >> 17;
+    sMpRngState ^= sMpRngState << 5;
+    return sMpRngState;
+}
+
+// Per-slot hash: deterministically maps (seed, ROM table address, slot) to a
+// species in the Gen I-IV national dex (1-493).  Does NOT advance sMpRngState
+// so encounter order has no effect on results.
+// Returns 0 (SPECIES_NONE) if randomization is disabled or seed is unset.
+u16 Multiplayer_GetRandomizedSpecies(u32 tableAddr, u8 slotIndex)
+{
+    u32 state;
+    if (!gCoopSettings.randomizeEncounters || !gCoopSettings.encounterSeed)
+        return 0;
+    state = gCoopSettings.encounterSeed ^ tableAddr ^ (u32)slotIndex;
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    // Map to species 1-493 (complete Gen I-IV national dex, no invalid IDs).
+    return (u16)(1u + (state % 493u));
+}
+
+// ---------------------------------------------------------------------------
 // Script mutex — advisory lock so each player knows when the other is
 // executing a script interaction (prevents both talking to the same NPC).
 // ---------------------------------------------------------------------------

@@ -8,9 +8,9 @@
 
 ## Current State
 - **Active Phase:** 4
-- **Active Step:** 4.2—ImplementSeededPRNG
-- **Last Session Summary:** Session 7 completed Step 4.1. Studied wild encounter system: WildPokemon{minLevel,maxLevel,species} const ROM arrays, 132 FIRERED headers in gWildMonHeaders, OW_TIME_OF_DAY_ENCOUNTERS=FALSE (only TIME_MORNING used), hook points at TryGenerateWildMon:540 and GenerateFishingWildMon:547. Hash-on-demand design chosen (no EWRAM table). docs/encounter-system.md fully documented.
-- **Next Action:** Step 4.2 — implement seeded PRNG (xorshift32) in src/multiplayer.c
+- **Active Step:** 4.3—ImplementEncounterRandomizer
+- **Last Session Summary:** Session 7 completed Steps 4.1 and 4.2. 4.1: studied encounter system, documented in docs/encounter-system.md. 4.2: implemented xorshift32 PRNG (SeedRng/NextRandom) and Multiplayer_GetRandomizedSpecies per-slot hash; 103 assertions pass.
+- **Next Action:** Step 4.3 — hook TryGenerateWildMon and GenerateFishingWildMon to call Multiplayer_GetRandomizedSpecies
 
 ---
 
@@ -257,12 +257,12 @@
 - **Notes:** WildPokemon{minLevel,maxLevel,species} arrays are const ROM data. 132 FIRERED headers in gWildMonHeaders. OW_TIME_OF_DAY_ENCOUNTERS=FALSE so only encounterTypes[0] (TIME_MORNING) is used. Hook points: TryGenerateWildMon:540 and GenerateFishingWildMon:547 (both read wildPokemon[idx].species). ~1945 max encounter slots across land/water/fish/rock/hidden. Design: hash-on-demand (seed XOR tableAddr XOR slotIndex) → sValidSpecies[hash % count], no EWRAM table needed. NUM_SPECIES=1573, valid pool 1–493 for v1. See docs/encounter-system.md.
 
 ### Step 4.2: Implement Seeded PRNG
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Implement a simple xorshift32 PRNG in src/multiplayer.c
-  - [ ] Implement Multiplayer_SeedRng(seed) and Multiplayer_NextRandom()
-  - [ ] Write unit test confirming determinism (same seed = same sequence)
-- **Notes:**
+  - [x] Implement a simple xorshift32 PRNG in src/multiplayer.c
+  - [x] Implement Multiplayer_SeedRng(seed) and Multiplayer_NextRandom()
+  - [x] Write unit test confirming determinism (same seed = same sequence)
+- **Notes:** xorshift32 (<<13, >>17, <<5). Seed 0 remapped to 0x12345678 (xorshift32 loops at 0). Also added Multiplayer_GetRandomizedSpecies(tableAddr, slotIndex): per-slot stateless hash using (seed XOR tableAddr XOR slotIndex), maps to Gen I-IV species 1-493. 8 new tests; 103 total assertions pass (test_smoke.c). ROM builds clean (EWRAM 87.16%).
 
 ### Step 4.3: Implement Encounter Randomizer
 - **Status:** not_started

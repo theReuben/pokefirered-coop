@@ -553,6 +553,95 @@ static void TestGhostFreezesDuringPartnerScript(void)
     ASSERT_EQ(gObjectEvents[4].heldMovementActive, 0);
 }
 
+// ---- Step 4.2: Seeded PRNG --------------------------------------------------
+
+static void TestRngSameSeedSameSequence(void)
+{
+    u32 seq1[5], seq2[5];
+    int i;
+
+    Multiplayer_SeedRng(0xDEADBEEFu);
+    for (i = 0; i < 5; i++)
+        seq1[i] = Multiplayer_NextRandom();
+
+    Multiplayer_SeedRng(0xDEADBEEFu);
+    for (i = 0; i < 5; i++)
+        seq2[i] = Multiplayer_NextRandom();
+
+    for (i = 0; i < 5; i++)
+        ASSERT_EQ(seq1[i], seq2[i]);
+}
+
+static void TestRngDifferentSeedsDifferentSequences(void)
+{
+    u32 a, b;
+    Multiplayer_SeedRng(0x00000001u);
+    a = Multiplayer_NextRandom();
+    Multiplayer_SeedRng(0x00000002u);
+    b = Multiplayer_NextRandom();
+    ASSERT(a != b);
+}
+
+static void TestRngZeroSeedNonZero(void)
+{
+    // Seeding with 0 must produce a nonzero first output (not stuck at 0).
+    Multiplayer_SeedRng(0);
+    ASSERT(Multiplayer_NextRandom() != 0);
+}
+
+static void TestGetRandomizedSpeciesOffWhenDisabled(void)
+{
+    // When randomizeEncounters=0, must return SPECIES_NONE (0).
+    Multiplayer_Init();
+    gCoopSettings.randomizeEncounters = 0;
+    gCoopSettings.encounterSeed = 0xABCD1234u;
+    ASSERT_EQ(Multiplayer_GetRandomizedSpecies(0x08100000u, 0), 0);
+}
+
+static void TestGetRandomizedSpeciesOffWhenNoSeed(void)
+{
+    // Seed=0 means unsynced — must return SPECIES_NONE.
+    Multiplayer_Init();
+    gCoopSettings.randomizeEncounters = 1;
+    gCoopSettings.encounterSeed = 0;
+    ASSERT_EQ(Multiplayer_GetRandomizedSpecies(0x08100000u, 3), 0);
+}
+
+static void TestGetRandomizedSpeciesInRange(void)
+{
+    u16 species;
+    Multiplayer_Init();
+    gCoopSettings.randomizeEncounters = 1;
+    gCoopSettings.encounterSeed = 0x11223344u;
+    species = Multiplayer_GetRandomizedSpecies(0x08100000u, 5);
+    ASSERT(species >= 1);
+    ASSERT(species <= 493);
+}
+
+static void TestGetRandomizedSpeciesDeterministic(void)
+{
+    u16 s1, s2;
+    Multiplayer_Init();
+    gCoopSettings.randomizeEncounters = 1;
+    gCoopSettings.encounterSeed = 0xCAFEBABEu;
+    s1 = Multiplayer_GetRandomizedSpecies(0x08200000u, 7);
+    s2 = Multiplayer_GetRandomizedSpecies(0x08200000u, 7);
+    ASSERT_EQ(s1, s2);
+}
+
+static void TestGetRandomizedSpeciesDiffSlotsDiffSpecies(void)
+{
+    // Two different slots in the same table should (very likely) differ.
+    u16 s0, s11;
+    Multiplayer_Init();
+    gCoopSettings.randomizeEncounters = 1;
+    gCoopSettings.encounterSeed = 0x55AA55AAu;
+    s0  = Multiplayer_GetRandomizedSpecies(0x08300000u, 0);
+    s11 = Multiplayer_GetRandomizedSpecies(0x08300000u, 11);
+    // Not a hard requirement but they should differ for a good hash.
+    ASSERT(s0 != s11);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -586,5 +675,13 @@ int main(void)
     TestPartnerScriptLockRecv();
     TestPartnerScriptUnlockRecv();
     TestGhostFreezesDuringPartnerScript();
+    TestRngSameSeedSameSequence();
+    TestRngDifferentSeedsDifferentSequences();
+    TestRngZeroSeedNonZero();
+    TestGetRandomizedSpeciesOffWhenDisabled();
+    TestGetRandomizedSpeciesOffWhenNoSeed();
+    TestGetRandomizedSpeciesInRange();
+    TestGetRandomizedSpeciesDeterministic();
+    TestGetRandomizedSpeciesDiffSlotsDiffSpecies();
     TEST_SUMMARY();
 }
