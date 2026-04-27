@@ -638,3 +638,20 @@ gSpecials::
 	def_special UpdateTrainerCardPhotoIcons
 	def_special StickerManGetBragFlags
 	def_special CheckAddCoins
+	@ Co-op boss readiness specials (Phase 5)
+	def_special Multiplayer_BossReady_Brock
+	def_special Multiplayer_BossReady_Misty
+	def_special Multiplayer_BossReady_LtSurge
+	def_special Multiplayer_BossReady_Erika
+	def_special Multiplayer_BossReady_Koga
+	def_special Multiplayer_BossReady_Sabrina
+	def_special Multiplayer_BossReady_Blaine
+	def_special Multiplayer_BossReady_Giovanni
+	def_special Multiplayer_BossReady_Lorelei
+	def_special Multiplayer_BossReady_Bruno
+	def_special Multiplayer_BossReady_Agatha
+	def_special Multiplayer_BossReady_Lance
+	def_special Multiplayer_BossReady_Champion
+	def_special Multiplayer_BossCancel
+	def_special Multiplayer_ScriptCheckBossStart
+	def_special Multiplayer_IsConnected

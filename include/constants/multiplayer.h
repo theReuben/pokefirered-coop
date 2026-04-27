@@ -11,6 +11,28 @@
 #define MP_PKT_FULL_SYNC    0x07   // 3+len bytes total (variable)
 #define MP_PKT_SCRIPT_LOCK  0x08   // 1 byte — player entered a script interaction
 #define MP_PKT_SCRIPT_UNLOCK 0x09  // 1 byte — player left the script interaction
+#define MP_PKT_BOSS_START   0x0A   // 1 byte — relay confirms both players ready
+
+// Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
+#define BOSS_ID_BROCK       1
+#define BOSS_ID_MISTY       2
+#define BOSS_ID_LT_SURGE    3
+#define BOSS_ID_ERIKA       4
+#define BOSS_ID_KOGA        5
+#define BOSS_ID_SABRINA     6
+#define BOSS_ID_BLAINE      7
+#define BOSS_ID_GIOVANNI    8
+#define BOSS_ID_LORELEI     9
+#define BOSS_ID_BRUNO       10
+#define BOSS_ID_AGATHA      11
+#define BOSS_ID_LANCE       12
+#define BOSS_ID_CHAMPION    13
+
+// Script variables repurposed for co-op state (from VAR_UNUSED_0x40F7/0x40F8)
+// VAR_COOP_CONNECTED  — read by gym scripts to choose connected vs solo path
+// VAR_BOSS_BATTLE_STATE — unused; readiness state is polled via Multiplayer_ScriptCheckBossStart
+#define VAR_COOP_CONNECTED      0x40F7
+#define VAR_BOSS_BATTLE_STATE   0x40F8
 
 // Ring buffer constants
 #define MP_RING_SIZE        256    // power-of-2; u8 head/tail wrap naturally
@@ -26,6 +48,7 @@
 #define MP_PKT_SIZE_FULL_SYNC_HDR 3  // type + len_hi + len_lo; data follows
 #define MP_PKT_SIZE_SCRIPT_LOCK   1
 #define MP_PKT_SIZE_SCRIPT_UNLOCK 1
+#define MP_PKT_SIZE_BOSS_START    1
 
 // Player roles assigned by relay server
 #define MP_ROLE_NONE        0

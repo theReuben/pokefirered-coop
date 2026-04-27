@@ -766,6 +766,126 @@ static void TestRandomizedSpeciesPassThroughWhenDisabled(void)
     ASSERT_EQ(Multiplayer_GetRandomizedSpecies(0x08100000u, 11), 0);
 }
 
+// ---------------------------------------------------------------------------
+// Boss readiness protocol tests
+// ---------------------------------------------------------------------------
+
+static void TestBossReadySoloProceeds(void)
+{
+    // When disconnected, CheckBossStart returns 1 immediately after BossReady
+    ResetAll();
+    gMultiplayerState.connState = MP_STATE_DISCONNECTED;
+
+    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 0); // not ready yet (bossReadyBossId==0)
+
+    Multiplayer_BossReady_Brock();
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, BOSS_ID_BROCK);
+
+    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 1); // solo: proceeds immediately
+    // State cleared after returning 1
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, 0);
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
+}
+
+static void TestBossReadyConnectedWaitsForPartner(void)
+{
+    // When connected, CheckBossStart returns 0 until partner sends BOSS_READY
+    ResetAll();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+
+    Multiplayer_BossReady_Misty();
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, BOSS_ID_MISTY);
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
+
+    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 0); // partner not ready yet
+    // State must survive the poll (not cleared on 0 return)
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, BOSS_ID_MISTY);
+}
+
+static void TestBossReadyBothReadyProceeds(void)
+{
+    // Once partner sends BOSS_READY, CheckBossStart returns 1
+    ResetAll();
+    gMultiplayerState.connState       = MP_STATE_CONNECTED;
+    gMultiplayerState.bossReadyBossId = BOSS_ID_BROCK;
+    gMultiplayerState.partnerBossId   = BOSS_ID_BROCK; // simulate received BOSS_READY
+
+    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 1);
+    // Both cleared after start
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, 0);
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
+}
+
+static void TestBossReadyCancelClearsState(void)
+{
+    // Multiplayer_BossCancel resets state and sends a cancel packet
+    ResetAll();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    Multiplayer_BossReady_Erika();
+
+    ASSERT_NE(gMultiplayerState.bossReadyBossId, 0);
+
+    Multiplayer_BossCancel();
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, 0);
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
+    // A BOSS_CANCEL byte should be in the send ring (plus the earlier BOSS_READY)
+    ASSERT_NE(Mp_Available(&gMpSendRing), 0);
+}
+
+static void TestBossReadyPartnerCancelRecv(void)
+{
+    // Receiving BOSS_CANCEL from partner clears partnerBossId.
+    Multiplayer_Init();
+    ResetDispatch();
+    gSaveBlock1Ptr = &sTestSave;
+    gMultiplayerState.partnerBossId = BOSS_ID_BROCK;
+
+    Mp_Push(&gMpRecvRing, MP_PKT_BOSS_CANCEL);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
+}
+
+static void TestBossStartPacketRecv(void)
+{
+    // Receiving MP_PKT_BOSS_START sets partnerBossId to match our bossReadyBossId.
+    Multiplayer_Init();
+    ResetDispatch();
+    gSaveBlock1Ptr = &sTestSave;
+    gMultiplayerState.connState       = MP_STATE_CONNECTED;
+    gMultiplayerState.bossReadyBossId = BOSS_ID_KOGA;
+
+    Mp_Push(&gMpRecvRing, MP_PKT_BOSS_START);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerBossId, BOSS_ID_KOGA);
+    // CheckBossStart should now return 1
+    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 1);
+}
+
+static void TestBossReadyIdempotent(void)
+{
+    // Calling BossReady again resets partnerBossId so stale state doesn't trigger start.
+    ResetAll();
+    gMultiplayerState.connState     = MP_STATE_CONNECTED;
+    gMultiplayerState.partnerBossId = BOSS_ID_BROCK; // stale from a previous fight
+
+    Multiplayer_BossReady_Brock(); // re-enter readiness check
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 0); // stale partner state cleared
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, BOSS_ID_BROCK);
+}
+
+static void TestIsConnectedReflectsState(void)
+{
+    ResetAll();
+    gMultiplayerState.connState = MP_STATE_DISCONNECTED;
+    ASSERT_EQ(Multiplayer_IsConnected(), 0);
+
+    gMultiplayerState.connState = MP_STATE_CONNECTING;
+    ASSERT_EQ(Multiplayer_IsConnected(), 0);
+
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    ASSERT_EQ(Multiplayer_IsConnected(), 1);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -815,5 +935,13 @@ int main(void)
     TestDifferentSeedsDifferentSpecies();
     TestNoInvalidSpecies12Slots();
     TestRandomizedSpeciesPassThroughWhenDisabled();
+    TestBossReadySoloProceeds();
+    TestBossReadyConnectedWaitsForPartner();
+    TestBossReadyBothReadyProceeds();
+    TestBossReadyCancelClearsState();
+    TestBossReadyPartnerCancelRecv();
+    TestBossStartPacketRecv();
+    TestBossReadyIdempotent();
+    TestIsConnectedReflectsState();
     TEST_SUMMARY();
 }

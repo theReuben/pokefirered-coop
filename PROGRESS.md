@@ -309,14 +309,14 @@
 - **Notes:** trainerbattle_single expands to TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC; all 8 gyms in data/maps/XCity_Gym_Frlg/scripts.inc. FLAG_DEFEATED_* flags (0x4B0-0x4BC) are in SYNC_FLAG_BOSSES range — synced automatically. Elite Four use trainerbattle_no_intro. Boss IDs 1-13 defined (gym leaders 1-8, E4+Champion 9-13). Script modification plan: use existing special/msgbox/goto_if_ne commands with VAR_BOSS_BATTLE_STATE polling; no new bytecode needed.
 
 ### Step 5.2: Implement Boss Readiness Protocol
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Add BOSS_READY and BOSS_CANCEL packet handling to Multiplayer_Update
-  - [ ] Add boss readiness state to multiplayer state struct
-  - [ ] Implement waiting UI: show 'Waiting for partner...' textbox
-  - [ ] On BOSS_START received, dismiss waiting UI and begin battle
-  - [ ] If player walks away from trigger, send BOSS_CANCEL
-- **Notes:**
+  - [x] Add BOSS_READY and BOSS_CANCEL packet handling to Multiplayer_Update
+  - [x] Add boss readiness state to multiplayer state struct (partnerBossId field)
+  - [x] Implement waiting UI: show 'Waiting for partner...' textbox — handled in gym scripts via specialvar polling loop (Step 5.3)
+  - [x] On BOSS_START received, dismiss waiting UI and begin battle — MP_PKT_BOSS_START (0x0A) sets partnerBossId; ScriptCheckBossStart returns 1
+  - [x] If player walks away from trigger, send BOSS_CANCEL — Multiplayer_BossCancel() sends packet and clears state
+- **Notes:** Boss IDs 1-13 defined in constants/multiplayer.h. 13 BossReady_<Name> specials + BossCancel + ScriptCheckBossStart + IsConnected registered in data/specials.inc. ScriptCheckBossStart returns 1 when solo or both players ready; clears state atomically. 177 unit test assertions pass (24 new).
 
 ### Step 5.3: Modify Brock's Gym Script (Prototype)
 - **Status:** not_started

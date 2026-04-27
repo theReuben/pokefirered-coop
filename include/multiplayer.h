@@ -128,7 +128,8 @@ struct MultiplayerState {
     u8  targetY;         // target tile Y for ghost
     u8  targetFacing;    // facing direction to set when ghost reaches target
     u8  ghostObjectEventId; // GHOST_INVALID_SLOT (0xFF) = not spawned
-    u8  bossReadyBossId;    // 0 = not in readiness check
+    u8  bossReadyBossId;    // 0 = not in readiness check; nonzero = we sent BOSS_READY
+    u8  partnerBossId;      // 0 = partner not ready; nonzero = partner sent BOSS_READY
     u8  isInScript;         // TRUE while local player is executing a script
     u8  partnerIsInScript;  // TRUE while partner has sent SCRIPT_LOCK
     u8  posFrameCounter;    // counts frames; send position every 4 frames
@@ -154,6 +155,31 @@ void Multiplayer_SendFlagSet(u16 flagId);
 void Multiplayer_SendVarSet(u16 varId, u16 value);
 void Multiplayer_SendBossReady(u8 bossId);
 void Multiplayer_SendBossCancel(void);
+
+// Boss readiness protocol (Phase 5).
+// Each gym script calls the matching BossReady special, then polls via
+// Multiplayer_ScriptCheckBossStart until the partner confirms or they're solo.
+// Multiplayer_BossCancel is called if the player walks away without fighting.
+void Multiplayer_BossReady_Brock(void);
+void Multiplayer_BossReady_Misty(void);
+void Multiplayer_BossReady_LtSurge(void);
+void Multiplayer_BossReady_Erika(void);
+void Multiplayer_BossReady_Koga(void);
+void Multiplayer_BossReady_Sabrina(void);
+void Multiplayer_BossReady_Blaine(void);
+void Multiplayer_BossReady_Giovanni(void);
+void Multiplayer_BossReady_Lorelei(void);
+void Multiplayer_BossReady_Bruno(void);
+void Multiplayer_BossReady_Agatha(void);
+void Multiplayer_BossReady_Lance(void);
+void Multiplayer_BossReady_Champion(void);
+void Multiplayer_BossCancel(void);
+// Returns 1 when both players (or solo) are ready to start the boss battle,
+// then clears the readiness state.  Called via 'specialvar VAR_RESULT, ...' in scripts.
+u16  Multiplayer_ScriptCheckBossStart(void);
+// Returns 1 if connected to a partner; 0 otherwise.
+// Called via 'specialvar VAR_RESULT, ...' in scripts to choose the connected path.
+u16  Multiplayer_IsConnected(void);
 
 // Full sync (Phase 3) — called by host on connect to bring guest up to date.
 // Builds a FULL_SYNC packet from the current flag state and enqueues it.

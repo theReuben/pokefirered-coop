@@ -216,13 +216,20 @@ static bool8 ProcessOneRecvPacket(void)
         pkt[0] = typeByte;
         Mp_Pop(&gMpRecvRing, &pkt[1]);
         if (Mp_DecodeBossReady(pkt, MP_PKT_SIZE_BOSS_READY, &bossId))
-        {
-            (void)bossId; // Phase 5
-        }
+            gMultiplayerState.partnerBossId = bossId;
         break;
 
     case MP_PKT_BOSS_CANCEL:
-        // 1-byte packet — type byte already consumed
+        // 1-byte packet — type byte already consumed.
+        // Partner walked away; clear their readiness so our script loop keeps waiting.
+        gMultiplayerState.partnerBossId = 0;
+        break;
+
+    case MP_PKT_BOSS_START:
+        // Relay server confirmed both players ready.  Treat as if partner sent BOSS_READY
+        // for whatever boss we're currently waiting on.
+        if (gMultiplayerState.bossReadyBossId != 0)
+            gMultiplayerState.partnerBossId = gMultiplayerState.bossReadyBossId;
         break;
 
     case MP_PKT_SCRIPT_LOCK:
@@ -377,6 +384,7 @@ void Multiplayer_Init(void)
     gMultiplayerState.targetFacing       = DIR_SOUTH;
     gMultiplayerState.ghostObjectEventId = GHOST_INVALID_SLOT;
     gMultiplayerState.bossReadyBossId    = 0;
+    gMultiplayerState.partnerBossId      = 0;
     gMultiplayerState.isInScript         = FALSE;
     gMultiplayerState.partnerIsInScript  = FALSE;
     gMultiplayerState.posFrameCounter    = 0;
@@ -662,4 +670,72 @@ void Multiplayer_SendSeedSync(u32 seed)
     u8 pkt[MP_PKT_SIZE_SEED_SYNC];
     u8 len = Mp_EncodeSeedSync(pkt, seed);
     MpRing_Write(&gMpSendRing, pkt, len);
+}
+
+// ---------------------------------------------------------------------------
+// Boss readiness protocol (Phase 5)
+// ---------------------------------------------------------------------------
+
+static void BossReadyCommon(u8 bossId)
+{
+    gMultiplayerState.bossReadyBossId = bossId;
+    gMultiplayerState.partnerBossId   = 0; // reset partner state for fresh check
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+        Multiplayer_SendBossReady(bossId);
+}
+
+void Multiplayer_BossReady_Brock(void)    { BossReadyCommon(BOSS_ID_BROCK); }
+void Multiplayer_BossReady_Misty(void)    { BossReadyCommon(BOSS_ID_MISTY); }
+void Multiplayer_BossReady_LtSurge(void)  { BossReadyCommon(BOSS_ID_LT_SURGE); }
+void Multiplayer_BossReady_Erika(void)    { BossReadyCommon(BOSS_ID_ERIKA); }
+void Multiplayer_BossReady_Koga(void)     { BossReadyCommon(BOSS_ID_KOGA); }
+void Multiplayer_BossReady_Sabrina(void)  { BossReadyCommon(BOSS_ID_SABRINA); }
+void Multiplayer_BossReady_Blaine(void)   { BossReadyCommon(BOSS_ID_BLAINE); }
+void Multiplayer_BossReady_Giovanni(void) { BossReadyCommon(BOSS_ID_GIOVANNI); }
+void Multiplayer_BossReady_Lorelei(void)  { BossReadyCommon(BOSS_ID_LORELEI); }
+void Multiplayer_BossReady_Bruno(void)    { BossReadyCommon(BOSS_ID_BRUNO); }
+void Multiplayer_BossReady_Agatha(void)   { BossReadyCommon(BOSS_ID_AGATHA); }
+void Multiplayer_BossReady_Lance(void)    { BossReadyCommon(BOSS_ID_LANCE); }
+void Multiplayer_BossReady_Champion(void) { BossReadyCommon(BOSS_ID_CHAMPION); }
+
+void Multiplayer_BossCancel(void)
+{
+    if (gMultiplayerState.bossReadyBossId == 0)
+        return; // not in a readiness check; nothing to cancel
+
+    gMultiplayerState.bossReadyBossId = 0;
+    gMultiplayerState.partnerBossId   = 0;
+
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+        Multiplayer_SendBossCancel();
+}
+
+// Returns 1 when both players are ready to start (or when playing solo), then
+// clears readiness state.  Called each frame from the gym script wait loop via
+// 'specialvar VAR_RESULT, Multiplayer_ScriptCheckBossStart'.
+u16 Multiplayer_ScriptCheckBossStart(void)
+{
+    bool32 partnerReady;
+
+    if (gMultiplayerState.bossReadyBossId == 0)
+        return 0; // we haven't even sent BOSS_READY yet
+
+    partnerReady = (gMultiplayerState.partnerBossId != 0)
+                || (gMultiplayerState.connState != MP_STATE_CONNECTED);
+
+    if (!partnerReady)
+        return 0; // still waiting
+
+    // Both ready (or solo) — clear state and tell the script to start battle.
+    gMultiplayerState.bossReadyBossId = 0;
+    gMultiplayerState.partnerBossId   = 0;
+    return 1;
+}
+
+// Returns 1 if a partner is connected; 0 otherwise.
+// Called from gym scripts: 'specialvar VAR_RESULT, Multiplayer_IsConnected'
+// to choose the co-op waiting path vs the solo direct-battle path.
+u16 Multiplayer_IsConnected(void)
+{
+    return (gMultiplayerState.connState == MP_STATE_CONNECTED) ? 1u : 0u;
 }
