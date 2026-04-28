@@ -22,7 +22,6 @@ export default function HostJoin({ onSessionReady }: Props) {
   const [mode, setMode] = useState<Mode>("pick");
   const [roomCode, setRoomCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
-  const [savePath, setSavePath] = useState("");
   const [randomize, setRandomize] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,7 +47,6 @@ export default function HostJoin({ onSessionReady }: Props) {
         randomizeEncounters: randomize,
       });
 
-      setSavePath(path);
       setRoomCode(code);
       onSessionReady(session);
     } catch (e) {
@@ -77,7 +75,6 @@ export default function HostJoin({ onSessionReady }: Props) {
         randomizeEncounters: randomize,
       });
 
-      setSavePath(path);
       setRoomCode(code);
       onSessionReady(session);
     } catch (e) {
@@ -109,7 +106,6 @@ export default function HostJoin({ onSessionReady }: Props) {
         roomCode: code,
       });
 
-      setSavePath(path);
       onSessionReady(session);
     } catch (e) {
       setError(String(e));

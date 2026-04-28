@@ -371,6 +371,8 @@ check-relay:
 	npm run test --prefix relay-server
 
 check-tauri:
+	mkdir -p tauri-app/src-tauri/rom
+	touch tauri-app/src-tauri/rom/pokefirered.gba
 	PATH="$$PATH:$$HOME/.cargo/bin" cargo check --manifest-path tauri-app/src-tauri/Cargo.toml
 
 # Generate placeholder app icons (solid red PNGs + ICO + ICNS).
