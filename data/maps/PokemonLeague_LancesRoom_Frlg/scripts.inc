@@ -103,6 +103,15 @@ PokemonLeague_LancesRoom_EventScript_Lance::
 	goto_if_set FLAG_DEFEATED_LANCE, PokemonLeague_LancesRoom_EventScript_PostBattle
 	famechecker FAMECHECKER_LANCE, 0
 	famechecker FAMECHECKER_LANCE, 1
+	@ Co-op: wait for partner before engaging.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, PokemonLeague_LancesRoom_EventScript_LanceBattle
+	special Multiplayer_BossReady_Lance
+	message PokemonLeague_LancesRoom_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+PokemonLeague_LancesRoom_EventScript_LanceBattle::
 	call_if_unset FLAG_SYS_GAME_CLEAR, PokemonLeague_LancesRoom_EventScript_Intro
 	call_if_set FLAG_SYS_GAME_CLEAR, PokemonLeague_LancesRoom_EventScript_RematchIntro
 	setflag FLAG_TEMP_3
@@ -163,6 +172,9 @@ PokemonLeague_LancesRoom_Movement_LanceMoveOutOfWayRight::
 	walk_right
 	walk_in_place_faster_left
 	step_end
+
+PokemonLeague_LancesRoom_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 PokemonLeague_LancesRoom_Text_Intro::
 	.string "Ah! I've heard about you,\n"

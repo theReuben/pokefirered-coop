@@ -50,6 +50,15 @@ PokemonLeague_AgathasRoom_EventScript_Agatha::
 	famechecker FAMECHECKER_AGATHA, 0
 	famechecker FAMECHECKER_AGATHA, 4
 	famechecker FAMECHECKER_OAK, 4
+	@ Co-op: wait for partner before engaging.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, PokemonLeague_AgathasRoom_EventScript_AgathaBattle
+	special Multiplayer_BossReady_Agatha
+	message PokemonLeague_AgathasRoom_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+PokemonLeague_AgathasRoom_EventScript_AgathaBattle::
 	call_if_unset FLAG_SYS_GAME_CLEAR, PokemonLeague_AgathasRoom_EventScript_Intro
 	call_if_set FLAG_SYS_GAME_CLEAR, PokemonLeague_AgathasRoom_EventScript_RematchIntro
 	setflag FLAG_TEMP_3
@@ -87,6 +96,9 @@ PokemonLeague_AgathasRoom_EventScript_DefeatedAgatha::
 	msgbox PokemonLeague_AgathasRoom_Text_PostBattle
 	release
 	end
+
+PokemonLeague_AgathasRoom_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 PokemonLeague_AgathasRoom_Text_Intro::
 	.string "I am AGATHA of the ELITE FOUR.\p"

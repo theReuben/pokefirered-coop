@@ -8,9 +8,9 @@
 
 ## Current State
 - **Active Phase:** 5
-- **Active Step:** 5.5—ModifyEliteFourAndChampion
-- **Last Session Summary:** Session 3 continued Phase 5. Steps 5.1–5.3 were already done. Completed Step 5.4: applied boss readiness pattern (IsConnected check + BossReady special + waitbossstart) to all 7 remaining gym leaders (Misty, Lt. Surge, Erika, Koga, Sabrina, Blaine, Giovanni). ROM builds clean; 846 test assertions pass.
-- **Next Action:** Step 5.5 — apply boss readiness pattern to Elite Four (Lorelei, Bruno, Agatha, Lance) and Champion
+- **Active Step:** 5.6—WriteBossReadinessTests
+- **Last Session Summary:** Session 3 continued Phase 5. Completed Steps 5.4 and 5.5: boss readiness pattern applied to all 8 gym leaders and all 4 E4 + Champion. Badge flags (0x867–0x86E) added to sync ranges for Victory Road gate correctness. ROM builds clean; 846 test assertions pass.
+- **Next Action:** Step 5.6 — write C unit tests for boss ready/cancel state machine; write Lua tests (deferred to Phase 6 for two-player tests)
 
 ---
 
@@ -335,12 +335,12 @@
 - **Notes:** All 7 remaining gym leaders updated identically to Brock: famechecker → specialvar IsConnected check → if disconnected goto Direct → BossReady_X special + WaitingForPartner message + waitbossstart + closemessage → Direct label → trainerbattle_single. Each file gains a WaitingForPartner text entry. ROM builds clean; all 846 test assertions pass.
 
 ### Step 5.5: Modify Elite Four and Champion
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Apply boss readiness to each Elite Four member
-  - [ ] Apply to Champion rival battle
-  - [ ] Ensure Victory Road gate checks work with shared flags
-- **Notes:**
+  - [x] Apply boss readiness to each Elite Four member
+  - [x] Apply to Champion rival battle
+  - [x] Ensure Victory Road gate checks work with shared flags
+- **Notes:** E4 insertion point: after famechecker calls, before call_if_unset intro. Champion: inside EnterRoom frame script after player walk-in, before intro call. Badge flags (0x867–0x86E) discovered to be outside SYNC_FLAG_BOSSES range — added SYNC_FLAG_BADGES_START/END and FULL_SYNC_BADGES constants; IsSyncableFlag(), SendFullSync(), ApplyFullSync() all updated. FULL_SYNC_PAYLOAD_SIZE = 216 (was 214). Test mock flags[] extended to 280 bytes. ROM builds clean; 846 assertions pass.
 
 ### Step 5.6: Write Boss Readiness Tests
 - **Status:** not_started

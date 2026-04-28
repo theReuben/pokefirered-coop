@@ -54,6 +54,15 @@ PokemonLeague_LoreleisRoom_EventScript_Lorelei::
 	goto_if_set FLAG_DEFEATED_LORELEI, PokemonLeague_LoreleisRoom_EventScript_PostBattle
 	famechecker FAMECHECKER_LORELEI, 0
 	famechecker FAMECHECKER_LORELEI, 1
+	@ Co-op: wait for partner before engaging.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, PokemonLeague_LoreleisRoom_EventScript_LoreleiBattle
+	special Multiplayer_BossReady_Lorelei
+	message PokemonLeague_LoreleisRoom_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+PokemonLeague_LoreleisRoom_EventScript_LoreleiBattle::
 	call_if_unset FLAG_IS_CHAMPION, PokemonLeague_LoreleisRoom_EventScript_Intro
 	call_if_set FLAG_IS_CHAMPION, PokemonLeague_LoreleisRoom_EventScript_RematchIntro
 	setflag FLAG_TEMP_3
@@ -91,6 +100,9 @@ PokemonLeague_LoreleisRoom_EventScript_DefeatedLorelei::
 	msgbox PokemonLeague_LoreleisRoom_Text_PostBattle
 	release
 	end
+
+PokemonLeague_LoreleisRoom_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 PokemonLeague_LoreleisRoom_Text_Intro::
 	.string "Welcome to the POKéMON LEAGUE.\p"

@@ -534,6 +534,8 @@ void Multiplayer_SendFullSync(void)
         payload[offset++] = gSaveBlock1Ptr->flags[i];
     for (i = FULL_SYNC_TRAINERS_BYTE_START; i <= FULL_SYNC_TRAINERS_BYTE_END; i++)
         payload[offset++] = gSaveBlock1Ptr->flags[i];
+    for (i = FULL_SYNC_BADGES_BYTE_START; i <= FULL_SYNC_BADGES_BYTE_END; i++)
+        payload[offset++] = gSaveBlock1Ptr->flags[i];
 
     Mp_EncodeFullSync(pkt, payload, offset);
     MpRing_Write(&gMpSendRing, pkt, (u8)(MP_PKT_SIZE_FULL_SYNC_HDR + offset));
@@ -556,6 +558,8 @@ void Multiplayer_ApplyFullSync(const u8 *payload, u16 payloadLen)
         gSaveBlock1Ptr->flags[i] |= payload[offset++];
     for (i = FULL_SYNC_TRAINERS_BYTE_START; i <= FULL_SYNC_TRAINERS_BYTE_END; i++)
         gSaveBlock1Ptr->flags[i] |= payload[offset++];
+    for (i = FULL_SYNC_BADGES_BYTE_START; i <= FULL_SYNC_BADGES_BYTE_END; i++)
+        gSaveBlock1Ptr->flags[i] |= payload[offset++];
 }
 
 bool32 IsSyncableFlag(u16 flagId)
@@ -563,7 +567,8 @@ bool32 IsSyncableFlag(u16 flagId)
     return (flagId >= SYNC_FLAG_STORY_START    && flagId <= SYNC_FLAG_STORY_END)
         || (flagId >= SYNC_FLAG_ITEMS_START    && flagId <= SYNC_FLAG_ITEMS_END)
         || (flagId >= SYNC_FLAG_BOSSES_START   && flagId <= SYNC_FLAG_BOSSES_END)
-        || (flagId >= SYNC_FLAG_TRAINERS_START && flagId <= SYNC_FLAG_TRAINERS_END);
+        || (flagId >= SYNC_FLAG_TRAINERS_START && flagId <= SYNC_FLAG_TRAINERS_END)
+        || (flagId >= SYNC_FLAG_BADGES_START   && flagId <= SYNC_FLAG_BADGES_END);
 }
 
 // Var sync audit deferred to Phase 3 step 3.2+; no vars synced yet.

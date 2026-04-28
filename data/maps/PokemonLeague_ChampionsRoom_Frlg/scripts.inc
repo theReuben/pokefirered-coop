@@ -50,6 +50,15 @@ PokemonLeague_ChampionsRoom_EventScript_EnterRoom::
 	applymovement LOCALID_PLAYER, PokemonLeague_ChampionsRoom_Movement_PlayerEnter
 	waitmovement 0
 	delay 20
+	@ Co-op: wait for partner before champion battle.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, PokemonLeague_ChampionsRoom_EventScript_ChampionDirect
+	special Multiplayer_BossReady_Champion
+	message PokemonLeague_ChampionsRoom_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+PokemonLeague_ChampionsRoom_EventScript_ChampionDirect::
 	call_if_unset FLAG_SYS_GAME_CLEAR, PokemonLeague_ChampionsRoom_EventScript_Intro
 	call_if_set FLAG_SYS_GAME_CLEAR, PokemonLeague_ChampionsRoom_EventScript_RematchIntro
 	setflag FLAG_TEMP_3
@@ -223,6 +232,9 @@ PokemonLeague_ChampionsRoom_Movement_RivalWatchOakEnter::
 	delay_16
 	walk_in_place_faster_left
 	step_end
+
+PokemonLeague_ChampionsRoom_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 PokemonLeague_ChampionsRoom_Text_Intro::
 	.string "{RIVAL}: Hey, {PLAYER}!\p"

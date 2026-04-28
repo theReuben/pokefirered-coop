@@ -49,6 +49,15 @@ PokemonLeague_BrunosRoom_EventScript_Bruno::
 	goto_if_set FLAG_DEFEATED_BRUNO, PokemonLeague_BrunosRoom_EventScript_PostBattle
 	famechecker FAMECHECKER_BRUNO, 0
 	famechecker FAMECHECKER_BRUNO, 1
+	@ Co-op: wait for partner before engaging.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, PokemonLeague_BrunosRoom_EventScript_BrunoBattle
+	special Multiplayer_BossReady_Bruno
+	message PokemonLeague_BrunosRoom_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+PokemonLeague_BrunosRoom_EventScript_BrunoBattle::
 	call_if_unset FLAG_SYS_GAME_CLEAR, PokemonLeague_BrunosRoom_EventScript_Intro
 	call_if_set FLAG_SYS_GAME_CLEAR, PokemonLeague_BrunosRoom_EventScript_RematchIntro
 	setflag FLAG_TEMP_3
@@ -111,6 +120,9 @@ PokemonLeague_BrunosRoom_EventScript_BrunoLookAwayDown::
 	applymovement LOCALID_BRUNO, Common_Movement_WalkInPlaceFasterDown
 	waitmovement 0
 	return
+
+PokemonLeague_BrunosRoom_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 PokemonLeague_BrunosRoom_Text_Intro::
 	.string "I am BRUNO of the ELITE FOUR!\p"
