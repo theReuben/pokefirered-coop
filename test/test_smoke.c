@@ -232,8 +232,15 @@ static void TestIsSyncableFlag(void)
     ASSERT_EQ(IsSyncableFlag(0x500),  TRUE);  // TRAINER_FLAGS_START
     ASSERT_EQ(IsSyncableFlag(0x7FF),  TRUE);  // TRAINER_FLAGS_END
 
-    // SYS_FLAGS (0x800+): NOT syncable.
+    // SYS_FLAGS below badge range (0x800–0x866): NOT syncable.
     ASSERT_EQ(IsSyncableFlag(0x800),  FALSE);
+    ASSERT_EQ(IsSyncableFlag(0x866),  FALSE); // one below BADGE01
+
+    // Badge flags (0x867–0x86E): syncable (Victory Road gate fix).
+    ASSERT_EQ(IsSyncableFlag(0x867),  TRUE);  // FLAG_BADGE01_GET
+    ASSERT_EQ(IsSyncableFlag(0x86E),  TRUE);  // FLAG_BADGE08_GET
+    ASSERT_EQ(IsSyncableFlag(0x86F),  FALSE); // one past badge range
+
     ASSERT_EQ(IsSyncableFlag(0xFFFF), FALSE);
 }
 
@@ -873,6 +880,68 @@ static void TestBossReadyIdempotent(void)
     ASSERT_EQ(gMultiplayerState.bossReadyBossId, BOSS_ID_BROCK);
 }
 
+static void TestBadgeFlagInFullSync(void)
+{
+    // Set FLAG_BADGE01_GET (0x867) and verify it appears in FULL_SYNC payload
+    // at offset FULL_SYNC_STORY_LEN+FULL_SYNC_ITEMS_LEN+FULL_SYNC_BOSSES_LEN+FULL_SYNC_TRAINERS_LEN+0
+    // (i.e. the first badge payload byte, bit 7).
+    u8 b;
+    u16 i, payloadOffset;
+    u8 payload[FULL_SYNC_PAYLOAD_SIZE];
+
+    Multiplayer_Init();
+    ResetDispatch();
+    memset(&sSyncSave, 0, sizeof(sSyncSave));
+    gSaveBlock1Ptr = &sSyncSave;
+
+    // FLAG_BADGE01_GET = 0x867 → byte 268, bit 7
+    sSyncSave.flags[FULL_SYNC_BADGES_BYTE_START] |= (1 << (SYNC_FLAG_BADGES_START & 7));
+
+    Multiplayer_SendFullSync();
+
+    // Skip 3-byte header
+    Mp_Pop(&gMpSendRing, &b); // type
+    Mp_Pop(&gMpSendRing, &b); // lenHi
+    Mp_Pop(&gMpSendRing, &b); // lenLo
+
+    for (i = 0; i < FULL_SYNC_PAYLOAD_SIZE; i++)
+        Mp_Pop(&gMpSendRing, &payload[i]);
+
+    payloadOffset = FULL_SYNC_STORY_LEN + FULL_SYNC_ITEMS_LEN
+                  + FULL_SYNC_BOSSES_LEN + FULL_SYNC_TRAINERS_LEN;
+    ASSERT_NE(payload[payloadOffset] & (1 << (SYNC_FLAG_BADGES_START & 7)), 0);
+
+    // FLAG_BADGE08_GET = 0x86E → byte 269, bit 6
+    memset(&sSyncSave, 0, sizeof(sSyncSave));
+    Multiplayer_Init();
+    ResetDispatch();
+    sSyncSave.flags[FULL_SYNC_BADGES_BYTE_END] |= (1 << (SYNC_FLAG_BADGES_END & 7));
+
+    Multiplayer_SendFullSync();
+    Mp_Pop(&gMpSendRing, &b);
+    Mp_Pop(&gMpSendRing, &b);
+    Mp_Pop(&gMpSendRing, &b);
+    for (i = 0; i < FULL_SYNC_PAYLOAD_SIZE; i++)
+        Mp_Pop(&gMpSendRing, &payload[i]);
+
+    ASSERT_NE(payload[payloadOffset + (FULL_SYNC_BADGES_BYTE_END - FULL_SYNC_BADGES_BYTE_START)]
+              & (1 << (SYNC_FLAG_BADGES_END & 7)), 0);
+}
+
+static void TestBossReadyPartnerAnyIdProceeds(void)
+{
+    // v1 design: partnerBossId != 0 is sufficient to proceed (relay enforces matching).
+    // A non-zero partner ID (even a different boss) triggers start for the local script.
+    ResetAll();
+    gMultiplayerState.connState       = MP_STATE_CONNECTED;
+    gMultiplayerState.bossReadyBossId = BOSS_ID_BROCK;
+    gMultiplayerState.partnerBossId   = BOSS_ID_MISTY; // different boss
+
+    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 1); // proceeds (relay guards)
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, 0);
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
+}
+
 static void TestIsConnectedReflectsState(void)
 {
     ResetAll();
@@ -942,6 +1011,8 @@ int main(void)
     TestBossReadyPartnerCancelRecv();
     TestBossStartPacketRecv();
     TestBossReadyIdempotent();
+    TestBadgeFlagInFullSync();
+    TestBossReadyPartnerAnyIdProceeds();
     TestIsConnectedReflectsState();
     TEST_SUMMARY();
 }
