@@ -3,6 +3,16 @@ FuchsiaCity_Gym_Frlg_MapScripts::
 
 FuchsiaCity_Gym_EventScript_Koga::
 	famechecker FAMECHECKER_KOGA, FCPICKSTATE_COLORED, UpdatePickStateFromSpecialVar8005
+	@ Co-op: check if connected; solo players go straight to battle.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, FuchsiaCity_Gym_EventScript_KogaDirect
+	@ Connected: signal readiness and wait for partner.
+	special Multiplayer_BossReady_Koga
+	message FuchsiaCity_Gym_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+FuchsiaCity_Gym_EventScript_KogaDirect::
 	trainerbattle_single TRAINER_LEADER_KOGA, FuchsiaCity_Gym_Text_KogaIntro, FuchsiaCity_Gym_Text_KogaDefeat, FuchsiaCity_Gym_EventScript_DefeatedKoga, NO_MUSIC
 	goto_if_unset FLAG_GOT_TM06_FROM_KOGA, FuchsiaCity_Gym_EventScript_GiveTM06
 	msgbox FuchsiaCity_Gym_Text_KogaPostBattle
@@ -88,6 +98,9 @@ FuchsiaCity_Gym_EventScript_GymStatuePostVictory::
 	msgbox FuchsiaCity_Gym_Text_GymStatuePlayerWon
 	releaseall
 	end
+
+FuchsiaCity_Gym_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 FuchsiaCity_Gym_Text_KogaIntro::
 	.string "KOGA: Fwahahaha!\p"

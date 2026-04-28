@@ -203,6 +203,16 @@ VermilionCity_Gym_EventScript_SetBeamsOn::
 
 VermilionCity_Gym_EventScript_LtSurge::
 	famechecker FAMECHECKER_LTSURGE, FCPICKSTATE_COLORED, UpdatePickStateFromSpecialVar8005
+	@ Co-op: check if connected; solo players go straight to battle.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, VermilionCity_Gym_EventScript_LtSurgeDirect
+	@ Connected: signal readiness and wait for partner.
+	special Multiplayer_BossReady_LtSurge
+	message VermilionCity_Gym_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+VermilionCity_Gym_EventScript_LtSurgeDirect::
 	trainerbattle_single TRAINER_LEADER_LT_SURGE, VermilionCity_Gym_Text_LtSurgeIntro, VermilionCity_Gym_Text_LtSurgeDefeat, VermilionCity_Gym_EventScript_DefeatedLtSurge, NO_MUSIC
 	goto_if_unset FLAG_GOT_TM34_FROM_SURGE, VermilionCity_Gym_EventScript_GiveTM34
 	msgbox VermilionCity_Gym_Text_LtSurgePostBattle
@@ -284,6 +294,9 @@ VermilionCity_Gym_EventScript_GymStatuePostVictory::
 	msgbox VermilionCity_Gym_Text_GymStatuePlayerWon
 	releaseall
 	end
+
+VermilionCity_Gym_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 VermilionCity_Gym_Text_LtSurgeIntro::
 	.string "Hey, kid! What do you think you're\n"

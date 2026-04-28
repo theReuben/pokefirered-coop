@@ -3,6 +3,16 @@ CeruleanCity_Gym_Frlg_MapScripts::
 
 CeruleanCity_Gym_EventScript_Misty::
 	famechecker FAMECHECKER_MISTY, FCPICKSTATE_COLORED, UpdatePickStateFromSpecialVar8005
+	@ Co-op: check if connected; solo players go straight to battle.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, CeruleanCity_Gym_EventScript_MistyDirect
+	@ Connected: signal readiness and wait for partner.
+	special Multiplayer_BossReady_Misty
+	message CeruleanCity_Gym_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+CeruleanCity_Gym_EventScript_MistyDirect::
 	trainerbattle_single TRAINER_LEADER_MISTY, CeruleanCity_Gym_Text_MistyIntro, CeruleanCity_Gym_Text_MistyDefeat, CeruleanCity_Gym_EventScript_MistyDefeated, NO_MUSIC
 	goto_if_unset FLAG_GOT_TM03_FROM_MISTY, CeruleanCity_Gym_EventScript_GiveTM03
 	msgbox CeruleanCity_Gym_Text_ExplainTM03
@@ -68,6 +78,9 @@ CeruleanCity_Gym_EventScript_GymStatuePostVictory::
 	msgbox CeruleanCity_Gym_Text_GymStatuePlayerWon
 	releaseall
 	end
+
+CeruleanCity_Gym_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 CeruleanCity_Gym_Text_MistyIntro::
 	.string "Hi, you're a new face!\p"

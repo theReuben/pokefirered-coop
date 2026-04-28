@@ -3,6 +3,16 @@ SaffronCity_Gym_Frlg_MapScripts::
 
 SaffronCity_Gym_EventScript_Sabrina::
 	famechecker FAMECHECKER_SABRINA, FCPICKSTATE_COLORED, UpdatePickStateFromSpecialVar8005
+	@ Co-op: check if connected; solo players go straight to battle.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, SaffronCity_Gym_EventScript_SabrinaDirect
+	@ Connected: signal readiness and wait for partner.
+	special Multiplayer_BossReady_Sabrina
+	message SaffronCity_Gym_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+SaffronCity_Gym_EventScript_SabrinaDirect::
 	trainerbattle_single TRAINER_LEADER_SABRINA, SaffronCity_Gym_Text_SabrinaIntro, SaffronCity_Gym_Text_SabrinaDefeat, SaffronCity_Gym_EventScript_DefeatedSabrina, NO_MUSIC
 	goto_if_unset FLAG_GOT_TM04_FROM_SABRINA, SaffronCity_Gym_EventScript_GiveTM04
 	msgbox SaffronCity_Gym_Text_ExplainTM04
@@ -94,6 +104,9 @@ SaffronCity_Gym_EventScript_GymStatuePostVictory::
 	msgbox SaffronCity_Gym_Text_GymStatuePlayerWon
 	releaseall
 	end
+
+SaffronCity_Gym_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 SaffronCity_Gym_Text_SabrinaIntro::
 	.string "I had a vision of your arrival.\p"

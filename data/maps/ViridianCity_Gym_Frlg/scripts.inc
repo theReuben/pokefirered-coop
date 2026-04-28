@@ -3,6 +3,16 @@ ViridianCity_Gym_Frlg_MapScripts::
 
 ViridianCity_Gym_EventScript_Giovanni::
 	famechecker FAMECHECKER_GIOVANNI, FCPICKSTATE_COLORED, UpdatePickStateFromSpecialVar8005
+	@ Co-op: check if connected; solo players go straight to battle.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, ViridianCity_Gym_EventScript_GiovanniDirect
+	@ Connected: signal readiness and wait for partner.
+	special Multiplayer_BossReady_Giovanni
+	message ViridianCity_Gym_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+ViridianCity_Gym_EventScript_GiovanniDirect::
 	trainerbattle_single TRAINER_LEADER_GIOVANNI, ViridianCity_Gym_Text_GiovanniIntro, ViridianCity_Gym_Text_GiovanniDefeat, ViridianCity_Gym_EventScript_DefeatedGiovanni, NO_MUSIC
 	goto_if_unset FLAG_GOT_TM26_FROM_GIOVANNI, ViridianCity_Gym_EventScript_GiveTM26
 	msgbox ViridianCity_Gym_Text_GiovanniPostBattle
@@ -103,6 +113,9 @@ ViridianCity_Gym_EventScript_GymStatuePostVictory::
 	msgbox ViridianCity_Gym_Text_GymStatuePlayerWon
 	releaseall
 	end
+
+ViridianCity_Gym_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 ViridianCity_Gym_Text_GiovanniIntro::
 	.string "Fwahahaha!\n"

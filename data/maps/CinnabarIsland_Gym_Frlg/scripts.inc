@@ -47,6 +47,16 @@ CinnabarIsland_Gym_OnLoadOpenDoor6::
 
 CinnabarIsland_Gym_EventScript_Blaine::
 	famechecker FAMECHECKER_BLAINE, FCPICKSTATE_COLORED, UpdatePickStateFromSpecialVar8005
+	@ Co-op: check if connected; solo players go straight to battle.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, CinnabarIsland_Gym_EventScript_BlaineDirect
+	@ Connected: signal readiness and wait for partner.
+	special Multiplayer_BossReady_Blaine
+	message CinnabarIsland_Gym_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+CinnabarIsland_Gym_EventScript_BlaineDirect::
 	trainerbattle_single TRAINER_LEADER_BLAINE, CinnabarIsland_Gym_Text_BlaineIntro, CinnabarIsland_Gym_Text_BlaineDefeat, CinnabarIsland_Gym_EventScript_DefeatedBlaine, NO_MUSIC
 	goto_if_unset FLAG_GOT_TM38_FROM_BLAINE, CinnabarIsland_Gym_EventScript_GiveTM38
 	msgbox CinnabarIsland_Gym_Text_BlainePostBattle
@@ -708,6 +718,9 @@ CinnabarIsland_Gym_EventScript_OpenDoor6::
 	setmetatile  6, 10, METATILE_CinnabarGym_Floor, 0
 	setmetatile  7, 10, METATILE_CinnabarGym_Floor_ShadeDiagonal, 0
 	return
+
+CinnabarIsland_Gym_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 CinnabarIsland_Gym_Text_BlaineIntro::
 	.string "Hah!\p"

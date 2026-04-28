@@ -8,9 +8,9 @@
 
 ## Current State
 - **Active Phase:** 5
-- **Active Step:** 5.1—StudyGymLeaderScripts
-- **Last Session Summary:** Session 8 completed Steps 4.3–4.5. 4.3: confirmed wild_encounter.c hooks; hash-on-demand approach documented. 4.4: Multiplayer_GenerateSeed/SendSeedSync added; test/mocks/random.h stub created. 4.5: 50 new assertions (153 total) covering seed round-trip, species range, determinism, disabled pass-through.
-- **Next Action:** Step 5.1 — read Brock's gym script, document trainer-battle command flow, identify all 8 gym leader scripts
+- **Active Step:** 5.5—ModifyEliteFourAndChampion
+- **Last Session Summary:** Session 3 continued Phase 5. Steps 5.1–5.3 were already done. Completed Step 5.4: applied boss readiness pattern (IsConnected check + BossReady special + waitbossstart) to all 7 remaining gym leaders (Misty, Lt. Surge, Erika, Koga, Sabrina, Blaine, Giovanni). ROM builds clean; 846 test assertions pass.
+- **Next Action:** Step 5.5 — apply boss readiness pattern to Elite Four (Lorelei, Bruno, Agatha, Lance) and Champion
 
 ---
 
@@ -329,10 +329,10 @@
 - **Notes:** Added SCR_OP_WAITBOSSSTART (0xE7) script command implemented as SetupNativeScript(Multiplayer_NativePollBossStart). Native poll returns TRUE when ScriptCheckBossStart returns nonzero (both ready or solo). Macro `waitbossstart` added to event.inc. Brock's script now: specialvar IsConnected → if 0 skip to BrockDirect; else BossReady_Brock, message+waitmessage, waitbossstart, closemessage, then trainerbattle_single. ROM builds clean; unit tests pass (177 assertions).
 
 ### Step 5.4: Modify Remaining Gym Leader Scripts
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Apply same pattern to Misty, Lt. Surge, Erika, Koga, Sabrina, Blaine, Giovanni
-- **Notes:**
+  - [x] Apply same pattern to Misty, Lt. Surge, Erika, Koga, Sabrina, Blaine, Giovanni
+- **Notes:** All 7 remaining gym leaders updated identically to Brock: famechecker → specialvar IsConnected check → if disconnected goto Direct → BossReady_X special + WaitingForPartner message + waitbossstart + closemessage → Direct label → trainerbattle_single. Each file gains a WaitingForPartner text entry. ROM builds clean; all 846 test assertions pass.
 
 ### Step 5.5: Modify Elite Four and Champion
 - **Status:** not_started
