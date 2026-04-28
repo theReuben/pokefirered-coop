@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pokefirered-coop",
+  "productName": "Pokémon FireRed Co-Op",
   "version": "0.1.0",
-  "identifier": "com.pokefirered-coop.app",
+  "identifier": "dev.reubenday.pokefireredcoop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -36,6 +36,21 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "shortDescription": "2-player co-op mod for Pokémon FireRed",
+    "longDescription": "Networked 2-player co-op mod for Pokémon FireRed. Two players explore Kanto simultaneously with a shared world state, randomized wild encounters, and co-op gym leader battles.",
+    "category": "Game",
+    "copyright": "Pokémon © Nintendo/Game Freak. Mod by Reuben Day. Free for personal use.",
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.13"
+    },
+    "windows": {
+      "nsis": {}
+    }
   }
 }

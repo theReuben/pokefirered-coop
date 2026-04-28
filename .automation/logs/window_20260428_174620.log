@@ -40,3 +40,149 @@ M .automation/backups/PROGRESS.md.bak
 ──────────────────────────────────────────────────
 Error: Reached max turns (75)[19:01:32] Max turns reached — treating as normal session end
 [19:01:32] ✓ Advanced: 6.1—SetUpPartyKitProject → 7.6—BundleROM
+═══ POST-FLIGHT CHECKS ═══
+
+[Progress Update]
+  ✅ No broken markdown tables
+
+[Code Quality]
+
+[Git State]
+  ✅ All changes committed
+
+[Config Integrity]
+  ✅ CLAUDE.md is non-empty
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ Session log updated recently
+   Fix: Claude may not have updated PROGRESS.md before the session ended
+──────────────────────────────────────────────────
+[19:01:49] ── SESSION 2 | Phase 7 Step 7.6—BundleROM | sonnet | ~244m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (160/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (30.2 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ Working tree clean (no uncommitted changes)
+   Fix: Uncommitted changes exist:
+M .automation/logs/window_20260428_174620.log
+   Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+You're out of extra usage · resets 8:50pm (Europe/London)
+[19:09:17] Error (exit 1)
+[19:10:17] ── SESSION 3 | Phase 7 Step 7.7—EndToEndTest | sonnet | ~236m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (164/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (30.2 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ Working tree clean (no uncommitted changes)
+   Fix: Uncommitted changes exist:
+M .automation/backups/PROGRESS.md.bak
+ M .automation/logs/window_20260428_174620.log
+ M Makefile
+ M PROGRESS.md
+ M tauri-app/src-tauri/Cargo.toml
+ M tauri-app/src-tauri/src/commands.rs
+ M tauri-app/src-tauri/src/emulator.rs
+ M tauri-app/src-tauri/src/lib.rs
+ M tauri-app/src-tauri/tauri.conf.json
+?? tauri-app/src-tauri/rom/
+   Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+You're out of extra usage · resets 8:50pm (Europe/London)
+[19:10:22] Error (exit 1)
+[19:11:22] ── SESSION 4 | Phase 7 Step 7.7—EndToEndTest | sonnet | ~234m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (164/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (30.2 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ Working tree clean (no uncommitted changes)
+   Fix: Uncommitted changes exist:
+M .automation/backups/PROGRESS.md.bak
+ M .automation/logs/window_20260428_174620.log
+ M Makefile
+ M PROGRESS.md
+ M tauri-app/src-tauri/Cargo.toml
+ M tauri-app/src-tauri/src/commands.rs
+ M tauri-app/src-tauri/src/emulator.rs
+ M tauri-app/src-tauri/src/lib.rs
+ M tauri-app/src-tauri/tauri.conf.json
+?? tauri-app/src-tauri/rom/
+   Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+You're out of extra usage · resets 8:50pm (Europe/London)
+[19:11:27] Error (exit 1)
+[19:11:27] 3 errors.
+[19:11:27] Sessions: 4 | Final: Phase 7 Step 7.7—EndToEndTest | Duration: 85m

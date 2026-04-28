@@ -373,6 +373,11 @@ check-relay:
 check-tauri:
 	PATH="$$PATH:$$HOME/.cargo/bin" cargo check --manifest-path tauri-app/src-tauri/Cargo.toml
 
+# Generate placeholder app icons (solid red PNGs + ICO + ICNS).
+# Run once before 'npm run tauri build'. Replace icons with real artwork before distributing.
+gen-icons:
+	python3 tools/gen-icons.py
+
 # Copy the built ROM into the Tauri app's resource directory.
 # Run this after 'make firered' and before 'cd tauri-app && npm run tauri build'.
 bundle-rom: pokefirered.gba
