@@ -1,0 +1,4 @@
+{
+  "name": "pokefirered-coop",
+  "main": "src/server.ts"
+}

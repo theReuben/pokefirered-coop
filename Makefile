@@ -366,6 +366,10 @@ check: $(TESTELF)
 check-native:
 	$(MAKE) -C test all
 
+check-relay:
+	npm install --prefix relay-server
+	npm run test --prefix relay-server
+
 # Other rules
 rom: $(ROM)
 ifeq ($(COMPARE),1)

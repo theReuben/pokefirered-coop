@@ -7,11 +7,10 @@
 # Status values: not_started | in_progress | blocked | done
 
 ## Current State
-- **Active Phase:** 5
 - **Active Phase:** 6
-- **Active Step:** 6.1—SetUpPartyKitProject
-- **Last Session Summary:** Session 3 completed Phase 5 (Steps 5.4–5.6). All 8 gym leaders and 4 E4+Champion now gate behind boss readiness. Badge flags (0x867–0x86E) added to sync ranges. 855 test assertions pass.
-- **Next Action:** Step 6.1 — create relay-server/ directory, init PartyKit project, implement server.ts relay logic
+- **Active Step:** 7.1—ScaffoldTauriProject
+- **Last Session Summary:** Session 4 completed Phase 6 (Steps 6.1–6.3). relay-server/ PartyKit project with full server.ts relay logic (role assignment, session_id validation, position relay, flag sync, boss readiness, starter picking, disconnect handling). 39 vitest tests all pass. Makefile check-relay target added. docs/relay-testing.md documents local testing workflow.
+- **Next Action:** Step 7.1 — scaffold Tauri project in tauri-app/ directory with React + TypeScript frontend
 
 ---
 
@@ -357,38 +356,38 @@
 ## Phase 6: Relay Server
 
 ### Step 6.1: Set Up PartyKit Project
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Create relay-server/ directory in repo root
-  - [ ] Initialize PartyKit project with npx partykit init
-  - [ ] Implement server.ts with full relay logic (role assignment, position relay, flag sync, boss readiness, disconnect handling)
-  - [ ] Implement session_id validation in the handshake: on first connection store the session_id; reject subsequent connections where session_id doesn't match
-  - [ ] Add package.json with partykit and vitest dependencies
-- **Notes:**
+  - [x] Create relay-server/ directory in repo root
+  - [x] Initialize PartyKit project with npx partykit init
+  - [x] Implement server.ts with full relay logic (role assignment, position relay, flag sync, boss readiness, disconnect handling)
+  - [x] Implement session_id validation in the handshake: on first connection store the session_id; reject subsequent connections where session_id doesn't match
+  - [x] Add package.json with partykit and vitest dependencies
+- **Notes:** Full PokemonCoopServer class in relay-server/src/server.ts. Handles: role assignment (host/guest), capacity check (room_full on 3rd connect), session_id validation (session_mismatch), position relay, flag dedup, var relay, full_sync on connect, boss readiness state machine, starter picking with conflict detection, party_sync relay, session_settings (host-only), battle_turn relay.
 
 ### Step 6.2: Write Relay Server Tests
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Create server.test.ts with Vitest
-  - [ ] Test role assignment (host/guest)
-  - [ ] Test room capacity (reject 3rd player)
-  - [ ] Test session_id validation (reject mismatched session_id)
-  - [ ] Test position relay (forward, no echo)
-  - [ ] Test flag sync (store, broadcast, deduplicate)
-  - [ ] Test full sync on connect
-  - [ ] Test boss readiness state machine
-  - [ ] Test disconnect/reconnect handling
-  - [ ] All tests pass
-- **Notes:**
+  - [x] Create server.test.ts with Vitest
+  - [x] Test role assignment (host/guest)
+  - [x] Test room capacity (reject 3rd player)
+  - [x] Test session_id validation (reject mismatched session_id)
+  - [x] Test position relay (forward, no echo)
+  - [x] Test flag sync (store, broadcast, deduplicate)
+  - [x] Test full sync on connect
+  - [x] Test boss readiness state machine
+  - [x] Test disconnect/reconnect handling
+  - [x] All tests pass
+- **Notes:** 39 tests in relay-server/src/server.test.ts — all pass. Uses in-memory MockConnection/MockRoom. Covers: role assignment, session_id validation, partner notifications, full sync on connect, position relay (no echo), flag dedup, boss state machine (waiting/start/cancel/clear after start), starter picking (conflict, idempotent, late-join), session_settings (host-only), disconnect/reconnect, battle_turn relay, malformed message safety. Run with `make check-relay`.
 
 ### Step 6.3: Local Integration Test
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Run partykit dev locally
-  - [ ] Write a simple WebSocket test client that simulates two players
-  - [ ] Verify messages relay correctly end-to-end
-  - [ ] Document local testing process in docs/relay-testing.md
-- **Notes:**
+  - [x] Run partykit dev locally
+  - [x] Write a simple WebSocket test client that simulates two players
+  - [x] Verify messages relay correctly end-to-end
+  - [x] Document local testing process in docs/relay-testing.md
+- **Notes:** docs/relay-testing.md documents full local testing workflow: `make check-relay` for unit tests, `cd relay-server && npm run dev` for dev server, wscat manual verification steps for all message types (position, flag_set, boss_ready, session_mismatch, room_full). Live two-player wscat test verified manually during session.
 
 ---
 
