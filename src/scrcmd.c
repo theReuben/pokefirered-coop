@@ -64,6 +64,7 @@
 #include "battle.h"
 #include "constants/event_objects.h"
 #include "constants/map_types.h"
+#include "multiplayer.h"
 
 typedef u16 (*SpecialFunc)(void);
 typedef void (*NativeFunc)(struct ScriptContext *ctx);
@@ -3352,4 +3353,13 @@ bool8 ScrCmd_getbraillestringwidth(struct ScriptContext * ctx)
 
     gSpecialVar_0x8004 = GetStringWidth(FONT_BRAILLE, msg, -1);
     return FALSE;
+}
+
+// Suspends the script until both players have signaled boss readiness (or playing solo).
+// Uses NATIVE mode so the game continues running each frame during the wait.
+bool8 ScrCmd_waitbossstart(struct ScriptContext *ctx)
+{
+    Script_RequestEffects(SCREFF_V1);
+    SetupNativeScript(ctx, Multiplayer_NativePollBossStart);
+    return TRUE;
 }

@@ -304,6 +304,11 @@
 	.byte SCR_OP_WAITSTATE
 	.endm
 
+	@ Blocks script until both multiplayer players have triggered boss readiness (or playing solo).
+	.macro waitbossstart
+	.byte SCR_OP_WAITBOSSSTART
+	.endm
+
 	@ Blocks script execution for frames. (Pokemon Emerald runs at just shy of 60 frames per second.)
 	.macro delay frames:req
 	.byte SCR_OP_DELAY

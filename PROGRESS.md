@@ -319,14 +319,14 @@
 - **Notes:** Boss IDs 1-13 defined in constants/multiplayer.h. 13 BossReady_<Name> specials + BossCancel + ScriptCheckBossStart + IsConnected registered in data/specials.inc. ScriptCheckBossStart returns 1 when solo or both players ready; clears state atomically. 177 unit test assertions pass (24 new).
 
 ### Step 5.3: Modify Brock's Gym Script (Prototype)
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Modify Brock's pre-battle script to check multiplayer state
-  - [ ] After dialogue, send BOSS_READY instead of immediately starting battle
-  - [ ] Show waiting message until BOSS_START received
-  - [ ] On BOSS_START, begin the battle normally
-  - [ ] Test with two mGBA instances: both must interact to start
-- **Notes:**
+  - [x] Modify Brock's pre-battle script to check multiplayer state
+  - [x] After dialogue, send BOSS_READY instead of immediately starting battle
+  - [x] Show waiting message until BOSS_START received
+  - [x] On BOSS_START, begin the battle normally
+  - [ ] Test with two mGBA instances: both must interact to start (deferred to Phase 6)
+- **Notes:** Added SCR_OP_WAITBOSSSTART (0xE7) script command implemented as SetupNativeScript(Multiplayer_NativePollBossStart). Native poll returns TRUE when ScriptCheckBossStart returns nonzero (both ready or solo). Macro `waitbossstart` added to event.inc. Brock's script now: specialvar IsConnected → if 0 skip to BrockDirect; else BossReady_Brock, message+waitmessage, waitbossstart, closemessage, then trainerbattle_single. ROM builds clean; unit tests pass (177 assertions).
 
 ### Step 5.4: Modify Remaining Gym Leader Scripts
 - **Status:** not_started

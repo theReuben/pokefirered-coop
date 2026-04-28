@@ -180,6 +180,8 @@ u16  Multiplayer_ScriptCheckBossStart(void);
 // Returns 1 if connected to a partner; 0 otherwise.
 // Called via 'specialvar VAR_RESULT, ...' in scripts to choose the connected path.
 u16  Multiplayer_IsConnected(void);
+// Native callback for SCR_OP_WAITBOSSSTART: returns TRUE when both players ready (or solo).
+bool8 Multiplayer_NativePollBossStart(void);
 
 // Full sync (Phase 3) — called by host on connect to bring guest up to date.
 // Builds a FULL_SYNC packet from the current flag state and enqueues it.

@@ -739,3 +739,11 @@ u16 Multiplayer_IsConnected(void)
 {
     return (gMultiplayerState.connState == MP_STATE_CONNECTED) ? 1u : 0u;
 }
+
+// Native script callback for 'waitbossstart' opcode.
+// Returns TRUE (resume bytecode) when both players are ready or playing solo.
+// Returns FALSE (stay in NATIVE mode, yield) while still waiting.
+bool8 Multiplayer_NativePollBossStart(void)
+{
+    return (bool8)(Multiplayer_ScriptCheckBossStart() != 0);
+}

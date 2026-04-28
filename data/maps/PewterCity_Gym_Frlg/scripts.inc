@@ -3,6 +3,16 @@ PewterCity_Gym_Frlg_MapScripts::
 
 PewterCity_Gym_EventScript_Brock::
 	famechecker FAMECHECKER_BROCK, FCPICKSTATE_COLORED, UpdatePickStateFromSpecialVar8005
+	@ Co-op: check if connected; solo players go straight to battle.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, PewterCity_Gym_EventScript_BrockDirect
+	@ Connected: signal readiness and wait for partner.
+	special Multiplayer_BossReady_Brock
+	message PewterCity_Gym_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+PewterCity_Gym_EventScript_BrockDirect::
 	trainerbattle_single TRAINER_LEADER_BROCK, PewterCity_Gym_Text_BrockIntro, PewterCity_Gym_Text_BrockDefeat, PewterCity_Gym_EventScript_DefeatedBrock, NO_MUSIC
 	goto_if_unset FLAG_GOT_TM39_FROM_BROCK, PewterCity_Gym_EventScript_GiveTM39
 	msgbox PewterCity_Gym_Text_BrockPostBattle
@@ -80,6 +90,9 @@ PewterCity_Gym_EventScript_GymStatuePostVictory::
 	msgbox PewterCity_Gym_Text_GymStatuePlayerWon
 	releaseall
 	end
+
+PewterCity_Gym_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 PewterCity_Gym_Text_BrockIntro::
 	.string "So, you're here. I'm BROCK.\n"
