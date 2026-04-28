@@ -385,6 +385,15 @@ bundle-rom: pokefirered.gba
 	cp pokefirered.gba tauri-app/src-tauri/rom/pokefirered.gba
 	@echo "ROM bundled: tauri-app/src-tauri/rom/pokefirered.gba"
 
+# Full Tauri release build: ROM → icons → frontend → Tauri bundle.
+# Outputs go to tauri-app/src-tauri/target/release/bundle/.
+# Requires: ARM toolchain (for make firered), Rust + Node.js (for Tauri).
+tauri-release: firered gen-icons bundle-rom
+	cd tauri-app && npm install && npm run tauri build
+	@echo ""
+	@echo "Distributable bundles written to:"
+	@echo "  tauri-app/src-tauri/target/release/bundle/"
+
 # Other rules
 rom: $(ROM)
 ifeq ($(COMPARE),1)

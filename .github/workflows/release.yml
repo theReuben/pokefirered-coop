@@ -1,0 +1,189 @@
+name: Release Distributable
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g. v0.1.0)'
+        required: false
+        default: 'v0.1.0'
+      draft:
+        description: 'Publish as draft release'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Job 1: Build FireRed ROM (Linux; shared as artifact) ──────────────────────
+  build-rom:
+    name: Build FireRed ROM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM toolchain + build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libpng-dev \
+            python3
+
+      - name: Cache pokeemerald build tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/bin2c/bin2c
+            tools/gbafix/gbafix
+            tools/gbagfx/gbagfx
+            tools/jsonproc/jsonproc
+            tools/mapjson/mapjson
+            tools/mid2agb/mid2agb
+            tools/preproc/preproc
+            tools/ramscrgen/ramscrgen
+            tools/rsfont/rsfont
+            tools/scaninc/scaninc
+            tools/trainerproc/trainerproc
+            tools/compresSmol/compresSmol
+            tools/compresSmol/compresSmolTilemap
+            tools/wav2agb/wav2agb
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h') }}
+
+      - name: Build FireRed ROM
+        run: make firered -j$(nproc) -O
+
+      - name: Verify ROM size (≥ 16 MiB)
+        run: |
+          BYTES=$(wc -c < pokefirered.gba)
+          echo "ROM size: $BYTES bytes"
+          test "$BYTES" -ge 16777216
+
+      - name: Upload ROM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokefirered-rom
+          path: pokefirered.gba
+          retention-days: 1
+
+  # ── Job 2: Build Tauri app on each platform ────────────────────────────────────
+  build-tauri:
+    name: Build ${{ matrix.platform.name }}
+    needs: build-rom
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: macOS (Universal)
+            os: macos-latest
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            tauri-args: '--target universal-apple-darwin'
+          - name: Linux (x86_64)
+            os: ubuntu-latest
+            rust-targets: ''
+            tauri-args: ''
+          - name: Windows (x86_64)
+            os: windows-latest
+            rust-targets: ''
+            tauri-args: ''
+
+    runs-on: ${{ matrix.platform.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ROM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pokefirered-rom
+
+      - name: Bundle ROM into Tauri resource directory
+        shell: bash
+        run: |
+          mkdir -p tauri-app/src-tauri/rom
+          cp pokefirered.gba tauri-app/src-tauri/rom/pokefirered.gba
+          echo "ROM bundled ($(wc -c < pokefirered.gba) bytes)"
+
+      - name: Generate placeholder app icons
+        run: python3 tools/gen-icons.py
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: tauri-app/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: tauri-app
+        run: npm install
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.rust-targets }}
+
+      - name: Cache Cargo registry + build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tauri-app/src-tauri/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('tauri-app/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Install Linux system libraries
+        if: matrix.platform.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            pkg-config
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: tauri-app
+          tagName: ${{ github.ref_name || inputs.release_tag }}
+          releaseName: 'Pokémon FireRed Co-Op ${{ github.ref_name || inputs.release_tag }}'
+          releaseBody: |
+            ## Pokémon FireRed Co-Op ${{ github.ref_name || inputs.release_tag }}
+
+            2-player networked co-op for Pokémon FireRed. Both players explore Kanto simultaneously with a shared world, randomized wild encounters (on by default), and co-op gym leader battles.
+
+            ### Downloads
+
+            | Platform | File | Notes |
+            |---|---|---|
+            | macOS (Apple Silicon + Intel) | `*.dmg` | Drag to Applications |
+            | Windows | `*-setup.exe` | Run the installer |
+            | Linux (Debian/Ubuntu) | `*.deb` | `sudo dpkg -i *.deb` |
+
+            ### First-time setup
+
+            See **[PLAYING.md](https://github.com/${{ github.repository }}/blob/main/PLAYING.md)** for full setup and play instructions.
+
+            ### Requirements
+
+            - Two computers, each running this app
+            - Internet connection (relay at `pokefirered-coop.reubenday.partykit.dev`)
+          releaseDraft: ${{ inputs.draft || 'true' }}
+          prerelease: false
+          args: ${{ matrix.platform.tauri-args }}
