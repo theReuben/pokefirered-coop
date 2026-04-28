@@ -373,6 +373,7 @@ check-relay:
 check-tauri:
 	mkdir -p tauri-app/src-tauri/rom
 	touch tauri-app/src-tauri/rom/pokefirered.gba
+	@test -f tauri-app/src-tauri/icons/32x32.png || python3 tools/gen-icons.py
 	PATH="$$PATH:$$HOME/.cargo/bin" cargo check --manifest-path tauri-app/src-tauri/Cargo.toml
 
 # Generate placeholder app icons (solid red PNGs + ICO + ICNS).

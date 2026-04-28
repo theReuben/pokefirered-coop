@@ -84,7 +84,7 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
 
 // ── Outbound: drain the ROM's send ring ───────────────────────────────────────
 
-fn drain_send_ring(emu: &EmulatorHandle) -> Vec<Vec<u8>> {
+fn drain_send_ring(emu: &mut EmulatorHandle) -> Vec<Vec<u8>> {
     let base = unsafe { SEND_RING_ADDR };
 
     // Validate magic

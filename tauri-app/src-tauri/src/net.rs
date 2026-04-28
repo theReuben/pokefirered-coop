@@ -92,7 +92,7 @@ async fn run_ws_loop(
     let mut attempts = 0u32;
 
     loop {
-        match connect_async(url.clone()).await {
+        match connect_async(url.as_str()).await {
             Ok((ws_stream, _)) => {
                 attempts = 0;
                 log::info!("WebSocket connected to {}", url);
