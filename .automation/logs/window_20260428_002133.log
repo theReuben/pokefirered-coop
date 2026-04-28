@@ -1,0 +1,39 @@
+[00:21:33] ╔══ AUTOPILOT — DRAINING WINDOW ══╗
+[00:21:33] ── SESSION 1 | Phase 5 Step 5.1—StudyGymLeaderScripts | sonnet | ~320m ──
+  [Slack] No new feedback messages
+═══ PRE-FLIGHT CHECKS ═══
+
+[Files]
+  ✅ CLAUDE.md exists
+  ✅ PROGRESS.md exists
+  ✅ .claudeignore exists
+
+[Progress File Integrity]
+  ✅ Active Phase is parseable
+  ✅ Active Step is parseable
+  ✅ Next Action is parseable
+  ✅ Session Log table exists
+  ✅ No merge conflict markers
+  ✅ Substep counts reasonable (129/222)
+
+[Git State]
+  ✅ No merge conflicts
+  ✅ On expected branch ('main')
+
+[System]
+  ✅ Disk space OK (30.9 GB free)
+
+[Dependencies]
+  ✅ Claude Code installed
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ Working tree clean (no uncommitted changes)
+   Fix: Uncommitted changes exist:
+M .automation/backups/PROGRESS.md.bak
+ M .automation/logs/window_20260427_194741.log
+?? .automation/logs/window_20260428_002133.log
+   Run: git add -A && git commit -m 'manual cleanup'
+──────────────────────────────────────────────────
+You're out of extra usage · resets 12:40am (Europe/London)
+[00:21:45] Error (exit 1)
