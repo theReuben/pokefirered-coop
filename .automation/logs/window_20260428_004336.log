@@ -96,3 +96,24 @@ API Error: Stream idle timeout - partial response received
 [04:01:11] Network timeout (1). Retrying in 30s...
 Error: Reached max turns (75)[07:01:56] Max turns reached — treating as normal session end
 [07:01:56] ✓ Advanced: 5.1—StudyGymLeaderScripts → 6.1—SetUpPartyKitProject
+═══ POST-FLIGHT CHECKS ═══
+
+[Progress Update]
+  ✅ No broken markdown tables
+
+[Code Quality]
+
+[Git State]
+  ✅ All changes committed
+
+[Config Integrity]
+  ✅ CLAUDE.md is non-empty
+
+──────────────────────────────────────────────────
+WARNINGS (1):
+  ⚠ Session log updated recently
+   Fix: Claude may not have updated PROGRESS.md before the session ended
+──────────────────────────────────────────────────
+[07:02:09] Window expired.
+[07:02:09] Sessions: 2 | Final: Phase 5
+6 Step 6.1—SetUpPartyKitProject | Duration: 378m

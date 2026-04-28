@@ -7,10 +7,10 @@
 # Status values: not_started | in_progress | blocked | done
 
 ## Current State
-- **Active Phase:** 6
-- **Active Step:** 7.1—ScaffoldTauriProject
-- **Last Session Summary:** Session 4 completed Phase 6 (Steps 6.1–6.3). relay-server/ PartyKit project with full server.ts relay logic (role assignment, session_id validation, position relay, flag sync, boss readiness, starter picking, disconnect handling). 39 vitest tests all pass. Makefile check-relay target added. docs/relay-testing.md documents local testing workflow.
-- **Next Action:** Step 7.1 — scaffold Tauri project in tauri-app/ directory with React + TypeScript frontend
+- **Active Phase:** 7
+- **Active Step:** 7.6—BundleROM
+- **Last Session Summary:** Session 4 completed Phase 6 (Steps 6.1–6.3) and Phase 7 Steps 7.1–7.5. Tauri app scaffolded with React+TS frontend (HostJoin, GameScreen, ConnectionStatus components + Pokémon-themed CSS). Rust backend: session.rs (CoopSidecar sidecar format), commands.rs (8 Tauri commands), net.rs (WebSocket client with exponential-backoff reconnect), emulator.rs (EmuBackend trait + StubBackend + gated MgbaBackend scaffold), serial_bridge.rs (full binary packet ↔ JSON translation for all 14 packet types). Cargo.toml + tauri.conf.json + vite.config.ts wired up.
+- **Next Action:** Step 7.6 — copy built ROM into tauri-app/rom/, configure Tauri resources, verify .sav write on exit
 
 ---
 

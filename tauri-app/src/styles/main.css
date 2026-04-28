@@ -1,0 +1,252 @@
+/* Pokémon FireRed Co-Op — App Styles */
+
+:root {
+  --red:       #cc0000;
+  --dark-red:  #880000;
+  --gold:      #f8d030;
+  --dark:      #1a1a2e;
+  --mid-dark:  #16213e;
+  --surface:   #0f3460;
+  --text:      #e4e4e4;
+  --text-dim:  #9a9ab0;
+  --green:     #48c774;
+  --yellow:    #ffdd57;
+  --red-dot:   #f14668;
+  --grey-dot:  #5a5a72;
+
+  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--dark);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body, #root, .app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dark);
+}
+
+/* ── Screens ─────────────────────────────────────────────────────────────── */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 2rem;
+  background: var(--mid-dark);
+  border-radius: 1rem;
+  border: 2px solid var(--surface);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  min-width: 340px;
+}
+
+/* ── Logo ────────────────────────────────────────────────────────────────── */
+
+.logo h1 {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: var(--red);
+  text-shadow: 2px 2px 0 var(--dark-red);
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.logo h2 {
+  font-size: 1.1rem;
+  color: var(--gold);
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.btn {
+  padding: 0.65rem 1.5rem;
+  border-radius: 0.5rem;
+  border: none;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+  letter-spacing: 0.04em;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn:not(:disabled):hover {
+  filter: brightness(1.15);
+}
+
+.btn:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+.btn-primary   { background: var(--red);     color: #fff; }
+.btn-secondary { background: var(--surface); color: var(--text); }
+.btn-ghost     { background: transparent; color: var(--text-dim); border: 1px solid var(--surface); }
+.btn-small     { padding: 0.3rem 0.8rem; font-size: 0.85rem; }
+
+/* ── Room Code ───────────────────────────────────────────────────────────── */
+
+.room-code {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--surface);
+  border-radius: 0.75rem;
+  padding: 1rem 2rem;
+  text-align: center;
+}
+
+.room-code strong {
+  font-size: 2rem;
+  letter-spacing: 0.3em;
+  color: var(--gold);
+  font-family: "Courier New", monospace;
+}
+
+.room-code small {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.room-code-small {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-family: "Courier New", monospace;
+  letter-spacing: 0.15em;
+}
+
+/* ── Code Input ──────────────────────────────────────────────────────────── */
+
+.code-input {
+  background: var(--surface);
+  border: 2px solid transparent;
+  border-radius: 0.5rem;
+  color: var(--gold);
+  font-family: "Courier New", monospace;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  padding: 0.5rem 1rem;
+  text-align: center;
+  text-transform: uppercase;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+
+.code-input:focus {
+  border-color: var(--red);
+  outline: none;
+}
+
+/* ── Toggle Row ──────────────────────────────────────────────────────────── */
+
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 1rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.toggle-row input[type="checkbox"] {
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: var(--red);
+  cursor: pointer;
+}
+
+/* ── Error ───────────────────────────────────────────────────────────────── */
+
+.error {
+  color: var(--red-dot);
+  font-size: 0.85rem;
+  text-align: center;
+  max-width: 280px;
+}
+
+/* ── Connection Status ───────────────────────────────────────────────────── */
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-green  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.dot-yellow { background: var(--yellow); animation: blink 1s step-end infinite; }
+.dot-red    { background: var(--red-dot); }
+.dot-grey   { background: var(--grey-dot); }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* ── Game Screen ─────────────────────────────────────────────────────────── */
+
+.game-screen {
+  padding: 0.5rem;
+  gap: 0.5rem;
+  min-width: unset;
+  outline: none;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 0.25rem;
+  gap: 1rem;
+}
+
+.gba-canvas {
+  border: 3px solid var(--surface);
+  border-radius: 4px;
+  display: block;
+  background: #000;
+}
+
+.controls-hint {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.6;
+}
