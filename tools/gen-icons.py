@@ -29,13 +29,12 @@ def make_png(width: int, height: int, r: int, g: int, b: int) -> bytes:
 
     sig = b"\x89PNG\r\n\x1a\n"
 
-    # IHDR
-    ihdr_data = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    # IHDR — color type 6 = RGBA
+    ihdr_data = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
     ihdr = chunk(b"IHDR", ihdr_data)
 
-    # IDAT: each row is a filter byte (0 = None) followed by RGB triples
-    raw_rows = b""
-    row = b"\x00" + bytes([r, g, b]) * width
+    # IDAT: each row is a filter byte (0 = None) followed by RGBA quads
+    row = b"\x00" + bytes([r, g, b, 0xFF]) * width
     raw_rows = row * height
     idat = chunk(b"IDAT", zlib.compress(raw_rows))
 

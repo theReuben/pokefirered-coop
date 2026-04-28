@@ -51,6 +51,9 @@ include/constants/script_commands.h
 # Native test build artifacts
 test/test_smoke
 test/test_smoke.dSYM/
+test/test_packets
+test/test_packets.dSYM/
+node_modules/
 tools/trainerproc/trainerproc
 src/data/battle_partners.h
 src/data/pokemon/teachable_learnsets.h
