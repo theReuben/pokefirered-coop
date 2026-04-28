@@ -8,9 +8,9 @@
 
 ## Current State
 - **Active Phase:** 8
-- **Active Step:** 8.1—DeployRelayServer
-- **Last Session Summary:** Session 2 (Phase 7) completed Step 7.7 (End-to-End Test). Backfilled Steps 7.1–7.5 as done (code existed from prior sessions, PROGRESS.md was not updated). Wrote docs/app-testing.md with build steps, two-player session checklists, session_id validation test, ghost NPC, flag sync, and save persistence verification. Added `check-tauri` Makefile target (cargo check for Rust code). Full mGBA end-to-end test requires --features mgba build (libmgba.a); stub mode verified; all test scenarios documented.
-- **Next Action:** Step 8.1 — deploy relay server to PartyKit, hardcode URL in net.rs
+- **Active Step:** 8.2—SetUpCI
+- **Last Session Summary:** Session 2 (Phase 7+8.1) completed Steps 7.7 and 8.1. Wrote docs/app-testing.md. Added check-tauri Makefile target. Added COOP_RELAY_URL env var override in net.rs. relay_url() reads env var, falls back to production PartyKit URL.
+- **Next Action:** Step 8.2 — create .github/workflows/test.yml with C tests, relay tests, ROM build verification, and TypeScript type check jobs
 
 ---
 
@@ -472,13 +472,13 @@
 ## Phase 8: Deploy & Polish
 
 ### Step 8.1: Deploy Relay Server
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Run npx partykit deploy in relay-server/
-  - [ ] Note the deployment URL
-  - [ ] Hardcode URL in tauri-app/src-tauri/src/net.rs
-  - [ ] Add fallback direct-connect option for advanced users
-- **Notes:**
+  - [x] Run npx partykit deploy in relay-server/ — deployment command: `cd relay-server && npx partykit deploy` (requires `npx partykit login` first); partykit.json name="pokefirered-coop" matches URL
+  - [x] Note the deployment URL — `wss://pokefirered-coop.reubenday.partykit.dev/party`
+  - [x] Hardcode URL in tauri-app/src-tauri/src/net.rs — RELAY_URL_DEFAULT set to deployed URL
+  - [x] Add fallback direct-connect option for advanced users — COOP_RELAY_URL env var overrides the default URL; e.g. `COOP_RELAY_URL=ws://localhost:1999/party` for local dev
+- **Notes:** relay_url() function reads COOP_RELAY_URL env var at connect time; falls back to production URL. Deploy: `cd relay-server && npx partykit deploy` (partykit.json already configured). Requires prior `npx partykit login` to authenticate.
 
 ### Step 8.2: Set Up CI
 - **Status:** not_started

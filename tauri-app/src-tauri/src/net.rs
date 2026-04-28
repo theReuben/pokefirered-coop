@@ -6,9 +6,15 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
-const RELAY_URL: &str = "wss://pokefirered-coop.reubenday.partykit.dev/party";
+const RELAY_URL_DEFAULT: &str = "wss://pokefirered-coop.reubenday.partykit.dev/party";
 const RECONNECT_DELAY_MS: u64 = 2000;
 const MAX_RECONNECT_ATTEMPTS: u32 = 10;
+
+/// Return the relay URL. Set the COOP_RELAY_URL environment variable to override.
+/// Example: COOP_RELAY_URL=ws://localhost:1999/party for local PartyKit dev server.
+fn relay_url() -> String {
+    std::env::var("COOP_RELAY_URL").unwrap_or_else(|_| RELAY_URL_DEFAULT.to_string())
+}
 
 /// Messages sent from the emulator to the relay server.
 pub type OutboundMsg = serde_json::Value;
@@ -39,7 +45,7 @@ impl NetHandle {
 
         let url_str = format!(
             "{}/{}?session_id={}",
-            RELAY_URL, session.room_code, session.session_id
+            relay_url(), session.room_code, session.session_id
         );
         let url = Url::parse(&url_str)?;
 
