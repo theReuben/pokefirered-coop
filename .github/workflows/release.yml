@@ -19,6 +19,9 @@ on:
           - 'true'
           - 'false'
 
+permissions:
+  contents: write
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
@@ -127,7 +130,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: tauri-app
-        run: npm install
+        run: npm ci --legacy-peer-deps
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
