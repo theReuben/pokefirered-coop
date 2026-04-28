@@ -267,7 +267,7 @@ MAKEFLAGS += --no-print-directory
 # Delete files that weren't built properly
 .DELETE_ON_ERROR:
 
-RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidycheck tidyrelease generated clean-generated clean-teachables clean-teachables_intermediates
+RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidycheck tidyrelease generated clean-generated clean-teachables clean-teachables_intermediates check-native check-relay check-tauri
 .PHONY: all rom agbcc modern compare check debug release
 .PHONY: $(RULES_NO_SCAN)
 

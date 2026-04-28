@@ -89,7 +89,7 @@ jobs:
 
       - name: Extract symbols to Lua
         run: |
-          python3 extract_symbols.py build/firered/pokefirered.map \
+          python3 extract_symbols.py pokefirered.map \
             --output test/lua/memory_map.lua
           echo "=== Generated memory_map.lua ==="
           head -20 test/lua/memory_map.lua
@@ -105,9 +105,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: tauri-app/package-lock.json
 
       - name: Install tauri-app dependencies
-        run: npm install --prefix tauri-app
+        run: npm ci --prefix tauri-app --legacy-peer-deps
 
       - name: TypeScript type check
         working-directory: tauri-app
