@@ -50,7 +50,6 @@ pub async fn load_host_session(
         let rng = s.randomize_encounters;
         (s.session_id, rng)
     } else {
-        // First time using this save as a host: create a sidecar
         let id = Uuid::new_v4().to_string();
         let sidecar = CoopSidecar {
             session_id: id.clone(),
@@ -102,11 +101,14 @@ pub async fn load_guest_session(
 
 #[tauri::command]
 pub async fn start_emulator(
+    app: tauri::AppHandle,
     session: SessionInfo,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let rom_path = resolve_rom_path(&app)?;
+
     let mut emu = state.emulator.lock().unwrap();
-    emu.start(&session).map_err(|e| e.to_string())?;
+    emu.start(&session, &rom_path).map_err(|e| e.to_string())?;
 
     let mut net = state.net.lock().unwrap();
     net.connect(&session).map_err(|e| e.to_string())?;
@@ -117,6 +119,8 @@ pub async fn start_emulator(
 #[tauri::command]
 pub async fn stop_emulator(state: State<'_, AppState>) -> Result<(), String> {
     let mut emu = state.emulator.lock().unwrap();
+    // Flush save first so the file is written before the emulator core is dropped.
+    emu.flush_save().map_err(|e| e.to_string())?;
     emu.stop().map_err(|e| e.to_string())?;
 
     let mut net = state.net.lock().unwrap();
@@ -145,10 +149,42 @@ pub async fn set_key_released(key_mask: u16, state: State<'_, AppState>) -> Resu
     Ok(())
 }
 
+/// Flush the battery save to disk without stopping the emulator.
+/// Call this on window close events or explicit save requests.
+#[tauri::command]
+pub async fn save_game(state: State<'_, AppState>) -> Result<(), String> {
+    let emu = state.emulator.lock().unwrap();
+    emu.flush_save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Resolve the bundled ROM path.
+///
+/// In dev mode `resource_dir()` points to `src-tauri/`, so the ROM lives at
+/// `src-tauri/rom/pokefirered.gba`. In a bundled app it lives at
+/// `{resources}/rom/pokefirered.gba` (matching the tauri.conf.json mapping).
+fn resolve_rom_path(app: &tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+    let rom_path = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("resource_dir: {e}"))?
+        .join("rom")
+        .join("pokefirered.gba");
+
+    if !rom_path.exists() {
+        return Err(format!(
+            "ROM not found at {}. Run 'make bundle-rom' first.",
+            rom_path.display()
+        ));
+    }
+
+    Ok(rom_path.to_string_lossy().into_owned())
+}
+
 fn chrono_now() -> String {
-    // RFC 3339 timestamp without pulling in chrono for now
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| format!("{}", d.as_secs()))

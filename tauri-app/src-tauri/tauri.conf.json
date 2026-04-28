@@ -28,7 +28,7 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "rom/pokefirered.gba": "resources/rom/pokefirered.gba"
+      "rom/pokefirered.gba": "rom/pokefirered.gba"
     },
     "icon": [
       "icons/32x32.png",

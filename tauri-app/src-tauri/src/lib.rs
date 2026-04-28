@@ -34,6 +34,7 @@ pub fn run() {
             commands::get_frame,
             commands::set_key_pressed,
             commands::set_key_released,
+            commands::save_game,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

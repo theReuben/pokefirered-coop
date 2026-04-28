@@ -370,6 +370,16 @@ check-relay:
 	npm install --prefix relay-server
 	npm run test --prefix relay-server
 
+check-tauri:
+	PATH="$$PATH:$$HOME/.cargo/bin" cargo check --manifest-path tauri-app/src-tauri/Cargo.toml
+
+# Copy the built ROM into the Tauri app's resource directory.
+# Run this after 'make firered' and before 'cd tauri-app && npm run tauri build'.
+bundle-rom: pokefirered.gba
+	@mkdir -p tauri-app/src-tauri/rom
+	cp pokefirered.gba tauri-app/src-tauri/rom/pokefirered.gba
+	@echo "ROM bundled: tauri-app/src-tauri/rom/pokefirered.gba"
+
 # Other rules
 rom: $(ROM)
 ifeq ($(COMPARE),1)
