@@ -1,3 +1,4 @@
+use crate::serial_bridge;
 use crate::session::{self, CoopSidecar, SessionInfo};
 use crate::AppState;
 use rand::Rng;
@@ -161,7 +162,10 @@ pub async fn stop_emulator(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn get_frame(state: State<'_, AppState>) -> Result<Vec<u8>, String> {
-    let emu = state.emulator.lock().unwrap();
+    let mut emu = state.emulator.lock().unwrap();
+    let net = state.net.lock().unwrap();
+    emu.step_frame();
+    serial_bridge::tick(&mut emu, &net);
     Ok(emu.get_frame_rgba())
 }
 

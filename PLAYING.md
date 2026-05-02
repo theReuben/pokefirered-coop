@@ -45,8 +45,9 @@ Go to the [Releases](../../releases) page and download the installer for your OS
 
 1. Open the app and click **Join Game**.
 2. Type the 6-character room code from Player 1.
-3. Choose where to save your game file (a fresh `.sav` file).
-4. Click **Connect** — the game starts when the connection is confirmed.
+3. Click **New Game**, then choose where to save your game file (a fresh `.sav` file).
+   - Use **Load Save** instead if you are resuming a previous session.
+4. The game starts automatically once the connection is confirmed.
 
 Both players now see the intro and begin on their own screen. You share the same game world: trainers you defeat stay defeated for both of you.
 
@@ -105,7 +106,7 @@ Your session uses two files:
 ### Guest (resuming)
 1. Click **Join Game**.
 2. Enter the new room code.
-3. Open your `.sav` file when prompted.
+3. Click **Load Save**, then open your `.sav` file.
 
 > **Keep your `.sav` and `.coop` files in the same folder.** The app looks for the `.coop` sidecar next to the `.sav` file by name. If the `.coop` file is missing, the session cannot be resumed.
 
