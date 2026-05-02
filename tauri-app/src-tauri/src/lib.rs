@@ -28,6 +28,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::create_new_session,
             commands::load_host_session,
+            commands::join_new_session,
             commands::load_guest_session,
             commands::start_emulator,
             commands::stop_emulator,

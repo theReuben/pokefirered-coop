@@ -73,6 +73,36 @@ pub async fn load_host_session(
     })
 }
 
+/// Create a brand-new guest session (first-time join, no existing .coop).
+/// The guest connects without a session_id so the server doesn't reject them;
+/// see server.ts which only validates session_id for the host slot.
+#[tauri::command]
+pub async fn join_new_session(
+    sav_path: String,
+    room_code: String,
+) -> Result<SessionInfo, String> {
+    let sav = Path::new(&sav_path);
+    let coop = session::coop_path(sav);
+    let session_id = Uuid::new_v4().to_string();
+
+    let sidecar = CoopSidecar {
+        session_id: session_id.clone(),
+        created_at: chrono_now(),
+        randomize_encounters: true, // overwritten by session_settings from server
+    };
+    session::write_sidecar(&coop, &sidecar).map_err(|e| e.to_string())?;
+
+    Ok(SessionInfo {
+        session_id: String::new(), // omitted from WS URL so server skips validation
+        sav_path,
+        coop_path: coop.to_string_lossy().into(),
+        room_code,
+        is_host: false,
+        encounter_seed: 0,
+        randomize_encounters: true,
+    })
+}
+
 #[tauri::command]
 pub async fn load_guest_session(
     sav_path: String,

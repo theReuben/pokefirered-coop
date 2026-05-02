@@ -165,15 +165,14 @@ describe("Session ID validation", () => {
     expect(guest.last("role")).toEqual({ type: "role", role: "guest" });
   });
 
-  it("rejects connection with mismatched session_id", () => {
+  it("accepts guest with mismatched session_id (only host slot is validated)", () => {
+    // Guests joining for the first time don't have the host's session_id yet,
+    // so we skip session_id validation for the guest slot entirely.
     const { server, room } = makeServer();
     connect(server, room, new MockConnection("c1"), makeCtxWithSession("sess-abc"));
-    const intruder = new MockConnection("c2");
-    room.register(intruder);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    server.onConnect(intruder as any, makeCtxWithSession("sess-xyz") as any);
-    expect(intruder.last("session_mismatch")).toEqual({ type: "session_mismatch" });
-    expect(intruder.closed).toBe(true);
+    const guest = connect(server, room, new MockConnection("c2"), makeCtxWithSession("sess-xyz"));
+    expect(guest.closed).toBe(false);
+    expect(guest.last("role")).toEqual({ type: "role", role: "guest" });
   });
 
   it("accepts connection without session_id when no session established", () => {
@@ -279,12 +278,12 @@ describe("Position relay", () => {
 });
 
 describe("Flag sync", () => {
-  it("broadcasts flag_set to both players on first set", () => {
+  it("broadcasts flag_set to partner only (not back to sender)", () => {
     const { server, room } = makeServer();
     const host = connect(server, room, new MockConnection("c1"));
     const guest = connect(server, room, new MockConnection("c2"));
     send(server, host, { type: "flag_set", flagId: 100 });
-    expect(host.last("flag_set")).toEqual({ type: "flag_set", flagId: 100 });
+    expect(host.last("flag_set")).toBeUndefined(); // not echoed to sender
     expect(guest.last("flag_set")).toEqual({ type: "flag_set", flagId: 100 });
   });
 
@@ -298,12 +297,12 @@ describe("Flag sync", () => {
     expect(guest.received("flag_set").length).toBe(afterFirst); // no extra broadcast
   });
 
-  it("broadcasts var_set to both players", () => {
+  it("broadcasts var_set to partner only (not back to sender)", () => {
     const { server, room } = makeServer();
     const host = connect(server, room, new MockConnection("c1"));
     const guest = connect(server, room, new MockConnection("c2"));
     send(server, host, { type: "var_set", varId: 5, value: 42 });
-    expect(host.last("var_set")).toEqual({ type: "var_set", varId: 5, value: 42 });
+    expect(host.last("var_set")).toBeUndefined(); // not echoed to sender
     expect(guest.last("var_set")).toEqual({ type: "var_set", varId: 5, value: 42 });
   });
 

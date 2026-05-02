@@ -43,10 +43,13 @@ impl NetHandle {
             return Ok(()); // already connected
         }
 
-        let url_str = format!(
-            "{}/{}?session_id={}",
-            relay_url(), session.room_code, session.session_id
-        );
+        // Omit session_id for new guest joins (empty string) so the server
+        // skips session validation for the guest slot.
+        let url_str = if session.session_id.is_empty() {
+            format!("{}/{}", relay_url(), session.room_code)
+        } else {
+            format!("{}/{}?session_id={}", relay_url(), session.room_code, session.session_id)
+        };
         let url = Url::parse(&url_str)?;
 
         let (tx, rx) = mpsc::unbounded_channel::<OutboundMsg>();

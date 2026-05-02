@@ -77,15 +77,18 @@ export default class PokemonCoopServer implements Party.Server {
 
   onConnect(conn: Party.Connection, ctx: Party.ConnectionContext): void {
     // ── Session ID validation ──────────────────────────────────────────────
+    // Only the host (first connector) establishes and validates the session.
+    // Guests connecting for the first time don't have the host's session_id
+    // yet, so we skip validation for the guest slot. Guests resuming a
+    // session will have a session_id in their .coop, but we can't match it
+    // to the room without a separate sharing mechanism.
     const url = new URL(ctx.request.url);
     const incomingSessionId = url.searchParams.get("session_id");
 
-    if (incomingSessionId) {
+    if (incomingSessionId && this.roles.size === 0) {
       if (this.state.sessionId === null) {
-        // First player establishes the session for this room
         this.state.sessionId = incomingSessionId;
       } else if (this.state.sessionId !== incomingSessionId) {
-        // Wrong save file — this player's .coop sidecar doesn't match
         this.send(conn, { type: "session_mismatch" });
         conn.close();
         return;
@@ -174,16 +177,16 @@ export default class PokemonCoopServer implements Party.Server {
         break;
 
       case "flag_set":
-        // Idempotent: broadcast only on first set
+        // Idempotent: broadcast only on first set; don't echo back to sender
         if (!this.state.flags.has(msg.flagId)) {
           this.state.flags.add(msg.flagId);
-          this.broadcastAll({ type: "flag_set", flagId: msg.flagId });
+          this.broadcast(sender, { type: "flag_set", flagId: msg.flagId });
         }
         break;
 
       case "var_set":
         this.state.vars.set(msg.varId, msg.value);
-        this.broadcastAll({ type: "var_set", varId: msg.varId, value: msg.value });
+        this.broadcast(sender, { type: "var_set", varId: msg.varId, value: msg.value });
         break;
 
       case "boss_ready": {

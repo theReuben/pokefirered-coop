@@ -7,7 +7,7 @@ interface Props {
   onSessionReady: (session: SessionInfo) => void;
 }
 
-type Mode = "pick" | "host-new" | "host-load" | "join";
+type Mode = "pick" | "host-new" | "host-load" | "join" | "join-new" | "join-load";
 
 function generateRoomCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -84,15 +84,38 @@ export default function HostJoin({ onSessionReady }: Props) {
     }
   }
 
-  // ── Join ───────────────────────────────────────────────────────────────────
+  // ── Join: New Game ─────────────────────────────────────────────────────────
 
-  async function handleJoin() {
+  async function handleJoinNew() {
     setError(null);
     const code = joinCode.trim().toUpperCase();
-    if (code.length !== 6) {
-      setError("Room code must be 6 characters.");
-      return;
+    setLoading(true);
+    try {
+      const path = await save({
+        filters: [{ name: "GBA Save", extensions: ["sav"] }],
+        defaultPath: "pokefirered.sav",
+        title: "Choose save file location",
+      });
+      if (!path) { setLoading(false); return; }
+
+      const session: SessionInfo = await invoke("join_new_session", {
+        savPath: path,
+        roomCode: code,
+      });
+
+      onSessionReady(session);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
     }
+  }
+
+  // ── Join: Load Save ────────────────────────────────────────────────────────
+
+  async function handleJoinLoad() {
+    setError(null);
+    const code = joinCode.trim().toUpperCase();
     setLoading(true);
     try {
       const path = await open({
@@ -131,6 +154,70 @@ export default function HostJoin({ onSessionReady }: Props) {
             Join Game
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (mode === "join") {
+    return (
+      <div className="screen host-join">
+        <h2>Join a Game</h2>
+
+        <input
+          className="code-input"
+          type="text"
+          placeholder="Enter room code"
+          maxLength={6}
+          value={joinCode}
+          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+        />
+
+        <div className="buttons">
+          <button
+            className="btn btn-primary"
+            onClick={() => setMode("join-new")}
+            disabled={joinCode.trim().length !== 6}
+          >
+            New Game
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setMode("join-load")}
+            disabled={joinCode.trim().length !== 6}
+          >
+            Load Save
+          </button>
+          <button className="btn btn-ghost" onClick={() => setMode("pick")}>
+            Back
+          </button>
+        </div>
+
+        {error && <p className="error">{error}</p>}
+      </div>
+    );
+  }
+
+  if (mode === "join-new" || mode === "join-load") {
+    const isNew = mode === "join-new";
+    return (
+      <div className="screen host-join">
+        <h2>Join — {isNew ? "New Game" : "Load Save"}</h2>
+        <p className="room-code-label">Room code: <strong>{joinCode}</strong></p>
+
+        <div className="buttons">
+          <button
+            className="btn btn-primary"
+            onClick={isNew ? handleJoinNew : handleJoinLoad}
+            disabled={loading}
+          >
+            {isNew ? "Choose save location…" : "Open save file…"}
+          </button>
+          <button className="btn btn-ghost" onClick={() => setMode("join")} disabled={loading}>
+            Back
+          </button>
+        </div>
+
+        {error && <p className="error">{error}</p>}
       </div>
     );
   }
@@ -174,31 +261,5 @@ export default function HostJoin({ onSessionReady }: Props) {
     );
   }
 
-  // join mode
-  return (
-    <div className="screen host-join">
-      <h2>Join a Game</h2>
-
-      <input
-        className="code-input"
-        type="text"
-        placeholder="Enter room code"
-        maxLength={6}
-        value={joinCode}
-        onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-        onKeyDown={(e) => { if (e.key === "Enter") handleJoin(); }}
-      />
-
-      <div className="buttons">
-        <button className="btn btn-primary" onClick={handleJoin} disabled={loading || joinCode.trim().length !== 6}>
-          Connect
-        </button>
-        <button className="btn btn-ghost" onClick={() => setMode("pick")} disabled={loading}>
-          Back
-        </button>
-      </div>
-
-      {error && <p className="error">{error}</p>}
-    </div>
-  );
+  return null; // all modes handled above
 }
