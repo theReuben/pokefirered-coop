@@ -22,7 +22,7 @@ Go to the [Releases](../../releases) page and download the installer for your OS
 | Windows | `Pokémon FireRed Co-Op_*-setup.exe` |
 | Linux (Debian/Ubuntu) | `pokefirered-coop_*.deb` |
 
-**macOS:** Open the `.dmg` and drag the app to your Applications folder. The first time you open it, right-click the app icon and choose **Open** (macOS may block unsigned apps; this bypasses the warning).
+**macOS:** Open the `.dmg` and drag the app to your Applications folder. The first time you open it, macOS will block it because the app is unsigned — see [macOS security warning](#app-wont-open-on-macos) below for how to allow it.
 
 **Windows:** Run the installer. Windows Defender may show a SmartScreen warning — click **More info → Run anyway**.
 
@@ -148,8 +148,19 @@ Check that both players are on the same map. The ghost NPC only appears when you
 **Game is slow or laggy**
 The relay server is in the US. If both players are outside the US, latency may be higher. Position updates happen every ~4 frames; the game continues normally even if some packets are delayed.
 
-**App won't open on macOS ('"Pokémon FireRed Co-Op" cannot be opened because the developer cannot be verified')**
-Right-click the app icon in Finder → **Open** → **Open** again in the dialog. You only need to do this once.
+**App won't open on macOS ("Apple could not verify… is free of malware" or "developer cannot be verified")** {#app-wont-open-on-macos}
+The app is not notarized with Apple, so macOS blocks it by default. To allow it:
+
+1. Try to open the app (it will be blocked).
+2. Open **System Settings → Privacy & Security**.
+3. Scroll down — you'll see a message like *"Pokémon FireRed Co-Op was blocked"*.
+4. Click **Open Anyway**, then confirm with your password.
+
+You only need to do this once. If the **Open Anyway** button doesn't appear, use Terminal:
+```
+xattr -d com.apple.quarantine /Applications/Pokémon\ FireRed\ Co-Op.app
+```
+Then open the app normally.
 
 **Save file not writing on exit**
 The app saves automatically when you close it. If the app crashes, the save may not have written. Use the in-game **Save** option (Start menu → Save) regularly to keep a backup.
