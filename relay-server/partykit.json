@@ -1,4 +1,5 @@
 {
   "name": "pokefirered-coop",
-  "main": "src/server.ts"
+  "main": "src/server.ts",
+  "compatibilityDate": "2026-05-03"
 }
