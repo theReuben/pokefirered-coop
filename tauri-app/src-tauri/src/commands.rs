@@ -142,7 +142,7 @@ pub async fn start_emulator(
     emu.start(&session, &rom_path).map_err(|e| e.to_string())?;
 
     let mut net = state.net.lock().unwrap();
-    net.connect(&session).map_err(|e| e.to_string())?;
+    net.connect(&session, app.clone()).map_err(|e| e.to_string())?;
 
     Ok(())
 }

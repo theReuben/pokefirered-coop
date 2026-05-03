@@ -2,6 +2,7 @@ use crate::session::SessionInfo;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
+use tauri::Emitter;
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
@@ -38,7 +39,7 @@ impl NetHandle {
     }
 
     /// Establish a WebSocket connection to the relay server.
-    pub fn connect(&mut self, session: &SessionInfo) -> anyhow::Result<()> {
+    pub fn connect(&mut self, session: &SessionInfo, app: tauri::AppHandle) -> anyhow::Result<()> {
         if self.tx.is_some() {
             return Ok(()); // already connected
         }
@@ -56,11 +57,10 @@ impl NetHandle {
         self.tx = Some(tx);
 
         let inbound = Arc::clone(&self.inbound);
-        let room_code = session.room_code.clone();
 
         // Spawn the WebSocket task on the Tokio runtime
         tokio::spawn(async move {
-            run_ws_loop(url, rx, inbound, room_code).await;
+            run_ws_loop(url, rx, inbound, app).await;
         });
 
         Ok(())
@@ -85,20 +85,27 @@ impl NetHandle {
     }
 }
 
+fn emit_status(app: &tauri::AppHandle, status: &str) {
+    let _ = app.emit("connection_status", status);
+}
+
 /// Long-running async task: maintain the WebSocket connection with reconnect.
 async fn run_ws_loop(
     url: Url,
     mut rx: mpsc::UnboundedReceiver<OutboundMsg>,
     inbound: Arc<Mutex<Vec<InboundMsg>>>,
-    _room_code: String,
+    app: tauri::AppHandle,
 ) {
     let mut attempts = 0u32;
 
     loop {
+        emit_status(&app, "connecting");
+
         match connect_async(url.as_str()).await {
             Ok((ws_stream, _)) => {
                 attempts = 0;
                 log::info!("WebSocket connected to {}", url);
+                emit_status(&app, "connected");
 
                 let (mut write, mut read) = ws_stream.split();
 
@@ -115,8 +122,9 @@ async fn run_ws_loop(
                                     }
                                 }
                                 None => {
-                                    // Channel closed — disconnect
+                                    // Channel closed — clean disconnect
                                     let _ = write.close().await;
+                                    emit_status(&app, "disconnected");
                                     return;
                                 }
                             }
@@ -155,11 +163,13 @@ async fn run_ws_loop(
         attempts += 1;
         if attempts >= MAX_RECONNECT_ATTEMPTS {
             log::error!("Giving up after {MAX_RECONNECT_ATTEMPTS} reconnect attempts");
+            emit_status(&app, "error");
             return;
         }
 
         let delay = RECONNECT_DELAY_MS * (1 << attempts.min(5));
         log::info!("Reconnecting in {delay}ms (attempt {attempts})");
+        emit_status(&app, "reconnecting");
         tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
     }
 }
