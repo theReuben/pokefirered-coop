@@ -137,4 +137,24 @@
 #define FULL_SYNC_PAYLOAD_SIZE \
     (FULL_SYNC_STORY_LEN + FULL_SYNC_ITEMS_LEN + FULL_SYNC_BOSSES_LEN + FULL_SYNC_TRAINERS_LEN + FULL_SYNC_BADGES_LEN) /* 216 */
 
+// ---------------------------------------------------------------------------
+// Syncable variable ranges (FRLG-specific vars)
+//
+// VAR_MAP_SCENE_* (0x4050–0x408B): per-map story state vars.
+//   These track how far through each location's scripted events the players
+//   are (e.g. whether Oak has been battled, Rival has been fought at Cerulean,
+//   Silph Co. has been cleared).  Both players must share this state so that
+//   story-gated NPCs and events remain consistent.
+//
+// NOT synced:
+//   0x4000–0x404F  Per-player step counters, RNG state, bag state, Pokédex
+//   0x408C–0x40F6  Frontier/daily/Quest-Log state; all per-player
+//   0x40F7          VAR_COOP_CONNECTED — local co-op flag; do not echo
+//   0x40F8          VAR_BOSS_BATTLE_STATE — local readiness flag; do not echo
+//   0x40F9–0x40FF  Reserved / unused
+//   0x8000–0x8014  Special in-RAM vars (RESULT, FACING, etc.) — transient
+// ---------------------------------------------------------------------------
+#define SYNC_VAR_MAP_SCENE_START    0x4050   // VAR_MAP_SCENE_PALLET_TOWN_OAK
+#define SYNC_VAR_MAP_SCENE_END      0x408B   // VAR_MAP_SCENE_MT_MOON_B2F
+
 #endif // GUARD_CONSTANTS_MULTIPLAYER_H

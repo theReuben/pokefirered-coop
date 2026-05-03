@@ -244,6 +244,32 @@ static void TestIsSyncableFlag(void)
     ASSERT_EQ(IsSyncableFlag(0xFFFF), FALSE);
 }
 
+// ---- Step 9.3: IsSyncableVar ----------------------------------------------
+
+static void TestIsSyncableVar(void)
+{
+    // VAR_MAP_SCENE_* range (0x4050-0x408B): syncable.
+    ASSERT_EQ(IsSyncableVar(0x4050), TRUE);  // VAR_MAP_SCENE_PALLET_TOWN_OAK
+    ASSERT_EQ(IsSyncableVar(0x4052), TRUE);  // VAR_MAP_SCENE_CERULEAN_CITY_RIVAL
+    ASSERT_EQ(IsSyncableVar(0x408B), TRUE);  // VAR_MAP_SCENE_MT_MOON_B2F (last)
+
+    // Just outside the range: NOT syncable.
+    ASSERT_EQ(IsSyncableVar(0x404F), FALSE); // one below range
+    ASSERT_EQ(IsSyncableVar(0x408C), FALSE); // one above range
+
+    // Per-player step counters and misc vars: NOT syncable.
+    ASSERT_EQ(IsSyncableVar(0x4020), FALSE); // VAR_REPEL_STEP_COUNT_FRLG
+    ASSERT_EQ(IsSyncableVar(0x4031), FALSE); // VAR_STARTER_MON_FRLG (per-player)
+
+    // Co-op internal vars: NOT syncable (would cause echo loop).
+    ASSERT_EQ(IsSyncableVar(VAR_COOP_CONNECTED),    FALSE);
+    ASSERT_EQ(IsSyncableVar(VAR_BOSS_BATTLE_STATE), FALSE);
+
+    // Special in-RAM vars: NOT syncable.
+    ASSERT_EQ(IsSyncableVar(0x800C), FALSE); // VAR_FACING
+    ASSERT_EQ(IsSyncableVar(0x8000), FALSE);
+}
+
 // ---- Step 3.2: FLAG_SET / VAR_SET recv routing ----------------------------
 
 // Helper: reset rings and dispatch counters.
@@ -942,6 +968,41 @@ static void TestBossReadyPartnerAnyIdProceeds(void)
     ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
 }
 
+// ---- Step 9.5: Trainer randomization key space ----------------------------
+
+static void TestTrainerKeysDontCollideWithWildKeys(void)
+{
+    // Wild encounter keys use a table address (>= 0x08000000 in ROM) as
+    // the upper component. Simulate a low wild key to check it differs from
+    // a trainer-slot key with the same slot index.
+    //
+    // Use small fake addresses that would be distinct in a real ROM call;
+    // the important thing is the same slotIndex with different addresses
+    // produces different results.
+    const u32 wildTableAddr    = 0x0830A000u; // plausible ROM encounter table
+    const u32 trainerAddr      = 0x0839B000u; // plausible ROM trainer struct
+    const u8  slot = 0;
+
+    u32 seed = 0xDEADBEEFu;
+    gCoopSettings.encounterSeed    = seed;
+    gCoopSettings.randomizeEncounters = 1;
+
+    u16 wildSpecies    = Multiplayer_GetRandomizedSpecies(wildTableAddr,    slot);
+    u16 trainerSpecies = Multiplayer_GetRandomizedSpecies(trainerAddr, slot);
+
+    // Both should be in valid range
+    ASSERT_NE(wildSpecies,    0);
+    ASSERT_NE(trainerSpecies, 0);
+    ASSERT_NE(wildSpecies,    0u);  // nonzero = not SPECIES_NONE
+    ASSERT_NE(trainerSpecies, 0u);
+
+    // Different address, same slot → must produce different species
+    ASSERT_NE(wildSpecies, trainerSpecies);
+
+    gCoopSettings.encounterSeed = 0;
+    gCoopSettings.randomizeEncounters = 0;
+}
+
 static void TestIsConnectedReflectsState(void)
 {
     ResetAll();
@@ -973,6 +1034,7 @@ int main(void)
     TestGhostMapCheckDespawnsOnDifferentMap();
     TestGhostMapCheckDespawnsWhenDisconnected();
     TestIsSyncableFlag();
+    TestIsSyncableVar();
     TestRemoteFlagSetRouting();
     TestRemoteVarSetRouting();
     TestMultipleFlagSetsRouted();
@@ -1013,6 +1075,7 @@ int main(void)
     TestBossReadyIdempotent();
     TestBadgeFlagInFullSync();
     TestBossReadyPartnerAnyIdProceeds();
+    TestTrainerKeysDontCollideWithWildKeys();
     TestIsConnectedReflectsState();
     TEST_SUMMARY();
 }

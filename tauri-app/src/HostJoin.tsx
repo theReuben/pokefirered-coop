@@ -228,7 +228,7 @@ export default function HostJoin({ onSessionReady }: Props) {
         <h2>Host a Game</h2>
 
         <label className="toggle-row">
-          <span>Randomize wild Pokémon</span>
+          <span>Randomize wild &amp; trainer Pokémon</span>
           <input
             type="checkbox"
             checked={randomize}

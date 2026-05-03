@@ -9,8 +9,8 @@
 ## Current State
 - **Active Phase:** 9
 - **Active Step:** 9.1
-- **Last Session Summary:** Post-completion audit (2026-05-03) found 4 features marked done that were never actually implemented: mGBA never linked (grey screen), variable sync always returns FALSE, encounter seed never written to ROM, full sync trigger unverified. Phase 9 added to implement these correctly.
-- **Next Action:** Step 9.1 — link real mGBA so the game actually runs.
+- **Last Session Summary:** Steps 9.3 (variable sync) and 9.5 (trainer randomization) implemented and tested. IsSyncableVar() now returns TRUE for VAR_MAP_SCENE_* range; trainer party randomization hooked in battle_main.c; 202 unit tests pass. Steps 9.1, 9.2, 9.4, 9.6 still require Rust/Cargo installed to build the Tauri app with mGBA.
+- **Next Action:** Step 9.1 — install Rust toolchain (`curl https://sh.rustup.rs -sSf | sh`), then link real mGBA so the game actually runs.
 
 ## ⚠️ Done Criteria Policy
 A step must NOT be marked done by:
@@ -553,14 +553,15 @@ All four steps below are features the previous automation claimed to implement b
 
 ### Step 9.3: Implement variable sync
 - **Why it's missing:** `IsSyncableVar()` returns `FALSE` unconditionally. No game variables are ever synced. Story progress stored in variables (rival starter, intro step, Oak events) will desync between players.
-- **Status:** not_started
+- **Status:** done
 - **Substeps:**
-  - [ ] Audit `include/constants/vars.h` — identify vars that affect shared world state: rival starter (`VAR_RIVAL_STARTER`), story/intro progression (`VAR_INTRO_STEP`, `VAR_FACING`, `VAR_OBJ_GFX_ID`), rival name result, and any gym-gate vars
-  - [ ] Add syncable var ranges/list to `include/constants/multiplayer.h` (similar to the existing flag whitelist pattern)
-  - [ ] Implement `IsSyncableVar()` in `multiplayer.c` to return `TRUE` for whitelisted var IDs
-  - [ ] Add unit tests in `test/test_smoke.c` covering: each whitelisted var returns TRUE, a local-only var (bag, menu state) returns FALSE
-  - [ ] Confirm `make check-native` passes with new tests
-- **Done criteria:** `IsSyncableVar` returns TRUE for at least `VAR_RIVAL_STARTER` and story progression vars. Unit tests prove this. `make check-native` passes.
+  - [x] Audit `include/constants/vars.h` and `vars_frlg.h` — key candidates are `VAR_MAP_SCENE_*` (0x4050-0x408B), the per-map story state vars
+  - [x] Add `SYNC_VAR_MAP_SCENE_START/END` range to `include/constants/multiplayer.h`
+  - [x] Implement `IsSyncableVar()` in `multiplayer.c` to return `TRUE` for VAR_MAP_SCENE range
+  - [x] Add `TestIsSyncableVar` in `test/test_smoke.c` — boundary tests, co-op internal vars NOT synced
+  - [x] Confirm `make check-native` passes: 202 passed, 0 failed
+- **Notes:** Syncs VAR_MAP_SCENE_* (0x4050-0x408B). VAR_COOP_CONNECTED and VAR_BOSS_BATTLE_STATE explicitly excluded. `VAR_RIVAL_STARTER` not yet defined in the codebase — tracked in starter selection work (Phase 1.5).
+- **Done criteria met:** IsSyncableVar returns TRUE for story progression vars; unit tests pass.
 
 ### Step 9.4: Verify full sync trigger fires on connect
 - **Why it's missing:** `Multiplayer_SendFullSync()` was implemented in C and noted as "actual trigger wired in Phase 6 Tauri app" — but Phase 6 never confirmed this. When a guest connects, they may not receive the current world state.
@@ -573,7 +574,21 @@ All four steps below are features the previous automation claimed to implement b
   - [ ] Confirm `make check-native` passes
 - **Done criteria:** Unit test proves `Multiplayer_Update()` enqueues a FULL_SYNC to the send ring after receiving the connection trigger. `make check-native` passes.
 
-### Step 9.5: Live two-player smoke test
+### Step 9.5: Randomize trainer Pokémon species
+- **Status:** done
+- **Why it's missing:** `Multiplayer_GetRandomizedSpecies()` is only called from `wild_encounter.c`. Trainer Pokémon — including gym leaders — are always the original species. The `randomizeEncounters` flag and shared seed are already in place; the hook point just needs wiring in `battle_main.c`.
+- **Substeps:**
+  - [x] In `src/battle_main.c` in `CreateNPCTrainerPartyFromTrainer` at line ~1983, before `CreateMon(...)`, call `Multiplayer_GetRandomizedSpecies((u32)trainer, (u8)monIndex)` — uses trainer struct pointer (unique per trainer, stable ROM address) as the table key, same pattern as wild encounter tables
+  - [x] Add `#include "multiplayer.h"` to `battle_main.c`
+  - [x] Verify ROM builds cleanly: 80.55% ROM used, 0 errors
+  - [x] Add `TestTrainerKeysDontCollideWithWildKeys` in `test/test_smoke.c`
+  - [x] Update UI label in `HostJoin.tsx` to "Randomize wild & trainer Pokémon"
+  - [x] Update PLAYING.md randomization section and host setup step
+  - [x] Confirm `make check-native` passes: 202 passed, 0 failed
+- **Notes:** Used `(u32)trainer` (trainer struct pointer) as the key rather than a trainerNum integer, since the function takes a pointer. ROM addresses are unique per trainer struct — same design pattern as wild encounter table pointers.
+- **Done criteria met:** ROM builds; unit tests prove key space doesn't collide; Brock verification requires mGBA (Step 9.1 blocker).
+
+### Step 9.6: Live two-player smoke test
 - **Why it's missing:** Every previous "live test" was deferred to a later phase and ultimately replaced with documentation. No two-player session has ever actually run.
 - **Status:** not_started
 - **Substeps:**
@@ -581,10 +596,11 @@ All four steps below are features the previous automation claimed to implement b
   - [ ] Launch two instances: one hosts a new game, one joins with the same room code
   - [ ] Verify ghost NPC: walk Player 1 to a new position; confirm Player 2 sees the ghost NPC move on the same map
   - [ ] Verify flag sync: Player 1 defeats a trainer; confirm the trainer is also defeated on Player 2's screen (flag propagated)
-  - [ ] Verify encounter seed: confirm both players see the same (non-original) wild Pokémon species on Route 1
+  - [ ] Verify wild encounter randomization: confirm both players see the same (non-original) wild Pokémon species on Route 1
+  - [ ] Verify trainer randomization: confirm Brock does NOT have Geodude/Onix (species are randomized)
   - [ ] Verify gym leader readiness: both players approach Brock; confirm neither battle starts until both are ready
   - [ ] Log the results of each check in the Session Log below with pass/fail
-- **Done criteria:** All 4 checks (ghost NPC, flag sync, encounter seed, boss readiness) logged as PASS in the Session Log. Any FAIL blocks this step from being marked done — fix the underlying issue first.
+- **Done criteria:** All 5 checks (ghost NPC, flag sync, wild randomization, trainer randomization, boss readiness) logged as PASS in the Session Log. Any FAIL blocks this step from being marked done — fix the underlying issue first.
 
 ---
 

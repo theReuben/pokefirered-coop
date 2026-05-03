@@ -37,7 +37,7 @@ Go to the [Releases](../../releases) page and download the installer for your OS
 1. Open the app and click **Host Game**.
 2. Click **New Game**.
 3. Choose where to save your game file (a `.sav` file — pick any folder).
-4. Decide whether to enable **Randomize wild Pokémon** (on by default — both players see the same randomized encounters).
+4. Decide whether to enable **Randomize wild &amp; trainer Pokémon** (on by default — both players see the same randomized species).
 5. Your **room code** appears on screen (e.g. `TR4N9K`). Share this with Player 2.
 6. The game starts automatically when Player 2 connects.
 
@@ -112,13 +112,13 @@ Your session uses two files:
 
 ---
 
-## Randomized wild Pokémon
+## Randomized Pokémon
 
 When randomization is on (default):
 
-- Wild encounters are shuffled across all 151–493 Pokémon.
-- Both players see the same encounter tables (the seed is shared at session start).
-- Level ranges from the original routes are kept — only species change.
+- Wild encounters **and trainer parties** are shuffled across all 151–493 Pokémon.
+- Both players see the same randomized species (the seed is shared at session start).
+- Level ranges from the original routes and trainers are kept — only species change.
 - The setting is chosen by the host and cannot be changed mid-session.
 
 ---

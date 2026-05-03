@@ -571,11 +571,9 @@ bool32 IsSyncableFlag(u16 flagId)
         || (flagId >= SYNC_FLAG_BADGES_START   && flagId <= SYNC_FLAG_BADGES_END);
 }
 
-// Var sync audit deferred to Phase 3 step 3.2+; no vars synced yet.
 bool32 IsSyncableVar(u16 varId)
 {
-    (void)varId;
-    return FALSE;
+    return (varId >= SYNC_VAR_MAP_SCENE_START && varId <= SYNC_VAR_MAP_SCENE_END);
 }
 
 // ---------------------------------------------------------------------------
