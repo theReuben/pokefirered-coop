@@ -30,12 +30,26 @@ const CONN_STATE_ADDR: u32 = 0x0300_157d;
 // Written from the Tauri network thread; read only in tick() on the emu thread.
 static mut PARTNER_CONNECTED: bool = false;
 
+// Encounter seed from the host's session.  Set once by set_encounter_seed()
+// when the emulator starts; written directly to gCoopSettings.encounterSeed
+// every tick so it takes effect as soon as the game initialises the field.
+static mut ENCOUNTER_SEED: u32 = 0;
+
 // Diagnostic counters — updated in tick(), read by get_debug_state().
 static mut TICK_COUNT:    u64 = 0;
 static mut PACKETS_SENT:  u64 = 0;
 static mut PACKETS_RECV:  u64 = 0;
 // Role received from relay: 0=none, 1=host, 2=guest
 static mut RECEIVED_ROLE: u8  = 0;
+
+// gCoopSettings (0x0300_158c) layout: u8 flags @ +0, u32 encounterSeed @ +4.
+const COOP_SEED_ADDR:     u32 = 0x0300_1590; // gCoopSettings.encounterSeed
+const COOP_SETTINGS_ADDR: u32 = 0x0300_158c; // gCoopSettings.randomizeEncounters byte
+
+/// Call once from start_emulator to prime the encounter seed for this session.
+pub fn set_encounter_seed(seed: u32) {
+    unsafe { ENCOUNTER_SEED = seed; }
+}
 
 const RING_BUF_SIZE:  usize = 256;
 const RING_HEAD_OFF:  u32   = 256; // byte offset of head within the struct
@@ -99,6 +113,16 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
                     log::info!("serial_bridge: guest role assigned — host already present");
                 }
             }
+            Some("session_settings") => {
+                // Guest receives host's settings from relay on connect.
+                // Store the seed; it will be written to ROM each tick.
+                if let Some(seed) = msg.get("encounterSeed").and_then(|v| v.as_u64()) {
+                    if seed != 0 {
+                        unsafe { ENCOUNTER_SEED = seed as u32; }
+                        log::info!("serial_bridge: encounter seed received from relay: {}", seed);
+                    }
+                }
+            }
             _ => {}
         }
         if let Some(pkt) = json_to_packet(&msg) {
@@ -117,6 +141,15 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
     if !current.is_empty() && current[0] != target_conn_state {
         log::info!("serial_bridge: connState {} → {}", current[0], target_conn_state);
         emu.write_bytes(CONN_STATE_ADDR, &[target_conn_state]);
+    }
+
+    // Write encounter seed directly to gCoopSettings.encounterSeed every tick.
+    // This bypasses the ring buffer so the seed is available the instant the
+    // game loads, regardless of when Multiplayer_Init() runs.
+    let seed = unsafe { ENCOUNTER_SEED };
+    if seed != 0 {
+        let bytes = seed.to_le_bytes();
+        emu.write_bytes(COOP_SEED_ADDR, &bytes);
     }
 
     // Log a one-line status summary once per second (≈60 ticks).

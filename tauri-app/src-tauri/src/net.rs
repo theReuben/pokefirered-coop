@@ -57,10 +57,13 @@ impl NetHandle {
         self.tx = Some(tx);
 
         let inbound = Arc::clone(&self.inbound);
+        let is_host = session.is_host;
+        let encounter_seed = session.encounter_seed;
+        let randomize_encounters = session.randomize_encounters;
 
         // Spawn the WebSocket task on the Tokio runtime
         tokio::spawn(async move {
-            run_ws_loop(url, rx, inbound, app).await;
+            run_ws_loop(url, rx, inbound, app, is_host, encounter_seed, randomize_encounters).await;
         });
 
         Ok(())
@@ -95,6 +98,9 @@ async fn run_ws_loop(
     mut rx: mpsc::UnboundedReceiver<OutboundMsg>,
     inbound: Arc<Mutex<Vec<InboundMsg>>>,
     app: tauri::AppHandle,
+    is_host: bool,
+    encounter_seed: u32,
+    randomize_encounters: bool,
 ) {
     let mut attempts = 0u32;
 
@@ -108,6 +114,18 @@ async fn run_ws_loop(
                 emit_status(&app, "connected");
 
                 let (mut write, mut read) = ws_stream.split();
+
+                // Host sends session settings immediately so the relay can
+                // store and forward them to the guest on connect.
+                if is_host {
+                    let settings = serde_json::json!({
+                        "type": "session_settings",
+                        "randomizeEncounters": randomize_encounters,
+                        "encounterSeed": encounter_seed,
+                    });
+                    let _ = write.send(Message::Text(settings.to_string())).await;
+                    log::info!("net: sent session_settings (seed={}, randomize={})", encounter_seed, randomize_encounters);
+                }
 
                 loop {
                     tokio::select! {

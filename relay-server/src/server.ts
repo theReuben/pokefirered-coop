@@ -15,6 +15,7 @@ export interface PlayerState {
 interface RoomState {
   sessionId: string | null;
   randomizeEncounters: boolean;
+  encounterSeed: number;
   positions: Partial<Record<PlayerID, PlayerState>>;
   flags: Set<number>;
   vars: Map<number, number>;
@@ -35,7 +36,7 @@ export type ClientMessage =
   | { type: "battle_turn"; turnData: string }       // base64-encoded turn selection
   | { type: "party_sync"; partyData: string }       // base64-encoded party snapshot
   | { type: "starter_pick"; speciesId: number }
-  | { type: "session_settings"; randomizeEncounters: boolean };
+  | { type: "session_settings"; randomizeEncounters: boolean; encounterSeed?: number };
 
 // Server → Client (received by Tauri app, forwarded to ROM serial buffer)
 export type ServerMessage =
@@ -54,7 +55,7 @@ export type ServerMessage =
   | { type: "session_mismatch" }
   | { type: "starter_taken"; speciesId: number }
   | { type: "starter_denied"; speciesId: number }
-  | { type: "session_settings"; randomizeEncounters: boolean };
+  | { type: "session_settings"; randomizeEncounters: boolean; encounterSeed: number };
 
 // ─── Server ───────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ export default class PokemonCoopServer implements Party.Server {
   private state: RoomState = {
     sessionId: null,
     randomizeEncounters: true,
+    encounterSeed: 0,
     positions: {},
     flags: new Set(),
     vars: new Map(),
@@ -122,6 +124,7 @@ export default class PokemonCoopServer implements Party.Server {
       this.send(conn, {
         type: "session_settings",
         randomizeEncounters: this.state.randomizeEncounters,
+        encounterSeed: this.state.encounterSeed,
       });
     }
 
@@ -246,9 +249,11 @@ export default class PokemonCoopServer implements Party.Server {
         // Only the host controls session settings
         if (role === "host") {
           this.state.randomizeEncounters = msg.randomizeEncounters;
+          if (msg.encounterSeed) this.state.encounterSeed = msg.encounterSeed;
           this.broadcast(sender, {
             type: "session_settings",
             randomizeEncounters: msg.randomizeEncounters,
+            encounterSeed: this.state.encounterSeed,
           });
         }
         break;

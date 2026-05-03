@@ -141,6 +141,10 @@ pub async fn start_emulator(
     let mut emu = state.emulator.lock().unwrap();
     emu.start(&session, &rom_path).map_err(|e| e.to_string())?;
 
+    // Prime the encounter seed so it's written to gCoopSettings.encounterSeed
+    // from the very first tick, before the ROM's Multiplayer_Init runs.
+    serial_bridge::set_encounter_seed(session.encounter_seed);
+
     let mut net = state.net.lock().unwrap();
     net.connect(&session, app.clone()).map_err(|e| e.to_string())?;
 
