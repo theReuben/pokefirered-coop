@@ -389,7 +389,11 @@ void Multiplayer_Init(void)
     gMultiplayerState.partnerIsInScript  = FALSE;
     gMultiplayerState.posFrameCounter    = 0;
     gCoopSettings.randomizeEncounters    = 1;
+#if MP_DEBUG_TEST_SEED
+    gCoopSettings.encounterSeed          = MP_DEBUG_TEST_SEED_VALUE;
+#else
     gCoopSettings.encounterSeed          = 0;
+#endif
 
     gMpSendRing.head  = 0;
     gMpSendRing.tail  = 0;

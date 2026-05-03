@@ -20,6 +20,11 @@
 // Set to 1 to spawn a test ghost at a hardcoded Route 1 position without network.
 // Used to verify Step 1.3 rendering in mGBA.  Always 0 in production.
 #define MP_DEBUG_TEST_GHOST        0
+
+// Set to 1 to boot with a fixed encounter seed so randomization can be verified
+// in mGBA without a live Tauri session.  Always 0 in production.
+#define MP_DEBUG_TEST_SEED         0
+#define MP_DEBUG_TEST_SEED_VALUE   0xDEADBEEFu
 #define MP_DEBUG_TEST_MAP_GROUP    0   // Pallet Town area map group for Route 1
 #define MP_DEBUG_TEST_MAP_NUM      16  // MAP_ROUTE1 index
 #define MP_DEBUG_TEST_X            8

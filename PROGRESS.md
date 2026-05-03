@@ -585,8 +585,8 @@ All four steps below are features the previous automation claimed to implement b
   - [x] Update UI label in `HostJoin.tsx` to "Randomize wild & trainer Pokémon"
   - [x] Update PLAYING.md randomization section and host setup step
   - [x] Confirm `make check-native` passes: 202 passed, 0 failed
-- **Notes:** Used `(u32)trainer` (trainer struct pointer) as the key rather than a trainerNum integer, since the function takes a pointer. ROM addresses are unique per trainer struct — same design pattern as wild encounter table pointers.
-- **Done criteria met:** ROM builds; unit tests prove key space doesn't collide; Brock verification requires mGBA (Step 9.1 blocker).
+- **Notes:** Used `(u32)trainer` (trainer struct pointer) as the key rather than a trainerNum integer, since the function takes a pointer. ROM addresses are unique per trainer struct — same design pattern as wild encounter table pointers. Added `MP_DEBUG_TEST_SEED` flag (multiplayer.h) to bake a fixed seed for mGBA verification; disabled (0) in production builds.
+- **Done criteria met:** Verified manually in mGBA on 2026-05-03 — both wild encounters and trainer Pokémon confirmed randomized. `MP_DEBUG_TEST_SEED` set back to 0.
 
 ### Step 9.6: Live two-player smoke test
 - **Why it's missing:** Every previous "live test" was deferred to a later phase and ultimately replaced with documentation. No two-player session has ever actually run.
@@ -613,3 +613,4 @@ All four steps below are features the previous automation claimed to implement b
 | 2 (auto) | 2026-04-28 | 7.7 | Backfilled PROGRESS.md for Steps 7.1–7.5 (code existed). Wrote docs/app-testing.md with full verification checklists. Added check-tauri Makefile target. Phase 7 complete. | Step 8.1: Deploy relay server | cargo not in PATH in automation env; check-tauri target documented but can't run |
 | 3 (auto) | 2026-04-28 | 8.3 | Created .github/workflows/release.yml — cross-platform Tauri builds (macOS universal, Linux, Windows) using tauri-apps/tauri-action triggered on v* tags or workflow_dispatch. ROM built as artifact and bundled. Added `make tauri-release` target. tauri.conf.json metadata already complete. | Step 8.4: PLAYING.md | build.yml was upstream file — created release.yml instead |
 | 3 (auto) | 2026-04-28 | 8.4 | Wrote PLAYING.md: non-technical player guide covering download+install (all 3 OSes), hosting/joining, keyboard controls, starter selection, gym leader co-op readiness, resuming sessions, randomization, known limitations, and troubleshooting. Phase 8 complete. PROJECT DONE. | — | None |
+| 4 | 2026-05-03 | 9.3, 9.5 | Implemented IsSyncableVar (VAR_MAP_SCENE_* range). Hooked trainer Pokémon randomization in battle_main.c. Fixed title screen crash (CreateFlameSprite using wrong CreateSprite variant). Manually verified in mGBA: wild encounters and trainer Pokémon both randomized. 202 unit tests pass. | Step 9.1: Install Rust, link mGBA | Title screen "out of sprite slots" crash (pre-existing bug, fixed same session) |
