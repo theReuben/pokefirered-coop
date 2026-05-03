@@ -14,6 +14,7 @@
 #include "sound.h"
 #include "sprite.h"
 #include "starter_choose.h"
+#include "multiplayer.h"
 #include "strings.h"
 #include "task.h"
 #include "text.h"
@@ -351,7 +352,7 @@ u16 GetStarterPokemon(u16 chosenStarterId)
 {
     if (chosenStarterId > STARTER_MON_COUNT)
         chosenStarterId = 0;
-    return sStarterMon[chosenStarterId];
+    return Multiplayer_GetRandomizedStarter(chosenStarterId);
 }
 
 static void VblankCB_StarterChoose(void)

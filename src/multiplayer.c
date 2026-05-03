@@ -641,6 +641,37 @@ u16 Multiplayer_GetRandomizedSpecies(u32 tableAddr, u8 slotIndex)
     return (u16)(1u + (state % 493u));
 }
 
+// Returns one of three distinct randomized starter species for slots 0, 1, 2.
+// Both players share the same seed so both see the same starters.
+// Returns the canonical starter for that slot if randomization is off or seed unset.
+u16 Multiplayer_GetRandomizedStarter(u8 slot)
+{
+    static const u16 sCanonical[3] = { 1, 4, 7 }; // Bulbasaur, Charmander, Squirtle
+    u16 results[3];
+    u8 i;
+    u32 state;
+
+    if (!gCoopSettings.randomizeEncounters || !gCoopSettings.encounterSeed)
+        return sCanonical[slot % 3];
+
+    // Pick 3 distinct species by hashing seed with a per-slot salt.
+    // Retry with a different salt if a duplicate is drawn.
+    for (i = 0; i < 3; i++) {
+        u32 salt = 0xDEAD0000u + i;
+        u8 attempts = 0;
+        do {
+            state = gCoopSettings.encounterSeed ^ salt ^ ((u32)attempts << 8);
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            results[i] = (u16)(1u + (state % 493u));
+            salt += 0x1337u;
+            attempts++;
+        } while (attempts < 32 && (i > 0 && (results[i] == results[0] || (i > 1 && results[i] == results[1]))));
+    }
+    return results[slot % 3];
+}
+
 // ---------------------------------------------------------------------------
 // Script mutex — advisory lock so each player knows when the other is
 // executing a script interaction (prevents both talking to the same NPC).

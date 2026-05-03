@@ -222,6 +222,7 @@ u32  Multiplayer_NextRandom(void);
 // disabled or the encounter seed is unset; otherwise a Gen I-IV species (1-493).
 // tableAddr is the ROM address of the WildPokemon[] array for this encounter table.
 u16  Multiplayer_GetRandomizedSpecies(u32 tableAddr, u8 slotIndex);
+u16  Multiplayer_GetRandomizedStarter(u8 slot);
 
 // Seed sync (Phase 4) — host calls GenerateSeed() on session start, then
 // broadcasts it with SendSeedSync().  Guest's ProcessOneRecvPacket applies the
