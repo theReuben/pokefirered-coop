@@ -38,8 +38,8 @@ const EWRAM_BASE: u32 = 0x02000000;
 // pokefirered.gba) on first launch and caches the addresses.
 //
 // Defaults here correspond to a reference build — updated by init_addresses().
-static mut SEND_RING_ADDR: u32 = 0x0203_F000;
-static mut RECV_RING_ADDR: u32 = 0x0203_F800;
+static mut SEND_RING_ADDR: u32 = 0x0203_1454;
+static mut RECV_RING_ADDR: u32 = 0x0203_1350;
 
 const RING_MAGIC:      u32 = 0xC00FCAFE;
 const RING_HDR_BYTES:  u32 = 12;
