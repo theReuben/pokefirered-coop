@@ -178,8 +178,23 @@ impl EmuBackend for StubBackend {
 
 #[cfg(feature = "mgba")]
 mod mgba_ffi {
-    #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case, dead_code)]
-    include!(concat!(env!("OUT_DIR"), "/mgba_bindings.rs"));
+    #[repr(C)]
+    pub struct MgbaCtx { _unused: [u8; 0] }
+
+    unsafe extern "C" {
+        pub fn mgba_create() -> *mut MgbaCtx;
+        pub fn mgba_destroy(ctx: *mut MgbaCtx);
+        pub fn mgba_load_rom(ctx: *mut MgbaCtx, path: *const ::std::os::raw::c_char) -> bool;
+        pub fn mgba_load_save(ctx: *mut MgbaCtx, path: *const ::std::os::raw::c_char) -> bool;
+        pub fn mgba_reset(ctx: *mut MgbaCtx);
+        pub fn mgba_run_frame(ctx: *mut MgbaCtx);
+        pub fn mgba_set_keys(ctx: *mut MgbaCtx, keys: u32);
+        pub fn mgba_get_pixels(ctx: *mut MgbaCtx) -> *const u32;
+        pub fn mgba_read32(ctx: *mut MgbaCtx, addr: u32) -> u32;
+        pub fn mgba_write32(ctx: *mut MgbaCtx, addr: u32, val: u32);
+        pub fn mgba_read8(ctx: *mut MgbaCtx, addr: u32) -> u8;
+        pub fn mgba_write8(ctx: *mut MgbaCtx, addr: u32, val: u8);
+    }
 }
 
 #[cfg(feature = "mgba")]

@@ -17,7 +17,6 @@ mgba = []
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 cc = "1"
-bindgen = "0.72"
 
 [dependencies]
 tauri = { version = "2", features = [] }

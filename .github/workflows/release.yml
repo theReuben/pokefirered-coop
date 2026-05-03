@@ -91,15 +91,15 @@ jobs:
           - name: macOS (Universal)
             os: macos-latest
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
-            tauri-args: '--target universal-apple-darwin'
+            tauri-args: '--target universal-apple-darwin --features mgba'
           - name: Linux (x86_64)
             os: ubuntu-latest
             rust-targets: ''
-            tauri-args: ''
+            tauri-args: '--features mgba'
           - name: Windows (x86_64)
             os: windows-latest
             rust-targets: ''
-            tauri-args: ''
+            tauri-args: '--features mgba'
 
     runs-on: ${{ matrix.platform.os }}
 
@@ -147,7 +147,11 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('tauri-app/src-tauri/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
-      - name: Install Linux system libraries
+      - name: Install cmake (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake
+
+      - name: Install Linux system libraries + cmake
         if: matrix.platform.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
@@ -156,7 +160,13 @@ jobs:
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            pkg-config
+            pkg-config \
+            cmake \
+            zlib1g-dev
+
+      - name: Set up MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build and publish release
         uses: tauri-apps/tauri-action@v0
