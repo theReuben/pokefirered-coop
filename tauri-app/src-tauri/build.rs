@@ -41,8 +41,14 @@ fn build_mgba() {
         "-DENABLE_SCRIPTING=OFF".to_string(),
         "-DENABLE_DEBUGGERS=OFF".to_string(),
         "-DENABLE_GDB_STUB=OFF".to_string(),
+        // Build only the library target, skipping all GUI/application code.
+        // This avoids the Windows "epoxy required" check and other UI deps.
+        "-DLIBMGBA_ONLY=ON".to_string(),
         // Remove libpng dependency — we don't need screenshots or PNG saves.
         "-DUSE_PNG=OFF".to_string(),
+        // Required on Linux: Tauri builds a cdylib (.so), which requires all
+        // statically-linked objects to be compiled as position-independent code.
+        "-DCMAKE_POSITION_INDEPENDENT_CODE=ON".to_string(),
         // Export compile commands so we can match the wrapper's compile flags
         // to libmgba.a's flags (prevents struct layout mismatches).
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON".to_string(),
