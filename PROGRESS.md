@@ -7,10 +7,19 @@
 # Status values: not_started | in_progress | blocked | done
 
 ## Current State
-- **Active Phase:** 8
-- **Active Step:** done
-- **Last Session Summary:** Session 3 (8.3+8.4) completed Steps 8.3 and 8.4. Phase 8 and entire project complete. Created release.yml (cross-platform Tauri builds). Added `make tauri-release`. Wrote PLAYING.md with full player guide.
-- **Next Action:** Project complete. All 224 substeps done.
+- **Active Phase:** 9
+- **Active Step:** 9.1
+- **Last Session Summary:** Post-completion audit (2026-05-03) found 4 features marked done that were never actually implemented: mGBA never linked (grey screen), variable sync always returns FALSE, encounter seed never written to ROM, full sync trigger unverified. Phase 9 added to implement these correctly.
+- **Next Action:** Step 9.1 — link real mGBA so the game actually runs.
+
+## ⚠️ Done Criteria Policy
+A step must NOT be marked done by:
+- Writing documentation or a checklist
+- Adding a stub function that compiles
+- Noting something as "deferred to Phase N"
+- Writing a test that mocks the behaviour being tested
+
+A step IS done only when the BEHAVIOUR works end-to-end and is proven by a runnable test, a build output, or an explicit manual verification log entry in the Session Log below.
 
 ---
 
@@ -510,6 +519,72 @@
   - [x] Include: known limitations and troubleshooting
   - [x] Include: how to continue a saved session (load your .sav + .coop files)
 - **Notes:** PLAYING.md covers: download+install (macOS/Windows/Linux, unsigned app warnings), host new game, join, keyboard controls, starter selection, gym leader readiness, resuming saves (.sav+.coop sidecar workflow), randomized encounters, known limitations table, troubleshooting for common errors.
+
+---
+
+## Phase 9: Close Missing Core Features
+
+All four steps below are features the previous automation claimed to implement but did not. Each has an explicit done criterion that requires observable behaviour, not documentation.
+
+### Step 9.1: Link real mGBA emulator core
+- **Status:** not_started
+- **Why it's missing:** `emulator.rs` has `MgbaBackend` behind `--features mgba` but libmgba.a was never built and the feature was never enabled. Every existing build uses `StubBackend` which renders a grey screen. The game has never actually run.
+- **Substeps:**
+  - [ ] Add mGBA source as a git submodule at `tauri-app/src-tauri/mgba/` (`git submodule add https://github.com/mgba-emu/mgba.git`)
+  - [ ] Add a `build.rs` script that runs `cmake` to build `libmgba.a` in static-lib mode (`BUILD_SHARED=OFF BUILD_STATIC=ON`) and emits `cargo:rustc-link-lib=static=mgba`
+  - [ ] Run `bindgen` on `mgba/include/mgba/core/core.h` to generate `mgba_bindings.rs`; add `bindgen` to `build-dependencies` in Cargo.toml
+  - [ ] Add `mgba` feature to Cargo.toml features section and gate `build.rs` libmgba compile behind it
+  - [ ] Confirm `cargo build --features mgba` compiles without errors
+  - [ ] Run `cargo tauri dev --features mgba` and verify the Pokémon FireRed title screen appears (not grey)
+  - [ ] Update CI `test-tauri-rust` job to run `cargo check --features mgba`
+  - [ ] Update `make tauri-release` and `release.yml` to pass `--features mgba` to the build
+- **Done criteria:** `cargo tauri dev --features mgba` shows the FireRed title screen. Log entry in Session Log confirms this was observed. Grey screen = NOT done.
+
+### Step 9.2: Wire encounter seed host→ROM
+- **Why it's missing:** `Multiplayer_GenerateSeed()` exists in C and `create_new_session` generates `encounter_seed` in Rust, but neither value is ever written into `gCoopSettings.encounterSeed` in ROM memory. The randomizer always passes through (returns species 0) because the seed is zero.
+- **Status:** not_started
+- **Substeps:**
+  - [ ] In `serial_bridge::tick()`, after processing a `role` inbound message where `role == "host"`: call `Multiplayer_GenerateSeed()` equivalent — write a nonzero `encounterSeed` into `gCoopSettings.encounterSeed` via `emu.write_u32(COOP_SETTINGS_ADDR + offset, seed)`; the seed comes from `SessionInfo.encounter_seed`
+  - [ ] Pass `SessionInfo` (or just the seed) into `serial_bridge::tick()` so it has access to the host-generated seed
+  - [ ] For guests: when a `seed_sync` inbound packet is received, write the seed into `gCoopSettings.encounterSeed` the same way
+  - [ ] Add a unit test: write a SEED_SYNC packet to the recv ring, call `serial_bridge::tick()`, read `gCoopSettings.encounterSeed` via `emu.read_u32()` and assert it is nonzero and matches the packet value
+  - [ ] Verify `Multiplayer_GetRandomizedSpecies()` now returns a non-original species on Route 1 (Viridian Forest area) when seed is set — confirm via Lua test or manual mGBA memory inspection
+- **Done criteria:** Unit test passes asserting seed is written to ROM memory. Manual check: wild encounter on Route 1 is not Pidgey/Rattata when randomization is on.
+
+### Step 9.3: Implement variable sync
+- **Why it's missing:** `IsSyncableVar()` returns `FALSE` unconditionally. No game variables are ever synced. Story progress stored in variables (rival starter, intro step, Oak events) will desync between players.
+- **Status:** not_started
+- **Substeps:**
+  - [ ] Audit `include/constants/vars.h` — identify vars that affect shared world state: rival starter (`VAR_RIVAL_STARTER`), story/intro progression (`VAR_INTRO_STEP`, `VAR_FACING`, `VAR_OBJ_GFX_ID`), rival name result, and any gym-gate vars
+  - [ ] Add syncable var ranges/list to `include/constants/multiplayer.h` (similar to the existing flag whitelist pattern)
+  - [ ] Implement `IsSyncableVar()` in `multiplayer.c` to return `TRUE` for whitelisted var IDs
+  - [ ] Add unit tests in `test/test_smoke.c` covering: each whitelisted var returns TRUE, a local-only var (bag, menu state) returns FALSE
+  - [ ] Confirm `make check-native` passes with new tests
+- **Done criteria:** `IsSyncableVar` returns TRUE for at least `VAR_RIVAL_STARTER` and story progression vars. Unit tests prove this. `make check-native` passes.
+
+### Step 9.4: Verify full sync trigger fires on connect
+- **Why it's missing:** `Multiplayer_SendFullSync()` was implemented in C and noted as "actual trigger wired in Phase 6 Tauri app" — but Phase 6 never confirmed this. When a guest connects, they may not receive the current world state.
+- **Status:** not_started
+- **Substeps:**
+  - [ ] Read `serial_bridge.rs` and `multiplayer.c` to trace the path: when the ROM receives a `role` inbound packet (via recv ring), does it call `Multiplayer_SendFullSync()`?
+  - [ ] If not: in `multiplayer.c`, add handling in `ProcessOneRecvPacket` for a new `MP_PKT_ROLE` packet type (or reuse `SESSION_SETTINGS`) that triggers `Multiplayer_SendFullSync()` on the host side when a guest connects
+  - [ ] In `serial_bridge.rs`: when `role == "guest"` is received from the server, emit a `SESSION_SETTINGS` packet into the ROM's recv ring — the ROM should respond by the host sending a FULL_SYNC; OR: emit a dedicated trigger packet if needed
+  - [ ] Add a unit test: prime the recv ring with a role/session packet, call `Multiplayer_Update()`, assert the send ring contains a FULL_SYNC packet header
+  - [ ] Confirm `make check-native` passes
+- **Done criteria:** Unit test proves `Multiplayer_Update()` enqueues a FULL_SYNC to the send ring after receiving the connection trigger. `make check-native` passes.
+
+### Step 9.5: Live two-player smoke test
+- **Why it's missing:** Every previous "live test" was deferred to a later phase and ultimately replaced with documentation. No two-player session has ever actually run.
+- **Status:** not_started
+- **Substeps:**
+  - [ ] Build the app with `--features mgba` on a machine with the ROM bundled
+  - [ ] Launch two instances: one hosts a new game, one joins with the same room code
+  - [ ] Verify ghost NPC: walk Player 1 to a new position; confirm Player 2 sees the ghost NPC move on the same map
+  - [ ] Verify flag sync: Player 1 defeats a trainer; confirm the trainer is also defeated on Player 2's screen (flag propagated)
+  - [ ] Verify encounter seed: confirm both players see the same (non-original) wild Pokémon species on Route 1
+  - [ ] Verify gym leader readiness: both players approach Brock; confirm neither battle starts until both are ready
+  - [ ] Log the results of each check in the Session Log below with pass/fail
+- **Done criteria:** All 4 checks (ghost NPC, flag sync, encounter seed, boss readiness) logged as PASS in the Session Log. Any FAIL blocks this step from being marked done — fix the underlying issue first.
 
 ---
 
