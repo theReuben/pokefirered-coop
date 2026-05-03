@@ -122,6 +122,8 @@ struct CoopSettings {
     u8  randomizeEncounters : 1;
     u8  padding : 7;
     u32 encounterSeed;
+    u32 sendRingAddr;   // set by Multiplayer_Init; Tauri reads to locate gMpSendRing
+    u32 recvRingAddr;   // set by Multiplayer_Init; Tauri reads to locate gMpRecvRing
 };
 
 struct MultiplayerState {

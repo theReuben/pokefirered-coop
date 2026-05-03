@@ -411,6 +411,11 @@ void Multiplayer_Init(void)
     gMpRecvRing.tail  = 0;
     gMpRecvRing.magic = MP_RING_MAGIC;
 
+    // Publish ring addresses so the Tauri bridge can locate them dynamically
+    // instead of relying on hardcoded addresses that differ between toolchains.
+    gCoopSettings.sendRingAddr = (u32)&gMpSendRing;
+    gCoopSettings.recvRingAddr = (u32)&gMpRecvRing;
+
 #if MP_DEBUG_TEST_GHOST
     gMultiplayerState.connState       = MP_STATE_CONNECTED;
     gMultiplayerState.partnerMapGroup = MP_DEBUG_TEST_MAP_GROUP;

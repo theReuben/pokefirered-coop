@@ -42,9 +42,12 @@ static mut PACKETS_RECV:  u64 = 0;
 // Role received from relay: 0=none, 1=host, 2=guest
 static mut RECEIVED_ROLE: u8  = 0;
 
-// gCoopSettings (0x0300_158c) layout: u8 flags @ +0, u32 encounterSeed @ +4.
-const COOP_SEED_ADDR:     u32 = 0x0300_1590; // gCoopSettings.encounterSeed
-const COOP_SETTINGS_ADDR: u32 = 0x0300_158c; // gCoopSettings.randomizeEncounters byte
+// gCoopSettings (0x0300_158c) layout: u8 flags @ +0, u32 encounterSeed @ +4,
+// u32 sendRingAddr @ +8, u32 recvRingAddr @ +12.
+const COOP_SEED_ADDR:              u32 = 0x0300_1590; // gCoopSettings.encounterSeed
+const COOP_SETTINGS_ADDR:          u32 = 0x0300_158c; // gCoopSettings.randomizeEncounters byte
+const RING_ADDR_DISCOVERY_SEND:    u32 = 0x0300_1594; // gCoopSettings.sendRingAddr
+const RING_ADDR_DISCOVERY_RECV:    u32 = 0x0300_1598; // gCoopSettings.recvRingAddr
 
 /// Call once from start_emulator to prime the encounter seed for this session.
 pub fn set_encounter_seed(seed: u32) {
@@ -77,6 +80,27 @@ const FULL_SYNC_PAYLOAD_SIZE: usize = 216;
 
 pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
     let tick = unsafe { TICK_COUNT += 1; TICK_COUNT };
+
+    // Discover ring buffer addresses from gCoopSettings fields written by
+    // Multiplayer_Init().  This corrects for EWRAM BSS layout differences
+    // between toolchains (local devkitARM vs CI arm-none-eabi-gcc).
+    // GBA is little-endian; read 4 bytes and reassemble.
+    let send_raw = emu.read_bytes(RING_ADDR_DISCOVERY_SEND, 4);
+    if send_raw.len() == 4 {
+        let addr = u32::from_le_bytes([send_raw[0], send_raw[1], send_raw[2], send_raw[3]]);
+        if addr != 0 && addr != unsafe { SEND_RING_ADDR } {
+            log::info!("serial_bridge: discovered sendRingAddr = 0x{:08X}", addr);
+            unsafe { SEND_RING_ADDR = addr; }
+        }
+    }
+    let recv_raw = emu.read_bytes(RING_ADDR_DISCOVERY_RECV, 4);
+    if recv_raw.len() == 4 {
+        let addr = u32::from_le_bytes([recv_raw[0], recv_raw[1], recv_raw[2], recv_raw[3]]);
+        if addr != 0 && addr != unsafe { RECV_RING_ADDR } {
+            log::info!("serial_bridge: discovered recvRingAddr = 0x{:08X}", addr);
+            unsafe { RECV_RING_ADDR = addr; }
+        }
+    }
 
     // Drain outbound (ROM → relay) first so the partner sees our position.
     let outbound = drain_send_ring(emu);

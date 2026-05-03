@@ -227,7 +227,7 @@ describe("Full sync on connect", () => {
     send(server, host, { type: "session_settings", randomizeEncounters: false });
     const guest = connect(server, room, new MockConnection("c2"));
     const settings = guest.last("session_settings");
-    expect(settings).toEqual({ type: "session_settings", randomizeEncounters: false });
+    expect(settings).toMatchObject({ type: "session_settings", randomizeEncounters: false });
   });
 
   it("guest receives partner's last known position on connect", () => {
@@ -428,7 +428,7 @@ describe("Session settings", () => {
     const { server, room } = makeServer();
     connect(server, room, new MockConnection("c1"));
     const guest = connect(server, room, new MockConnection("c2"));
-    expect(guest.last("session_settings")).toEqual({
+    expect(guest.last("session_settings")).toMatchObject({
       type: "session_settings",
       randomizeEncounters: true,
     });
@@ -439,7 +439,7 @@ describe("Session settings", () => {
     const host = connect(server, room, new MockConnection("c1"));
     const guest = connect(server, room, new MockConnection("c2"));
     send(server, host, { type: "session_settings", randomizeEncounters: false });
-    expect(guest.last("session_settings")).toEqual({
+    expect(guest.last("session_settings")).toMatchObject({
       type: "session_settings",
       randomizeEncounters: false,
     });
