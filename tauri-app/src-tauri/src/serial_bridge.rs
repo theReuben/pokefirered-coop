@@ -30,6 +30,11 @@ const CONN_STATE_ADDR: u32 = 0x0300_157d;
 // Written from the Tauri network thread; read only in tick() on the emu thread.
 static mut PARTNER_CONNECTED: bool = false;
 
+// Diagnostic counters — updated in tick(), read by get_debug_state().
+static mut TICK_COUNT:    u64 = 0;
+static mut PACKETS_SENT:  u64 = 0;
+static mut PACKETS_RECV:  u64 = 0;
+
 const RING_BUF_SIZE:  usize = 256;
 const RING_HEAD_OFF:  u32   = 256; // byte offset of head within the struct
 const RING_TAIL_OFF:  u32   = 257;
@@ -55,10 +60,13 @@ const PKT_PARTNER_DISCONNECTED: u8 = 0x0C;
 const FULL_SYNC_PAYLOAD_SIZE: usize = 216;
 
 pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
+    let tick = unsafe { TICK_COUNT += 1; TICK_COUNT };
+
     // Drain outbound (ROM → relay) first so the partner sees our position.
     let outbound = drain_send_ring(emu);
     for pkt in outbound {
         if let Some(msg) = packet_to_json(&pkt) {
+            unsafe { PACKETS_SENT += 1; }
             net.send(msg);
         }
     }
@@ -88,6 +96,7 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
             _ => {}
         }
         if let Some(pkt) = json_to_packet(&msg) {
+            unsafe { PACKETS_RECV += 1; }
             push_recv_ring(emu, &pkt);
         }
     }
@@ -100,8 +109,69 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
     let target_conn_state: u8 = if unsafe { PARTNER_CONNECTED } { 2 } else { 0 };
     let current = emu.read_bytes(CONN_STATE_ADDR, 1);
     if !current.is_empty() && current[0] != target_conn_state {
-        log::debug!("serial_bridge: connState {} → {}", current[0], target_conn_state);
+        log::info!("serial_bridge: connState {} → {}", current[0], target_conn_state);
         emu.write_bytes(CONN_STATE_ADDR, &[target_conn_state]);
+    }
+
+    // Log a one-line status summary once per second (≈60 ticks).
+    if tick % 60 == 0 {
+        let cs   = if current.is_empty() { 0 } else { current[0] };
+        let sr   = emu.read_bytes(unsafe { SEND_RING_ADDR } + RING_HEAD_OFF, 3);
+        let rr   = emu.read_bytes(unsafe { RECV_RING_ADDR } + RING_HEAD_OFF, 3);
+        let (sh, st, sm) = if sr.len() >= 3 { (sr[0], sr[1], sr[2]) } else { (0, 0, 0) };
+        let (rh, rt, rm) = if rr.len() >= 3 { (rr[0], rr[1], rr[2]) } else { (0, 0, 0) };
+        log::info!(
+            "mp tick={} partner={} connState={} snd(h={} t={} magic={:02X}) rcv(h={} t={} magic={:02X}) sent={} recv={}",
+            tick,
+            unsafe { PARTNER_CONNECTED },
+            cs,
+            sh, st, sm,
+            rh, rt, rm,
+            unsafe { PACKETS_SENT },
+            unsafe { PACKETS_RECV },
+        );
+    }
+}
+
+/// Snapshot of multiplayer bridge state for the debug overlay.
+#[derive(serde::Serialize)]
+pub struct DebugState {
+    pub partner_connected: bool,
+    pub conn_state:        u8,
+    pub send_magic:        u8,
+    pub send_head:         u8,
+    pub send_tail:         u8,
+    pub recv_magic:        u8,
+    pub recv_head:         u8,
+    pub recv_tail:         u8,
+    pub packets_sent:      u64,
+    pub packets_recv:      u64,
+    pub ticks:             u64,
+}
+
+pub fn get_debug_state(emu: &EmulatorHandle) -> DebugState {
+    let cs = {
+        let v = emu.read_bytes(CONN_STATE_ADDR, 1);
+        if v.is_empty() { 0 } else { v[0] }
+    };
+    let sr = emu.read_bytes(unsafe { SEND_RING_ADDR } + RING_HEAD_OFF, 3);
+    let rr = emu.read_bytes(unsafe { RECV_RING_ADDR } + RING_HEAD_OFF, 3);
+    let (sh, st, sm) = if sr.len() >= 3 { (sr[0], sr[1], sr[2]) } else { (0, 0, 0) };
+    let (rh, rt, rm) = if rr.len() >= 3 { (rr[0], rr[1], rr[2]) } else { (0, 0, 0) };
+    unsafe {
+        DebugState {
+            partner_connected: PARTNER_CONNECTED,
+            conn_state:        cs,
+            send_magic:        sm,
+            send_head:         sh,
+            send_tail:         st,
+            recv_magic:        rm,
+            recv_head:         rh,
+            recv_tail:         rt,
+            packets_sent:      PACKETS_SENT,
+            packets_recv:      PACKETS_RECV,
+            ticks:             TICK_COUNT,
+        }
     }
 }
 

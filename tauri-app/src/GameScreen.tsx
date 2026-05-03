@@ -4,6 +4,20 @@ import { listen } from "@tauri-apps/api/event";
 import ConnectionStatus from "./ConnectionStatus";
 import type { ConnectionStatus as ConnStatus, SessionInfo } from "./types";
 
+interface MpDebug {
+  partner_connected: boolean;
+  conn_state: number;
+  send_magic: number;
+  send_head: number;
+  send_tail: number;
+  recv_magic: number;
+  recv_head: number;
+  recv_tail: number;
+  packets_sent: number;
+  packets_recv: number;
+  ticks: number;
+}
+
 interface Props {
   session: SessionInfo;
   onDisconnect: () => void;
@@ -32,6 +46,8 @@ export default function GameScreen({ session, onDisconnect }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const divRef = useRef<HTMLDivElement>(null);
   const [connStatus, setConnStatus] = useState<ConnStatus>("connecting");
+  const [mpDebug, setMpDebug] = useState<MpDebug | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
   const keysHeld = useRef<Set<string>>(new Set());
   const animFrame = useRef<number>(0);
 
@@ -73,14 +89,21 @@ export default function GameScreen({ session, onDisconnect }: Props) {
       setConnStatus(ev.payload);
     });
 
+    // Poll multiplayer debug state every 2 s
+    const debugInterval = setInterval(() => {
+      void invoke<MpDebug>("get_mp_debug").then(setMpDebug).catch(() => {});
+    }, 2000);
+
     return () => {
       cancelAnimationFrame(animFrame.current);
+      clearInterval(debugInterval);
       void invoke("stop_emulator");
       void unlistenConn.then((f) => f());
     };
   }, [session, renderLoop]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "F3") { setShowDebug(v => !v); return; }
     if (keysHeld.current.has(e.key)) return;
     keysHeld.current.add(e.key);
     const mask = GBA_BUTTONS[e.key];
@@ -128,7 +151,23 @@ export default function GameScreen({ session, onDisconnect }: Props) {
 
       <div className="controls-hint">
         Z=A &nbsp; X=B &nbsp; Enter=Start &nbsp; Backspace=Select &nbsp; Arrows=D-pad &nbsp; A/S=L/R
+        &nbsp;|&nbsp; <span style={{cursor:"pointer",textDecoration:"underline"}} onClick={() => setShowDebug(v=>!v)}>F3=debug</span>
       </div>
+
+      {showDebug && mpDebug && (
+        <pre style={{
+          position:"absolute", top:40, left:0, right:0,
+          background:"rgba(0,0,0,0.75)", color:"#0f0",
+          fontSize:11, padding:"4px 8px", margin:0,
+          fontFamily:"monospace", whiteSpace:"pre", userSelect:"text",
+          zIndex:100,
+        }}>
+{`partner=${mpDebug.partner_connected} connState=${mpDebug.conn_state}
+snd magic=0x${mpDebug.send_magic.toString(16).padStart(2,"0")} h=${mpDebug.send_head} t=${mpDebug.send_tail}
+rcv magic=0x${mpDebug.recv_magic.toString(16).padStart(2,"0")} h=${mpDebug.recv_head} t=${mpDebug.recv_tail}
+sent=${mpDebug.packets_sent} recv=${mpDebug.packets_recv} ticks=${mpDebug.ticks}`}
+        </pre>
+      )}
     </div>
   );
 }

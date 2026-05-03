@@ -183,6 +183,14 @@ pub async fn set_key_released(key_mask: u16, state: State<'_, AppState>) -> Resu
     Ok(())
 }
 
+/// Return current multiplayer bridge state for the debug overlay.
+/// Reads ring-buffer head/tail/magic and counters without affecting emulator state.
+#[tauri::command]
+pub async fn get_mp_debug(state: State<'_, AppState>) -> Result<serial_bridge::DebugState, String> {
+    let emu = state.emulator.lock().unwrap();
+    Ok(serial_bridge::get_debug_state(&emu))
+}
+
 /// Flush the battery save to disk without stopping the emulator.
 /// Call this on window close events or explicit save requests.
 #[tauri::command]
