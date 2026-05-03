@@ -34,6 +34,8 @@ static mut PARTNER_CONNECTED: bool = false;
 static mut TICK_COUNT:    u64 = 0;
 static mut PACKETS_SENT:  u64 = 0;
 static mut PACKETS_RECV:  u64 = 0;
+// Role received from relay: 0=none, 1=host, 2=guest
+static mut RECEIVED_ROLE: u8  = 0;
 
 const RING_BUF_SIZE:  usize = 256;
 const RING_HEAD_OFF:  u32   = 256; // byte offset of head within the struct
@@ -85,10 +87,14 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
                 log::info!("serial_bridge: partner disconnected");
             }
             Some("role") => {
+                let role_str = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
+                let role_num: u8 = match role_str { "host" => 1, "guest" => 2, _ => 0 };
+                unsafe { RECEIVED_ROLE = role_num; }
+                log::info!("serial_bridge: received role={}", role_str);
                 // Belt-and-suspenders: if the server assigns us "guest" role the
                 // host was already present when we joined — mark as connected now
                 // rather than waiting for the separate partner_connected message.
-                if msg.get("role").and_then(|r| r.as_str()) == Some("guest") {
+                if role_str == "guest" {
                     unsafe { PARTNER_CONNECTED = true; }
                     log::info!("serial_bridge: guest role assigned — host already present");
                 }
@@ -137,6 +143,7 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
 #[derive(serde::Serialize)]
 pub struct DebugState {
     pub partner_connected: bool,
+    pub role:              u8, // 0=none, 1=host, 2=guest
     pub conn_state:        u8,
     pub send_magic:        u8,
     pub send_head:         u8,
@@ -161,6 +168,7 @@ pub fn get_debug_state(emu: &EmulatorHandle) -> DebugState {
     unsafe {
         DebugState {
             partner_connected: PARTNER_CONNECTED,
+            role:              RECEIVED_ROLE,
             conn_state:        cs,
             send_magic:        sm,
             send_head:         sh,

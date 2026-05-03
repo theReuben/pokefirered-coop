@@ -6,6 +6,7 @@ import type { ConnectionStatus as ConnStatus, SessionInfo } from "./types";
 
 interface MpDebug {
   partner_connected: boolean;
+  role: number; // 0=none, 1=host, 2=guest
   conn_state: number;
   send_magic: number;
   send_head: number;
@@ -162,7 +163,7 @@ export default function GameScreen({ session, onDisconnect }: Props) {
           fontFamily:"monospace", whiteSpace:"pre", userSelect:"text",
           zIndex:100,
         }}>
-{`partner=${mpDebug.partner_connected} connState=${mpDebug.conn_state}
+{`role=${["none","host","guest"][mpDebug.role]??mpDebug.role} partner=${mpDebug.partner_connected} connState=${mpDebug.conn_state}
 snd magic=0x${mpDebug.send_magic.toString(16).padStart(2,"0")} h=${mpDebug.send_head} t=${mpDebug.send_tail}
 rcv magic=0x${mpDebug.recv_magic.toString(16).padStart(2,"0")} h=${mpDebug.recv_head} t=${mpDebug.recv_tail}
 sent=${mpDebug.packets_sent} recv=${mpDebug.packets_recv} ticks=${mpDebug.ticks}`}
