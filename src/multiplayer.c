@@ -486,13 +486,18 @@ void Multiplayer_UpdateGhostPosition(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 faci
 void Multiplayer_SendPosition(void)
 {
     u8 pkt[MP_PKT_SIZE_POSITION];
+    const struct ObjectEvent *player = &gObjectEvents[gPlayerAvatar.objectEventId];
     u8 mapGroup = (u8)gSaveBlock1Ptr->location.mapGroup;
     u8 mapNum   = (u8)gSaveBlock1Ptr->location.mapNum;
-    u8 x        = (u8)gSaveBlock1Ptr->location.x;
-    u8 y        = (u8)gSaveBlock1Ptr->location.y;
+    // currentCoords are world-space (MAP tile + MAP_OFFSET=7).
+    // SpawnSpecialObjectEventParameterized subtracts MAP_OFFSET internally,
+    // so passing world coords places the ghost at the correct tile.
+    u8 x        = (u8)player->currentCoords.x;
+    u8 y        = (u8)player->currentCoords.y;
+    u8 facing   = (u8)player->facingDirection;
     u8 len;
 
-    len = Mp_EncodePosition(pkt, mapGroup, mapNum, x, y, DIR_SOUTH);
+    len = Mp_EncodePosition(pkt, mapGroup, mapNum, x, y, facing);
     MpRing_Write(&gMpSendRing, pkt, len);
 }
 
