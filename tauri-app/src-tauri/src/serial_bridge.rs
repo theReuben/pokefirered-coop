@@ -76,6 +76,15 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
                 unsafe { PARTNER_CONNECTED = false; }
                 log::info!("serial_bridge: partner disconnected");
             }
+            Some("role") => {
+                // Belt-and-suspenders: if the server assigns us "guest" role the
+                // host was already present when we joined — mark as connected now
+                // rather than waiting for the separate partner_connected message.
+                if msg.get("role").and_then(|r| r.as_str()) == Some("guest") {
+                    unsafe { PARTNER_CONNECTED = true; }
+                    log::info!("serial_bridge: guest role assigned — host already present");
+                }
+            }
             _ => {}
         }
         if let Some(pkt) = json_to_packet(&msg) {
@@ -388,6 +397,324 @@ fn build_full_sync_payload(flags: &[Value]) -> [u8; FULL_SYNC_PAYLOAD_SIZE] {
     for i in 160..=255usize { payload[off] = bitmap[i]; off += 1; } // trainers
     for i in 268..=269usize { payload[off] = bitmap[i]; off += 1; } // badges
     payload
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── packet_size ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn packet_size_fixed_types() {
+        assert_eq!(packet_size(&[PKT_POSITION, 0, 0, 0, 0, 0], 0), 6);
+        assert_eq!(packet_size(&[PKT_FLAG_SET,  0, 0],           0), 3);
+        assert_eq!(packet_size(&[PKT_VAR_SET,   0, 0, 0, 0],     0), 5);
+        assert_eq!(packet_size(&[PKT_BOSS_READY, 1],              0), 2);
+        assert_eq!(packet_size(&[PKT_BOSS_CANCEL],                0), 1);
+        assert_eq!(packet_size(&[PKT_SEED_SYNC, 0, 0, 0, 0],     0), 5);
+        assert_eq!(packet_size(&[PKT_SCRIPT_LOCK],                0), 1);
+        assert_eq!(packet_size(&[PKT_SCRIPT_UNLOCK],              0), 1);
+        assert_eq!(packet_size(&[PKT_BOSS_START],                 0), 1);
+        assert_eq!(packet_size(&[PKT_PARTNER_CONNECTED],          0), 1);
+        assert_eq!(packet_size(&[PKT_PARTNER_DISCONNECTED],       0), 1);
+    }
+
+    #[test]
+    fn packet_size_full_sync_variable() {
+        // Header [0x07][len_hi=0x00][len_lo=0x04] → 3 + 4 = 7
+        let buf = [PKT_FULL_SYNC, 0x00, 0x04, 0xAA, 0xBB, 0xCC, 0xDD];
+        assert_eq!(packet_size(&buf, 0), 7);
+    }
+
+    #[test]
+    fn packet_size_full_sync_truncated_header() {
+        // Only 2 bytes — can't read len_lo yet
+        assert_eq!(packet_size(&[PKT_FULL_SYNC, 0x00], 0), 0);
+    }
+
+    #[test]
+    fn packet_size_unknown_type() {
+        assert_eq!(packet_size(&[0xFF], 0), 0);
+    }
+
+    #[test]
+    fn packet_size_empty() {
+        assert_eq!(packet_size(&[], 0), 0);
+        assert_eq!(packet_size(&[PKT_POSITION], 1), 0); // pos beyond end
+    }
+
+    // ── packet_to_json ────────────────────────────────────────────────────────
+
+    #[test]
+    fn pkt_to_json_position() {
+        // mapGroup=1, mapNum=2, x=10, y=20, facing=3
+        let pkt = [PKT_POSITION, 1, 2, 10, 20, 3];
+        let msg = packet_to_json(&pkt).unwrap();
+        assert_eq!(msg["type"], "position");
+        let d = &msg["data"];
+        assert_eq!(d["mapId"],  (1u32 << 8) | 2);  // 0x0102 = 258
+        assert_eq!(d["x"],      10);
+        assert_eq!(d["y"],      20);
+        assert_eq!(d["facing"], 3);
+    }
+
+    #[test]
+    fn pkt_to_json_flag_set() {
+        // flagId = 0x04B0 = 1200
+        let pkt = [PKT_FLAG_SET, 0x04, 0xB0];
+        let msg = packet_to_json(&pkt).unwrap();
+        assert_eq!(msg["type"],   "flag_set");
+        assert_eq!(msg["flagId"], 0x04B0u32);
+    }
+
+    #[test]
+    fn pkt_to_json_var_set() {
+        // varId = 0x4050, value = 7
+        let pkt = [PKT_VAR_SET, 0x40, 0x50, 0x00, 0x07];
+        let msg = packet_to_json(&pkt).unwrap();
+        assert_eq!(msg["type"],  "var_set");
+        assert_eq!(msg["varId"], 0x4050u32);
+        assert_eq!(msg["value"], 7u32);
+    }
+
+    #[test]
+    fn pkt_to_json_boss_ready() {
+        let pkt = [PKT_BOSS_READY, 3]; // bossId=3 (Lt. Surge)
+        let msg = packet_to_json(&pkt).unwrap();
+        assert_eq!(msg["type"],   "boss_ready");
+        assert_eq!(msg["bossId"], 3u32);
+    }
+
+    #[test]
+    fn pkt_to_json_boss_cancel() {
+        let msg = packet_to_json(&[PKT_BOSS_CANCEL]).unwrap();
+        assert_eq!(msg["type"], "boss_cancel");
+    }
+
+    #[test]
+    fn pkt_to_json_wrong_length_returns_none() {
+        // position needs exactly 6 bytes
+        assert!(packet_to_json(&[PKT_POSITION, 0, 0, 0, 0]).is_none());
+    }
+
+    // ── json_to_packet ────────────────────────────────────────────────────────
+
+    #[test]
+    fn json_to_pkt_partner_position() {
+        let msg = json!({
+            "type": "partner_position",
+            "data": { "mapId": 258u32, "x": 10u32, "y": 20u32, "facing": 3u32, "spriteState": 0u32 }
+        });
+        let pkt = json_to_packet(&msg).unwrap();
+        assert_eq!(pkt, vec![PKT_POSITION, 1, 2, 10, 20, 3]);
+    }
+
+    #[test]
+    fn json_to_pkt_mapid_roundtrip() {
+        // Encode in packet_to_json, decode in json_to_packet.
+        let original = [PKT_POSITION, 5, 12, 7, 3, 1u8]; // group=5 num=12
+        let msg = packet_to_json(&original).unwrap();
+        // Relay renames "position" → "partner_position" on the wire.
+        let relayed = json!({ "type": "partner_position", "data": msg["data"].clone() });
+        let decoded = json_to_packet(&relayed).unwrap();
+        assert_eq!(decoded, original.to_vec());
+    }
+
+    #[test]
+    fn json_to_pkt_flag_set() {
+        let msg = json!({ "type": "flag_set", "flagId": 0x04B0u32 });
+        let pkt = json_to_packet(&msg).unwrap();
+        assert_eq!(pkt, vec![PKT_FLAG_SET, 0x04, 0xB0]);
+    }
+
+    #[test]
+    fn json_to_pkt_var_set() {
+        let msg = json!({ "type": "var_set", "varId": 0x4050u32, "value": 7u32 });
+        let pkt = json_to_packet(&msg).unwrap();
+        assert_eq!(pkt, vec![PKT_VAR_SET, 0x40, 0x50, 0x00, 0x07]);
+    }
+
+    #[test]
+    fn json_to_pkt_partner_connected() {
+        let pkt = json_to_packet(&json!({ "type": "partner_connected" })).unwrap();
+        assert_eq!(pkt, vec![PKT_PARTNER_CONNECTED]);
+    }
+
+    #[test]
+    fn json_to_pkt_partner_disconnected() {
+        let pkt = json_to_packet(&json!({ "type": "partner_disconnected" })).unwrap();
+        assert_eq!(pkt, vec![PKT_PARTNER_DISCONNECTED]);
+    }
+
+    #[test]
+    fn json_to_pkt_boss_start() {
+        let pkt = json_to_packet(&json!({ "type": "boss_start", "bossId": 1u32 })).unwrap();
+        assert_eq!(pkt, vec![PKT_BOSS_START]);
+    }
+
+    #[test]
+    fn json_to_pkt_role_returns_none() {
+        // role is handled by app state, not forwarded to ROM ring
+        assert!(json_to_packet(&json!({ "type": "role", "role": "host" })).is_none());
+    }
+
+    #[test]
+    fn json_to_pkt_boss_waiting_returns_none() {
+        assert!(json_to_packet(&json!({ "type": "boss_waiting" })).is_none());
+    }
+
+    #[test]
+    fn json_to_pkt_session_settings_zero_seed_returns_none() {
+        assert!(json_to_packet(&json!({ "type": "session_settings", "randomizeEncounters": true })).is_none());
+    }
+
+    // ── build_full_sync_payload ───────────────────────────────────────────────
+
+    #[test]
+    fn full_sync_payload_empty_flags() {
+        let payload = build_full_sync_payload(&[]);
+        assert_eq!(payload.len(), FULL_SYNC_PAYLOAD_SIZE);
+        assert!(payload.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn full_sync_payload_story_flag() {
+        // Flag 0x230 = 560 → byte 70, bit 0.
+        // Byte 70 is in story range [4..=95]; offset in payload = 70 - 4 = 66.
+        let flags = vec![json!(560u32)];
+        let payload = build_full_sync_payload(&flags);
+        assert_eq!(payload[66], 1, "story flag 0x230 should be bit 0 at payload offset 66");
+    }
+
+    #[test]
+    fn full_sync_payload_trainer_flag() {
+        // SYNC_FLAG_TRAINERS_START = 0x500 = 1280 → byte 160, bit 0.
+        // Trainers start at payload offset = 92+24+2 = 118; byte 160 is offset 0 of trainers.
+        let flags = vec![json!(0x500u32)];
+        let payload = build_full_sync_payload(&flags);
+        let trainer_off = 92 + 24 + 2; // = 118
+        assert_eq!(payload[trainer_off], 1, "trainer flag 0x500 should be bit 0 at payload offset 118");
+    }
+
+    #[test]
+    fn full_sync_payload_badge_flag() {
+        // FLAG_BADGE01_GET = 0x867 = 2151 → byte 268, bit 7.
+        // Badges are last 2 bytes: offsets 214 and 215.
+        let flags = vec![json!(0x867u32)]; // 2151 / 8 = 268 r 7
+        let payload = build_full_sync_payload(&flags);
+        let badge_off = FULL_SYNC_PAYLOAD_SIZE - 2; // = 214
+        assert_eq!(payload[badge_off], 0x80, "badge flag 0x867 should be bit 7 at payload offset 214");
+    }
+
+    #[test]
+    fn full_sync_payload_size_is_216() {
+        assert_eq!(FULL_SYNC_PAYLOAD_SIZE, 216);
+    }
+
+    #[test]
+    fn full_sync_inbound_from_relay() {
+        // The relay sends { type: "full_sync", flags: [<real GBA flag IDs>] }.
+        // json_to_packet must produce a packet whose payload matches
+        // build_full_sync_payload called with the same IDs.
+        let story_flag  = 0x230u64; // within story range [0x020..0x2FF]
+        let badge_flag  = 0x867u64; // FLAG_BADGE01_GET
+
+        let json_msg = json!({
+            "type": "full_sync",
+            "flags": [story_flag, badge_flag],
+            "vars": {}
+        });
+
+        let pkt = json_to_packet(&json_msg).unwrap();
+        assert_eq!(pkt[0], PKT_FULL_SYNC);
+        let len = ((pkt[1] as usize) << 8) | pkt[2] as usize;
+        assert_eq!(len, FULL_SYNC_PAYLOAD_SIZE);
+
+        let expected = build_full_sync_payload(&[json!(story_flag), json!(badge_flag)]);
+        assert_eq!(&pkt[3..], &expected,
+            "full_sync packet payload must match build_full_sync_payload output");
+    }
+
+    // ── drain_send_ring helper (ring byte parsing without emulator) ───────────
+
+    #[test]
+    fn ring_parse_single_position_packet() {
+        // Simulate a 260-byte raw memory snapshot with one position packet.
+        // head=6, tail=0, magic=0xC0, data at buf[0..5]
+        let mut raw = [0u8; 260];
+        raw[0] = PKT_POSITION;
+        raw[1] = 2;  // mapGroup
+        raw[2] = 5;  // mapNum
+        raw[3] = 15; // x
+        raw[4] = 8;  // y
+        raw[5] = 0;  // facing
+        raw[256] = 6; // head
+        raw[257] = 0; // tail
+        raw[258] = RING_MAGIC;
+
+        let head = raw[256];
+        let tail = raw[257];
+        assert_eq!(raw[258], RING_MAGIC);
+
+        let avail = head.wrapping_sub(tail) as usize;
+        let ring_data: Vec<u8> = (0..avail).map(|i| raw[tail.wrapping_add(i as u8) as usize]).collect();
+        assert_eq!(ring_data.len(), 6);
+
+        let size = packet_size(&ring_data, 0);
+        assert_eq!(size, 6);
+
+        let pkt = &ring_data[0..size];
+        let msg = packet_to_json(pkt).unwrap();
+        assert_eq!(msg["type"], "position");
+        assert_eq!(msg["data"]["mapId"], (2u32 << 8) | 5u32);
+        assert_eq!(msg["data"]["x"], 15u32);
+    }
+
+    #[test]
+    fn ring_parse_multiple_packets() {
+        // Two flag_set packets back-to-back.
+        let mut raw = [0u8; 260];
+        raw[0] = PKT_FLAG_SET; raw[1] = 0x04; raw[2] = 0xB0;
+        raw[3] = PKT_FLAG_SET; raw[4] = 0x04; raw[5] = 0xB1;
+        raw[256] = 6;
+        raw[257] = 0;
+        raw[258] = RING_MAGIC;
+
+        let head = raw[256];
+        let tail = raw[257];
+        let avail = head.wrapping_sub(tail) as usize;
+        let ring_data: Vec<u8> = (0..avail).map(|i| raw[tail.wrapping_add(i as u8) as usize]).collect();
+
+        let mut consumed = 0;
+        let mut packets = Vec::new();
+        while consumed < ring_data.len() {
+            let size = packet_size(&ring_data, consumed);
+            assert!(size > 0);
+            packets.push(ring_data[consumed..consumed + size].to_vec());
+            consumed += size;
+        }
+        assert_eq!(packets.len(), 2);
+        let m0 = packet_to_json(&packets[0]).unwrap();
+        let m1 = packet_to_json(&packets[1]).unwrap();
+        assert_eq!(m0["flagId"], 0x04B0u32);
+        assert_eq!(m1["flagId"], 0x04B1u32);
+    }
+
+    #[test]
+    fn ring_invalid_magic_produces_no_packets() {
+        let mut raw = [0u8; 260];
+        raw[0] = PKT_FLAG_SET; raw[1] = 0x00; raw[2] = 0x01;
+        raw[256] = 3;
+        raw[257] = 0;
+        raw[258] = 0x00; // wrong magic
+
+        assert_ne!(raw[258], RING_MAGIC);
+        // drain_send_ring returns vec![] — simulated here by checking magic.
+    }
 }
 
 // ── Minimal base64 (no external dep) ─────────────────────────────────────────

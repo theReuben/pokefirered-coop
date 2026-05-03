@@ -144,8 +144,13 @@ export default class PokemonCoopServer implements Party.Server {
       this.send(conn, { type: "starter_taken", speciesId: partnerStarter });
     }
 
-    // Notify the other player
+    // Notify existing players that a new partner joined.
     this.broadcast(conn, { type: "partner_connected" });
+    // Also tell the new joiner that a partner is already here (broadcast only
+    // goes to other connections, so the guest never knew the host existed).
+    if (role === "guest") {
+      this.send(conn, { type: "partner_connected" });
+    }
   }
 
   onClose(conn: Party.Connection): void {
