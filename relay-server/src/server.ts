@@ -245,6 +245,10 @@ export default class PokemonCoopServer implements Party.Server {
     }
   }
 
+  onRequest(_req: Party.Request): Response {
+    return new Response("ok", { status: 200 });
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private send(conn: Party.Connection, msg: ServerMessage): void {
