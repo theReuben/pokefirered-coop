@@ -20,6 +20,16 @@ use serde_json::{json, Value};
 static mut SEND_RING_ADDR: u32 = 0x0203_1454;
 static mut RECV_RING_ADDR: u32 = 0x0203_1350;
 
+// gMultiplayerState is in IWRAM (0x0300157c from nm pokefirered.elf).
+// connState is the second byte (+1 offset).  We write it directly every frame
+// so that any ROM build picks up the connection state without requiring the
+// new PKT_PARTNER_CONNECTED ring-packet handler to be compiled in.
+const CONN_STATE_ADDR: u32 = 0x0300_157d;
+
+// Tracks whether the relay has a connected partner for us.
+// Written from the Tauri network thread; read only in tick() on the emu thread.
+static mut PARTNER_CONNECTED: bool = false;
+
 const RING_BUF_SIZE:  usize = 256;
 const RING_HEAD_OFF:  u32   = 256; // byte offset of head within the struct
 const RING_TAIL_OFF:  u32   = 257;
@@ -45,6 +55,7 @@ const PKT_PARTNER_DISCONNECTED: u8 = 0x0C;
 const FULL_SYNC_PAYLOAD_SIZE: usize = 216;
 
 pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
+    // Drain outbound (ROM → relay) first so the partner sees our position.
     let outbound = drain_send_ring(emu);
     for pkt in outbound {
         if let Some(msg) = packet_to_json(&pkt) {
@@ -52,10 +63,36 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
         }
     }
 
+    // Process inbound (relay → ROM).
     for msg in net.drain_inbound() {
+        // Track partner presence before routing to ring so the heartbeat below
+        // reflects the new state on this same frame.
+        match msg.get("type").and_then(|t| t.as_str()) {
+            Some("partner_connected")    => {
+                unsafe { PARTNER_CONNECTED = true; }
+                log::info!("serial_bridge: partner connected");
+            }
+            Some("partner_disconnected") => {
+                unsafe { PARTNER_CONNECTED = false; }
+                log::info!("serial_bridge: partner disconnected");
+            }
+            _ => {}
+        }
         if let Some(pkt) = json_to_packet(&msg) {
             push_recv_ring(emu, &pkt);
         }
+    }
+
+    // Heartbeat: write gMultiplayerState.connState directly every frame so the
+    // ROM always reflects the correct connection state regardless of ROM build
+    // version.  MP_STATE_CONNECTED = 2, MP_STATE_DISCONNECTED = 0.
+    // This also handles the race where Multiplayer_Init() resets connState to 0
+    // after partner_connected already arrived from the relay.
+    let target_conn_state: u8 = if unsafe { PARTNER_CONNECTED } { 2 } else { 0 };
+    let current = emu.read_bytes(CONN_STATE_ADDR, 1);
+    if !current.is_empty() && current[0] != target_conn_state {
+        log::debug!("serial_bridge: connState {} → {}", current[0], target_conn_state);
+        emu.write_bytes(CONN_STATE_ADDR, &[target_conn_state]);
     }
 }
 
