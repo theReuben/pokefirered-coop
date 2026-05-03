@@ -11,7 +11,9 @@
 #define MP_PKT_FULL_SYNC    0x07   // 3+len bytes total (variable)
 #define MP_PKT_SCRIPT_LOCK  0x08   // 1 byte — player entered a script interaction
 #define MP_PKT_SCRIPT_UNLOCK 0x09  // 1 byte — player left the script interaction
-#define MP_PKT_BOSS_START   0x0A   // 1 byte — relay confirms both players ready
+#define MP_PKT_BOSS_START           0x0A   // 1 byte — relay confirms both players ready
+#define MP_PKT_PARTNER_CONNECTED    0x0B   // 1 byte — partner joined the session
+#define MP_PKT_PARTNER_DISCONNECTED 0x0C   // 1 byte — partner left the session
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -48,7 +50,9 @@
 #define MP_PKT_SIZE_FULL_SYNC_HDR 3  // type + len_hi + len_lo; data follows
 #define MP_PKT_SIZE_SCRIPT_LOCK   1
 #define MP_PKT_SIZE_SCRIPT_UNLOCK 1
-#define MP_PKT_SIZE_BOSS_START    1
+#define MP_PKT_SIZE_BOSS_START              1
+#define MP_PKT_SIZE_PARTNER_CONNECTED       1
+#define MP_PKT_SIZE_PARTNER_DISCONNECTED    1
 
 // Player roles assigned by relay server
 #define MP_ROLE_NONE        0

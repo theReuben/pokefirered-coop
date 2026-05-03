@@ -232,6 +232,15 @@ static bool8 ProcessOneRecvPacket(void)
             gMultiplayerState.partnerBossId = gMultiplayerState.bossReadyBossId;
         break;
 
+    case MP_PKT_PARTNER_CONNECTED:
+        gMultiplayerState.connState = MP_STATE_CONNECTED;
+        break;
+
+    case MP_PKT_PARTNER_DISCONNECTED:
+        gMultiplayerState.connState = MP_STATE_DISCONNECTED;
+        Multiplayer_DespawnGhost();
+        break;
+
     case MP_PKT_SCRIPT_LOCK:
         gMultiplayerState.partnerIsInScript = TRUE;
         break;
