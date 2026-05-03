@@ -156,6 +156,11 @@ export default class PokemonCoopServer implements Party.Server {
       this.state.bossReady[role] = null;
       this.roles.delete(conn.id);
     }
+    // When the room is empty again, reset sessionId so a new host can
+    // reconnect with a fresh session (e.g. after restarting the app).
+    if (this.roles.size === 0) {
+      this.state.sessionId = null;
+    }
     this.broadcast(conn, { type: "partner_disconnected" });
   }
 

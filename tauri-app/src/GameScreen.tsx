@@ -30,6 +30,7 @@ const GBA_BUTTONS: Record<string, number> = {
 
 export default function GameScreen({ session, onDisconnect }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const divRef = useRef<HTMLDivElement>(null);
   const [connStatus, setConnStatus] = useState<ConnStatus>("connecting");
   const keysHeld = useRef<Set<string>>(new Set());
   const animFrame = useRef<number>(0);
@@ -58,6 +59,9 @@ export default function GameScreen({ session, onDisconnect }: Props) {
   }, []);
 
   useEffect(() => {
+    // Auto-focus so keyboard events are captured immediately
+    divRef.current?.focus();
+
     // Start the emulator
     void invoke("start_emulator", { session });
 
@@ -93,8 +97,19 @@ export default function GameScreen({ session, onDisconnect }: Props) {
     }
   }
 
+  function handleBlur() {
+    // Release every held button so keys don't get stuck when focus leaves the window
+    for (const key of keysHeld.current) {
+      const mask = GBA_BUTTONS[key];
+      if (mask !== undefined) {
+        void invoke("set_key_released", { keyMask: mask });
+      }
+    }
+    keysHeld.current.clear();
+  }
+
   return (
-    <div className="screen game-screen" tabIndex={0} onKeyDown={handleKeyDown} onKeyUp={handleKeyUp}>
+    <div ref={divRef} className="screen game-screen" tabIndex={0} onKeyDown={handleKeyDown} onKeyUp={handleKeyUp} onBlur={handleBlur}>
       <div className="top-bar">
         <ConnectionStatus status={connStatus} />
         <span className="room-code-small">Room: {session.roomCode}</span>

@@ -136,6 +136,12 @@ async fn run_ws_loop(
                                 Some(Ok(Message::Text(text))) => {
                                     match serde_json::from_str::<Value>(&text) {
                                         Ok(json) => {
+                                            // session_mismatch = stale room; abort, don't retry
+                                            if json.get("type").and_then(|v| v.as_str()) == Some("session_mismatch") {
+                                                log::error!("Server rejected connection: session_mismatch (stale room). Reconnect to a new room.");
+                                                emit_status(&app, "error");
+                                                return;
+                                            }
                                             inbound.lock().unwrap().push(json);
                                         }
                                         Err(e) => log::warn!("Bad JSON from server: {e}"),

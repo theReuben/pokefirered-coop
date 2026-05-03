@@ -1,0 +1,3 @@
+[submodule "tauri-app/src-tauri/mgba"]
+	path = tauri-app/src-tauri/mgba
+	url = https://github.com/mgba-emu/mgba.git
