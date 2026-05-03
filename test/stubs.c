@@ -13,6 +13,7 @@ u32 gTestRandom32Value = 0x11223344u;
 // Global arrays / pointers referenced by multiplayer.c
 struct ObjectEvent gObjectEvents[16];
 struct SaveBlock1 *gSaveBlock1Ptr;
+struct PlayerAvatar gPlayerAvatar;
 
 // Set this to a valid slot (0-15) before a test that exercises spawn; 16 = no slot.
 u8 gTestNextSpawnSlot = 16;

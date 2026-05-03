@@ -56,16 +56,31 @@ struct ObjectEvent {
     u32 heldMovementActive   : 1; // bit 1
     u32 heldMovementFinished : 1; // bit 2
     u32 _pad                 : 29;
-    u8  graphicsId;
+    u16 graphicsId;
     u8  movementType;
-    u8  mapGroup;
+    u8  trainerType;
+    u8  localId;
     u8  mapNum;
-    u8  spriteId;
-    u8  _pad2[3];
+    u8  mapGroup;
+    u8  _elev;
     struct Coords16 initialCoords;
     struct Coords16 currentCoords;
     struct Coords16 previousCoords;
+    u16 facingDirection      : 4; // mirrors global.fieldmap.h offset 0x18
+    u16 _dirpad              : 12;
 };
+
+// Minimal PlayerAvatar fields accessed by multiplayer.c.
+struct PlayerAvatar {
+    u8 flags;
+    u8 transitionFlags;
+    u8 runningState;
+    u8 tileTransitionState;
+    u8 spriteId;
+    u8 objectEventId;
+};
+
+extern struct PlayerAvatar gPlayerAvatar;
 
 // OBJECT_EVENTS_COUNT comes from constants/global.h (included above).
 extern struct ObjectEvent gObjectEvents[OBJECT_EVENTS_COUNT];
