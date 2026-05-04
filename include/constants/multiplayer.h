@@ -39,6 +39,7 @@
 #define BOSS_ID_RIVAL_SILPH     18
 #define BOSS_ID_RIVAL_ROUTE22_2 19
 #define BOSS_ID_RIVAL_CHAMPION  20
+#define BOSS_ID_ESCORT          21   // Pallet Town: Oak calls both players to the lab
 
 // Script variables repurposed for co-op state (from VAR_UNUSED_0x40F7/0x40F8)
 // VAR_COOP_CONNECTED  — read by gym scripts to choose connected vs solo path

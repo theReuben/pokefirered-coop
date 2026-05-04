@@ -179,6 +179,15 @@ PalletTown_EventScript_OakTriggerRight::
 	end
 
 PalletTown_EventScript_OakTrigger::
+	@ Both players must reach the trigger tiles before the escort begins.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, PalletTown_EventScript_OakTriggerStart
+	special Multiplayer_BossReady_Escort
+	message PalletTown_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+PalletTown_EventScript_OakTriggerStart::
 	famechecker FAMECHECKER_OAK, FCPICKSTATE_COLORED, UpdatePickStateFromSpecialVar8005
 	textcolor NPC_TEXT_COLOR_MALE
 	delay 30
@@ -544,5 +553,8 @@ PalletTown_Text_LookCopiedTrainerTipsSign::
 PalletTown_Text_PressStartToOpenMenuCopy::
 	.string "TRAINER TIPS!\p"
 	.string "Press START to open the MENU!$"
+
+PalletTown_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 

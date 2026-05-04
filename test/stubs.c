@@ -110,10 +110,11 @@ u16 VarGet(u16 varId)
     u16 idx = varId - TEMP_VARS_START;
     return (idx < 16) ? sVars[idx] : 0;
 }
-void VarSet(u16 varId, u16 value)
+bool8 VarSet(u16 varId, u16 value)
 {
     u16 idx = varId - TEMP_VARS_START;
-    if (idx < 16) sVars[idx] = value;
+    if (idx < 16) { sVars[idx] = value; return TRUE; }
+    return FALSE;
 }
 
 // AddBagItem stub — records the last call for test assertions.

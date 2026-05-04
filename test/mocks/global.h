@@ -111,7 +111,10 @@ extern struct SaveBlock1 *gSaveBlock1Ptr;
 #define VAR_TEMP_0          (TEMP_VARS_START + 0x0)
 #define VAR_TEMP_1          (TEMP_VARS_START + 0x1)
 #define VAR_TEMP_2          (TEMP_VARS_START + 0x2)
-u16 VarGet(u16 varId);
-void VarSet(u16 varId, u16 value);
+u16   VarGet(u16 varId);
+bool8 VarSet(u16 varId, u16 value);
+
+// Badge count for event_data.h array declaration.
+#define NUM_BADGES          8
 
 #endif // GUARD_GLOBAL_H

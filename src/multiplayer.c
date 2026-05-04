@@ -3,6 +3,7 @@
 #include "constants/multiplayer.h"
 #include "constants/event_object_movement.h"
 #include "event_object_movement.h"
+#include "event_data.h"
 #include "item.h"
 #include "random.h"
 
@@ -920,6 +921,7 @@ void Multiplayer_BossReady_RivalSsAnne(void)    { BossReadyCommon(BOSS_ID_RIVAL_
 void Multiplayer_BossReady_RivalSilph(void)     { BossReadyCommon(BOSS_ID_RIVAL_SILPH); }
 void Multiplayer_BossReady_RivalRoute22_2(void) { BossReadyCommon(BOSS_ID_RIVAL_ROUTE22_2); }
 void Multiplayer_BossReady_RivalChampion(void)  { BossReadyCommon(BOSS_ID_RIVAL_CHAMPION); }
+void Multiplayer_BossReady_Escort(void)         { BossReadyCommon(BOSS_ID_ESCORT); }
 
 void Multiplayer_BossCancel(void)
 {
