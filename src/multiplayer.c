@@ -289,7 +289,7 @@ static bool8 ProcessOneRecvPacket(void)
         if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_ITEM_GIVE - 1)
             return FALSE;
         {
-            u8 itemHi, itemLo, qty;
+            u8 itemHi = 0, itemLo = 0, qty = 0;
             u16 itemId;
             Mp_Pop(&gMpRecvRing, &itemHi);
             Mp_Pop(&gMpRecvRing, &itemLo);
