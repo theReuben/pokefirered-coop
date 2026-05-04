@@ -3,6 +3,7 @@
 #include "constants/multiplayer.h"
 #include "constants/event_object_movement.h"
 #include "event_object_movement.h"
+#include "item.h"
 #include "random.h"
 
 // ---------------------------------------------------------------------------
@@ -284,6 +285,21 @@ static bool8 ProcessOneRecvPacket(void)
         break;
     }
 
+    case MP_PKT_ITEM_GIVE:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_ITEM_GIVE - 1)
+            return FALSE;
+        {
+            u8 itemHi, itemLo, qty;
+            u16 itemId;
+            Mp_Pop(&gMpRecvRing, &itemHi);
+            Mp_Pop(&gMpRecvRing, &itemLo);
+            Mp_Pop(&gMpRecvRing, &qty);
+            itemId = ((u16)itemHi << 8) | itemLo;
+            if (itemId != ITEM_NONE && qty > 0)
+                AddBagItem(itemId, qty);
+        }
+        break;
+
     default:
         // Unknown type — can't recover sync; drain ring to avoid stall.
         while (Mp_Pop(&gMpRecvRing, &typeByte)) {}
@@ -525,6 +541,18 @@ void Multiplayer_SendVarSet(u16 varId, u16 value)
     MpRing_Write(&gMpSendRing, pkt, len);
 }
 
+void Multiplayer_OnItemGiven(u16 itemId, u8 quantity)
+{
+    u8 pkt[MP_PKT_SIZE_ITEM_GIVE];
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED)
+        return;
+    pkt[0] = MP_PKT_ITEM_GIVE;
+    pkt[1] = (u8)(itemId >> 8);
+    pkt[2] = (u8)(itemId);
+    pkt[3] = quantity;
+    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_ITEM_GIVE);
+}
+
 void Multiplayer_SendBossReady(u8 bossId)
 {
     u8 pkt[MP_PKT_SIZE_BOSS_READY];
@@ -601,7 +629,15 @@ bool32 IsSyncableFlag(u16 flagId)
 
 bool32 IsSyncableVar(u16 varId)
 {
-    return (varId >= SYNC_VAR_MAP_SCENE_START && varId <= SYNC_VAR_MAP_SCENE_END);
+    // VAR_MAP_SCENE_* (0x4050-0x408B) control per-player scripted cutscene
+    // progression.  Each player must run through intro/scene sequences
+    // independently, so these must NOT sync.  Syncing them overwrites the
+    // partner's scene state mid-sequence (e.g. player A picking a starter
+    // advances the lab scene var and blocks player B from choosing).
+    // No other var range currently needs cross-player sync; trainer/badge/
+    // story state is all stored in flags, not vars.
+    (void)varId;
+    return FALSE;
 }
 
 // ---------------------------------------------------------------------------

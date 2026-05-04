@@ -14,6 +14,7 @@
 #define MP_PKT_BOSS_START           0x0A   // 1 byte — relay confirms both players ready
 #define MP_PKT_PARTNER_CONNECTED    0x0B   // 1 byte — partner joined the session
 #define MP_PKT_PARTNER_DISCONNECTED 0x0C   // 1 byte — partner left the session
+#define MP_PKT_ITEM_GIVE            0x0D   // 4 bytes — give item to partner (field/gift, not shop)
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -53,6 +54,7 @@
 #define MP_PKT_SIZE_BOSS_START              1
 #define MP_PKT_SIZE_PARTNER_CONNECTED       1
 #define MP_PKT_SIZE_PARTNER_DISCONNECTED    1
+#define MP_PKT_SIZE_ITEM_GIVE               4  // type + item_hi + item_lo + quantity
 
 // Player roles assigned by relay server
 #define MP_ROLE_NONE        0
@@ -80,8 +82,11 @@
 
 // Story range: NPC hide/show (0x028), item ball pickups (0x154),
 //              and story quest flags (STORY_FLAGS_START=0x230) through 0x2FF.
-// We start at 0x020 (first named FRLG flag) to be safe about the gap 0x020-0x027.
-#define SYNC_FLAG_STORY_START       0x020
+// Flags 0x020-0x22F are NPC HIDE flags (FLAG_HIDE_OAK_IN_HIS_LAB etc.).
+// Syncing them blocks per-player scripted sequences (e.g. rival in lab hides
+// for player B before their own fight).  Named story-completion flags
+// (GOT_*, BEAT_*, VISITED_*) begin at 0x230, so we start there.
+#define SYNC_FLAG_STORY_START       0x230
 #define SYNC_FLAG_STORY_END         0x2FF
 
 // Hidden ground items (A-button pickup spots).
@@ -104,18 +109,19 @@
 #define SYNC_FLAG_TRAINERS_END      0x7FF
 
 // ---------------------------------------------------------------------------
-// FULL_SYNC payload layout — four contiguous byte slices of flags[].
+// FULL_SYNC payload layout — five contiguous byte slices of flags[].
 // Applied on the receiver side with OR (union-wins: any flag set by either
 // player remains set).
 //
 //   Payload offset    flags[] byte range          Purpose
-//   0..91             [4..95]   (story)            NPC hide/show, items, story quest
-//   92..115           [125..148](hidden items)      ground item pickups
-//   116..117          [150..151](bosses)            gym leader / E4 / champion clears
-//   118..213          [160..255](trainers)          trainer defeat bits
-//   Total: 214 bytes
+//   0..25             [70..95]  (story)            GOT_*/BEAT_*/VISITED_* (0x230-0x2FF)
+//   26..49            [125..148](hidden items)     ground item pickups
+//   50..51            [150..151](bosses)           gym leader / E4 / champion clears
+//   52..147           [160..255](trainers)         trainer defeat bits
+//   148..149          [268..269](badges)           badge flags
+//   Total: 150 bytes
 // ---------------------------------------------------------------------------
-#define FULL_SYNC_STORY_BYTE_START      (SYNC_FLAG_STORY_START    / 8)  /*  4 */
+#define FULL_SYNC_STORY_BYTE_START      (SYNC_FLAG_STORY_START    / 8)  /* 70 */
 #define FULL_SYNC_STORY_BYTE_END        (SYNC_FLAG_STORY_END      / 8)  /* 95 */
 #define FULL_SYNC_ITEMS_BYTE_START      (SYNC_FLAG_ITEMS_START    / 8)  /* 125 */
 #define FULL_SYNC_ITEMS_BYTE_END        (SYNC_FLAG_ITEMS_END      / 8)  /* 148 */
@@ -127,7 +133,7 @@
 #define FULL_SYNC_BADGES_BYTE_END       (SYNC_FLAG_BADGES_END     / 8)  /* 269 */
 
 #define FULL_SYNC_STORY_LEN    \
-    (FULL_SYNC_STORY_BYTE_END    - FULL_SYNC_STORY_BYTE_START    + 1)  /* 92  */
+    (FULL_SYNC_STORY_BYTE_END    - FULL_SYNC_STORY_BYTE_START    + 1)  /* 26  */
 #define FULL_SYNC_ITEMS_LEN    \
     (FULL_SYNC_ITEMS_BYTE_END    - FULL_SYNC_ITEMS_BYTE_START    + 1)  /* 24  */
 #define FULL_SYNC_BOSSES_LEN   \
@@ -139,7 +145,7 @@
 
 // Total data bytes in a FULL_SYNC payload (fits within the 252-byte ring max).
 #define FULL_SYNC_PAYLOAD_SIZE \
-    (FULL_SYNC_STORY_LEN + FULL_SYNC_ITEMS_LEN + FULL_SYNC_BOSSES_LEN + FULL_SYNC_TRAINERS_LEN + FULL_SYNC_BADGES_LEN) /* 216 */
+    (FULL_SYNC_STORY_LEN + FULL_SYNC_ITEMS_LEN + FULL_SYNC_BOSSES_LEN + FULL_SYNC_TRAINERS_LEN + FULL_SYNC_BADGES_LEN) /* 150 */
 
 // ---------------------------------------------------------------------------
 // Syncable variable ranges (FRLG-specific vars)

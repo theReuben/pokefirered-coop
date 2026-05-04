@@ -36,6 +36,7 @@ export type ClientMessage =
   | { type: "battle_turn"; turnData: string }       // base64-encoded turn selection
   | { type: "party_sync"; partyData: string }       // base64-encoded party snapshot
   | { type: "starter_pick"; speciesId: number }
+  | { type: "item_give"; itemId: number; quantity: number }
   | { type: "session_settings"; randomizeEncounters: boolean; encounterSeed?: number };
 
 // Server → Client (received by Tauri app, forwarded to ROM serial buffer)
@@ -55,6 +56,7 @@ export type ServerMessage =
   | { type: "session_mismatch" }
   | { type: "starter_taken"; speciesId: number }
   | { type: "starter_denied"; speciesId: number }
+  | { type: "item_give"; itemId: number; quantity: number }
   | { type: "session_settings"; randomizeEncounters: boolean; encounterSeed: number };
 
 // ─── Server ───────────────────────────────────────────────────────────────────
@@ -244,6 +246,11 @@ export default class PokemonCoopServer implements Party.Server {
         this.broadcast(sender, { type: "starter_taken", speciesId: msg.speciesId });
         break;
       }
+
+      case "item_give":
+        // Forward to partner only — no server state needed (not idempotent like flags).
+        this.broadcast(sender, { type: "item_give", itemId: msg.itemId, quantity: msg.quantity });
+        break;
 
       case "session_settings":
         // Only the host controls session settings

@@ -631,6 +631,8 @@ bool8 ScrCmd_additem(struct ScriptContext *ctx)
     Script_RequestEffects(SCREFF_V1 | SCREFF_SAVE);
 
     gSpecialVar_Result = AddBagItem(itemId, quantity);
+    if (gSpecialVar_Result)
+        Multiplayer_OnItemGiven((u16)itemId, (u8)quantity);
     return FALSE;
 }
 

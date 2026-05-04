@@ -208,9 +208,10 @@ static void TestIsSyncableFlag(void)
     ASSERT_EQ(IsSyncableFlag(0x0000), FALSE);
     ASSERT_EQ(IsSyncableFlag(0x001F), FALSE);
 
-    // Story range (0x020-0x2FF): syncable.
-    ASSERT_EQ(IsSyncableFlag(0x020),  TRUE);
-    ASSERT_EQ(IsSyncableFlag(0x028),  TRUE);  // FLAG_HIDE_BULBASAUR_BALL
+    // NPC HIDE flags (0x020-0x22F): NOT syncable (would break per-player scripted sequences).
+    ASSERT_EQ(IsSyncableFlag(0x020),  FALSE);
+    ASSERT_EQ(IsSyncableFlag(0x028),  FALSE); // FLAG_HIDE_BULBASAUR_BALL
+    // Story completion flags (0x230-0x2FF): syncable.
     ASSERT_EQ(IsSyncableFlag(0x230),  TRUE);  // STORY_FLAGS_START
     ASSERT_EQ(IsSyncableFlag(0x2FF),  TRUE);  // last story flag
 
@@ -248,10 +249,11 @@ static void TestIsSyncableFlag(void)
 
 static void TestIsSyncableVar(void)
 {
-    // VAR_MAP_SCENE_* range (0x4050-0x408B): syncable.
-    ASSERT_EQ(IsSyncableVar(0x4050), TRUE);  // VAR_MAP_SCENE_PALLET_TOWN_OAK
-    ASSERT_EQ(IsSyncableVar(0x4052), TRUE);  // VAR_MAP_SCENE_CERULEAN_CITY_RIVAL
-    ASSERT_EQ(IsSyncableVar(0x408B), TRUE);  // VAR_MAP_SCENE_MT_MOON_B2F (last)
+    // VAR_MAP_SCENE_* range (0x4050-0x408B): NOT synced to avoid blocking
+    // per-player scripted sequences (e.g. Oak escort, starter selection).
+    ASSERT_EQ(IsSyncableVar(0x4050), FALSE); // VAR_MAP_SCENE_PALLET_TOWN_OAK
+    ASSERT_EQ(IsSyncableVar(0x4052), FALSE); // VAR_MAP_SCENE_CERULEAN_CITY_RIVAL
+    ASSERT_EQ(IsSyncableVar(0x408B), FALSE); // VAR_MAP_SCENE_MT_MOON_B2F (last)
 
     // Just outside the range: NOT syncable.
     ASSERT_EQ(IsSyncableVar(0x404F), FALSE); // one below range
@@ -443,7 +445,7 @@ static void TestFullSyncApplyRejectsWrongLength(void)
 
 static void TestFullSyncRoundTrip(void)
 {
-    // Send → recv → apply: story flag 0x030 should appear on the other side.
+    // Send → recv → apply: story flag 0x230 should appear on the other side.
     struct SaveBlock1 applyBlock;
     u8 b;
     u16 i, pktLen;
@@ -451,8 +453,8 @@ static void TestFullSyncRoundTrip(void)
     memset(&sSyncSave, 0, sizeof(sSyncSave));
     gSaveBlock1Ptr = &sSyncSave;
 
-    // Set flag 0x030 on the sender side.
-    sSyncSave.flags[0x030 / 8] |= (1 << (0x030 & 7));
+    // Set flag 0x230 (first story-completion flag) on the sender side.
+    sSyncSave.flags[0x230 / 8] |= (1 << (0x230 & 7));
 
     Multiplayer_Init();
     ResetDispatch();
@@ -474,7 +476,7 @@ static void TestFullSyncRoundTrip(void)
 
     Multiplayer_Update(); // dispatches FULL_SYNC via ProcessOneRecvPacket
 
-    ASSERT_NE(applyBlock.flags[0x030 / 8] & (1 << (0x030 & 7)), 0);
+    ASSERT_NE(applyBlock.flags[0x230 / 8] & (1 << (0x230 & 7)), 0);
     ASSERT_EQ(Mp_Available(&gMpSendRing), 0); // no re-broadcast
 }
 

@@ -230,4 +230,9 @@ u16  Multiplayer_GetRandomizedStarter(u8 slot);
 u32  Multiplayer_GenerateSeed(void);
 void Multiplayer_SendSeedSync(u32 seed);
 
+// Item sync — call after AddBagItem succeeds for field pickups and NPC gifts.
+// Do NOT call for shop purchases or Pokémon gifts (eggs, starters, etc.).
+// Partner's ROM will call AddBagItem with the same itemId and quantity.
+void Multiplayer_OnItemGiven(u16 itemId, u8 quantity);
+
 #endif // GUARD_MULTIPLAYER_H

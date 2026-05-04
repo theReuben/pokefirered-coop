@@ -39,6 +39,9 @@ typedef u32 bool32;
 // This is a pure-defines/enums file with no GBA hardware dependencies.
 #include "constants/global.h"
 
+// Minimal item constants for multiplayer.c native build.
+#define ITEM_NONE 0
+
 // Forward declarations for pointer-only uses in headers we'll include later.
 struct Sprite;
 struct SpriteTemplate;

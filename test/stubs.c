@@ -3,6 +3,7 @@
 #include "global.h"
 #include "multiplayer.h"
 #include "event_object_movement.h"
+#include "item.h"
 #include "random.h"
 
 // Controllable Random32 return value — set in tests before calling
@@ -95,4 +96,15 @@ void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value)
     gTestRemoteVarSetCallCount++;
     gTestLastRemoteVarId    = varId;
     gTestLastRemoteVarValue = value;
+}
+
+// AddBagItem stub — records the last call for test assertions.
+u16 gTestLastAddBagItemId    = 0;
+u16 gTestLastAddBagItemCount = 0;
+
+bool32 AddBagItem(u16 itemId, u16 count)
+{
+    gTestLastAddBagItemId    = itemId;
+    gTestLastAddBagItemCount = count;
+    return TRUE;
 }
