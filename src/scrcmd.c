@@ -3365,3 +3365,11 @@ bool8 ScrCmd_waitbossstart(struct ScriptContext *ctx)
     SetupNativeScript(ctx, Multiplayer_NativePollBossStart);
     return TRUE;
 }
+
+// Suspends the script until the partner has chosen their starter (or playing solo).
+bool8 ScrCmd_waitstarterpick(struct ScriptContext *ctx)
+{
+    Script_RequestEffects(SCREFF_V1);
+    SetupNativeScript(ctx, Multiplayer_NativePollPartnerStarterPick);
+    return TRUE;
+}

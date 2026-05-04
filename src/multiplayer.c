@@ -326,6 +326,17 @@ static bool8 ProcessOneRecvPacket(void)
         }
         break;
 
+    case MP_PKT_STARTER_PICK:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_STARTER_PICK - 1)
+            return FALSE;
+        {
+            u8 hi = 0, lo = 0;
+            Mp_Pop(&gMpRecvRing, &hi);
+            Mp_Pop(&gMpRecvRing, &lo);
+            gMultiplayerState.partnerStarterSpecies = ((u16)hi << 8) | lo;
+        }
+        break;
+
     default:
         // Unknown type — can't recover sync; drain ring to avoid stall.
         while (Mp_Pop(&gMpRecvRing, &typeByte)) {}
@@ -584,6 +595,58 @@ void Multiplayer_OnItemGiven(u16 itemId, u8 quantity)
     pkt[2] = (u8)(itemId);
     pkt[3] = quantity;
     MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_ITEM_GIVE);
+}
+
+// ---------------------------------------------------------------------------
+// Starter coordination (Phase 1.5)
+// ---------------------------------------------------------------------------
+
+// Slot-to-species mapping: 0=Bulbasaur position, 1=Squirtle position, 2=Charmander position.
+u16 Multiplayer_GetStarterForBall0(void) { return Multiplayer_GetRandomizedStarter(0); }
+u16 Multiplayer_GetStarterForBall1(void) { return Multiplayer_GetRandomizedStarter(1); }
+u16 Multiplayer_GetStarterForBall2(void) { return Multiplayer_GetRandomizedStarter(2); }
+
+void Multiplayer_SendStarterPick(void)
+{
+    u16 species = VarGet(VAR_TEMP_2); // PLAYER_STARTER_SPECIES alias
+    u8 pkt[MP_PKT_SIZE_STARTER_PICK];
+    pkt[0] = MP_PKT_STARTER_PICK;
+    pkt[1] = (u8)(species >> 8);
+    pkt[2] = (u8)(species);
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+        MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
+}
+
+u16 Multiplayer_GetRivalStarterSpecies(void)
+{
+    u16 mine    = VarGet(VAR_TEMP_2); // PLAYER_STARTER_SPECIES
+    u16 partner = gMultiplayerState.partnerStarterSpecies;
+    u8 i;
+    for (i = 0; i < 3; i++)
+    {
+        u16 s = Multiplayer_GetRandomizedStarter(i);
+        if (s != mine && s != partner)
+            return s;
+    }
+    return Multiplayer_GetRandomizedStarter(0); // fallback
+}
+
+u16 Multiplayer_GetRivalStarterSlot(void)
+{
+    u16 rival = Multiplayer_GetRivalStarterSpecies();
+    u8 i;
+    for (i = 0; i < 3; i++)
+    {
+        if (Multiplayer_GetRandomizedStarter(i) == rival)
+            return i;
+    }
+    return 0;
+}
+
+bool8 Multiplayer_NativePollPartnerStarterPick(void)
+{
+    return (bool8)(gMultiplayerState.connState != MP_STATE_CONNECTED
+                || gMultiplayerState.partnerStarterSpecies != 0);
 }
 
 void Multiplayer_SendBossReady(u8 bossId)

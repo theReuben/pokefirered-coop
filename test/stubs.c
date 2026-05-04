@@ -103,6 +103,19 @@ void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value)
     gTestLastRemoteVarValue = value;
 }
 
+// VarGet/VarSet stub — backed by a small array indexed from TEMP_VARS_START.
+static u16 sVars[16];
+u16 VarGet(u16 varId)
+{
+    u16 idx = varId - TEMP_VARS_START;
+    return (idx < 16) ? sVars[idx] : 0;
+}
+void VarSet(u16 varId, u16 value)
+{
+    u16 idx = varId - TEMP_VARS_START;
+    if (idx < 16) sVars[idx] = value;
+}
+
 // AddBagItem stub — records the last call for test assertions.
 u16 gTestLastAddBagItemId    = 0;
 u16 gTestLastAddBagItemCount = 0;

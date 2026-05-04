@@ -144,6 +144,7 @@ struct MultiplayerState {
     u8  isInScript;         // TRUE while local player is executing a script
     u8  partnerIsInScript;  // TRUE while partner has sent SCRIPT_LOCK
     u8  posFrameCounter;    // counts frames; send position every 4 frames
+    u16 partnerStarterSpecies; // 0 until partner sends MP_PKT_STARTER_PICK
 };
 
 extern struct MultiplayerState gMultiplayerState;
@@ -247,5 +248,20 @@ void Multiplayer_SendSeedSync(u32 seed);
 // Do NOT call for shop purchases or Pokémon gifts (eggs, starters, etc.).
 // Partner's ROM will call AddBagItem with the same itemId and quantity.
 void Multiplayer_OnItemGiven(u16 itemId, u8 quantity);
+
+// Starter coordination (Phase 1.5)
+// Call after confirming starter to inform the partner which species was taken.
+void Multiplayer_SendStarterPick(void);
+// Returns the species for Pokémon in ball slot 0/1/2 (randomized or canonical).
+// Slot 0 = Bulbasaur position, 1 = Squirtle position, 2 = Charmander position.
+u16 Multiplayer_GetStarterForBall0(void);
+u16 Multiplayer_GetStarterForBall1(void);
+u16 Multiplayer_GetStarterForBall2(void);
+// Returns the species the rival should take (neither player's pick).
+u16 Multiplayer_GetRivalStarterSpecies(void);
+// Returns 0/1/2 for which ball slot the rival takes (for walk movement dispatch).
+u16 Multiplayer_GetRivalStarterSlot(void);
+// Returns TRUE if partner has picked (or we're offline) — used by waitstarterpick.
+bool8 Multiplayer_NativePollPartnerStarterPick(void);
 
 #endif // GUARD_MULTIPLAYER_H

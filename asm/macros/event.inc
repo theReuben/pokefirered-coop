@@ -309,6 +309,11 @@
 	.byte SCR_OP_WAITBOSSSTART
 	.endm
 
+	@ Blocks script until the partner has chosen their starter (or playing solo).
+	.macro waitstarterpick
+	.byte SCR_OP_WAITSTARTERPICK
+	.endm
+
 	@ Blocks script execution for frames. (Pokemon Emerald runs at just shy of 60 frames per second.)
 	.macro delay frames:req
 	.byte SCR_OP_DELAY

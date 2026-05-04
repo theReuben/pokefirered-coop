@@ -101,4 +101,17 @@ struct SaveBlock1 {
 
 extern struct SaveBlock1 *gSaveBlock1Ptr;
 
+// Minimal species constants needed by multiplayer.c starter functions.
+#define SPECIES_BULBASAUR   1
+#define SPECIES_CHARMANDER  4
+#define SPECIES_SQUIRTLE    7
+
+// Minimal VarGet/VarSet interface (backed by a small array in stubs.c).
+#define TEMP_VARS_START     0x8000
+#define VAR_TEMP_0          (TEMP_VARS_START + 0x0)
+#define VAR_TEMP_1          (TEMP_VARS_START + 0x1)
+#define VAR_TEMP_2          (TEMP_VARS_START + 0x2)
+u16 VarGet(u16 varId);
+void VarSet(u16 varId, u16 value);
+
 #endif // GUARD_GLOBAL_H
