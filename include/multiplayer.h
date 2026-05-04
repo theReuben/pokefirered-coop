@@ -93,6 +93,10 @@ bool8 Mp_DecodePosition(const u8 *in, u8 len,
 u8 Mp_EncodeFlagSet(u8 *out, u16 flagId);
 bool8 Mp_DecodeFlagSet(const u8 *in, u8 len, u16 *flagId);
 
+// Flag-clear packet: same layout as flag-set, different type byte (0x0E)
+u8 Mp_EncodeFlagClear(u8 *out, u16 flagId);
+bool8 Mp_DecodeFlagClear(const u8 *in, u8 len, u16 *flagId);
+
 // Var-set packet: [type][varId_hi][varId_lo][value_hi][value_lo]  (5 bytes)
 u8 Mp_EncodeVarSet(u8 *out, u16 varId, u16 value);
 bool8 Mp_DecodeVarSet(const u8 *in, u8 len, u16 *varId, u16 *value);
@@ -159,6 +163,7 @@ void Multiplayer_UpdateGhostPosition(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 faci
 // Packet send helpers (Phase 2 — now implemented via ring buffer)
 void Multiplayer_SendPosition(void);
 void Multiplayer_SendFlagSet(u16 flagId);
+void Multiplayer_SendFlagClear(u16 flagId);
 void Multiplayer_SendVarSet(u16 varId, u16 value);
 void Multiplayer_SendBossReady(u8 bossId);
 void Multiplayer_SendBossCancel(void);
@@ -180,6 +185,13 @@ void Multiplayer_BossReady_Bruno(void);
 void Multiplayer_BossReady_Agatha(void);
 void Multiplayer_BossReady_Lance(void);
 void Multiplayer_BossReady_Champion(void);
+void Multiplayer_BossReady_RivalOaksLab(void);
+void Multiplayer_BossReady_RivalRoute22_1(void);
+void Multiplayer_BossReady_RivalCerulean(void);
+void Multiplayer_BossReady_RivalSsAnne(void);
+void Multiplayer_BossReady_RivalSilph(void);
+void Multiplayer_BossReady_RivalRoute22_2(void);
+void Multiplayer_BossReady_RivalChampion(void);
 void Multiplayer_BossCancel(void);
 // Returns 1 when both players (or solo) are ready to start the boss battle,
 // then clears the readiness state.  Called via 'specialvar VAR_RESULT, ...' in scripts.
@@ -204,6 +216,7 @@ bool32 IsSyncableVar(u16 varId);   // returns FALSE until var audit in Phase 3
 // VAR_SET arrives from the partner. These set sIsRemoteUpdate before calling
 // FlagSet/VarSet so we don't echo the packet back.
 void Multiplayer_HandleRemoteFlagSet(u16 flagId);
+void Multiplayer_HandleRemoteFlagClear(u16 flagId);
 void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value);
 
 // Script mutex — called from ScriptContext_SetupScript / ScriptContext_RunScript.

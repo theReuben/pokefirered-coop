@@ -15,6 +15,7 @@
 #define MP_PKT_PARTNER_CONNECTED    0x0B   // 1 byte — partner joined the session
 #define MP_PKT_PARTNER_DISCONNECTED 0x0C   // 1 byte — partner left the session
 #define MP_PKT_ITEM_GIVE            0x0D   // 4 bytes — give item to partner (field/gift, not shop)
+#define MP_PKT_FLAG_CLEAR           0x0E   // 3 bytes — a syncable flag was cleared locally
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -30,6 +31,13 @@
 #define BOSS_ID_AGATHA      11
 #define BOSS_ID_LANCE       12
 #define BOSS_ID_CHAMPION    13
+#define BOSS_ID_RIVAL_OAKS_LAB  14
+#define BOSS_ID_RIVAL_ROUTE22_1 15
+#define BOSS_ID_RIVAL_CERULEAN  16
+#define BOSS_ID_RIVAL_SS_ANNE   17
+#define BOSS_ID_RIVAL_SILPH     18
+#define BOSS_ID_RIVAL_ROUTE22_2 19
+#define BOSS_ID_RIVAL_CHAMPION  20
 
 // Script variables repurposed for co-op state (from VAR_UNUSED_0x40F7/0x40F8)
 // VAR_COOP_CONNECTED  — read by gym scripts to choose connected vs solo path
@@ -55,6 +63,7 @@
 #define MP_PKT_SIZE_PARTNER_CONNECTED       1
 #define MP_PKT_SIZE_PARTNER_DISCONNECTED    1
 #define MP_PKT_SIZE_ITEM_GIVE               4  // type + item_hi + item_lo + quantity
+#define MP_PKT_SIZE_FLAG_CLEAR              3  // type + flagId_hi + flagId_lo
 
 // Player roles assigned by relay server
 #define MP_ROLE_NONE        0
@@ -120,8 +129,11 @@
 //   214..215          [268..269](badges)           badge flags
 //   Total: 216 bytes
 // ---------------------------------------------------------------------------
-#define FULL_SYNC_STORY_BYTE_START      (SYNC_FLAG_STORY_START    / 8)  /* 70 */
+#define FULL_SYNC_STORY_BYTE_START      (SYNC_FLAG_STORY_START    / 8)  /* 4  */
 #define FULL_SYNC_STORY_BYTE_END        (SYNC_FLAG_STORY_END      / 8)  /* 95 */
+// Last byte of NPC HIDE range (0x22F/8=69). ApplyFullSync uses AND below this,
+// OR from byte 70 onward (story-completion flags that only accumulate).
+#define FULL_SYNC_STORY_HIDE_BYTE_END   (0x22F                    / 8)  /* 69 */
 #define FULL_SYNC_ITEMS_BYTE_START      (SYNC_FLAG_ITEMS_START    / 8)  /* 125 */
 #define FULL_SYNC_ITEMS_BYTE_END        (SYNC_FLAG_ITEMS_END      / 8)  /* 148 */
 #define FULL_SYNC_BOSSES_BYTE_START     (SYNC_FLAG_BOSSES_START   / 8)  /* 150 */

@@ -269,6 +269,8 @@ u8 FlagClear(u16 id)
     u8 *ptr = GetFlagPointer(id);
     if (ptr)
         *ptr &= ~(1 << (id & 7));
+    if (!sIsRemoteUpdate && IsSyncableFlag(id))
+        Multiplayer_SendFlagClear(id);
     return 0;
 }
 
@@ -294,6 +296,13 @@ void Multiplayer_HandleRemoteFlagSet(u16 flagId)
 {
     sIsRemoteUpdate = TRUE;
     FlagSet(flagId);
+    sIsRemoteUpdate = FALSE;
+}
+
+void Multiplayer_HandleRemoteFlagClear(u16 flagId)
+{
+    sIsRemoteUpdate = TRUE;
+    FlagClear(flagId);
     sIsRemoteUpdate = FALSE;
 }
 

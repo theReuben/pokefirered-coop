@@ -40,6 +40,15 @@ u8 Mp_EncodeFlagSet(u8 *out, u16 flagId)
     return MP_PKT_SIZE_FLAG_SET;
 }
 
+u8 Mp_EncodeFlagClear(u8 *out, u16 flagId)
+{
+    out[0] = MP_PKT_FLAG_CLEAR;
+    out[1] = (u8)(flagId >> 8);
+    out[2] = (u8)(flagId);
+    return MP_PKT_SIZE_FLAG_CLEAR;
+}
+
+
 u8 Mp_EncodeVarSet(u8 *out, u16 varId, u16 value)
 {
     out[0] = MP_PKT_VAR_SET;
@@ -95,6 +104,14 @@ bool8 Mp_DecodePosition(const u8 *in, u8 len,
 bool8 Mp_DecodeFlagSet(const u8 *in, u8 len, u16 *flagId)
 {
     if (len < MP_PKT_SIZE_FLAG_SET)
+        return FALSE;
+    *flagId = ((u16)in[1] << 8) | in[2];
+    return TRUE;
+}
+
+bool8 Mp_DecodeFlagClear(const u8 *in, u8 len, u16 *flagId)
+{
+    if (len < MP_PKT_SIZE_FLAG_CLEAR)
         return FALSE;
     *flagId = ((u16)in[1] << 8) | in[2];
     return TRUE;
@@ -200,6 +217,15 @@ static bool8 ProcessOneRecvPacket(void)
         { u8 i; for (i = 1; i < MP_PKT_SIZE_FLAG_SET; i++) Mp_Pop(&gMpRecvRing, &pkt[i]); }
         if (Mp_DecodeFlagSet(pkt, MP_PKT_SIZE_FLAG_SET, &flagId))
             Multiplayer_HandleRemoteFlagSet(flagId);
+        break;
+
+    case MP_PKT_FLAG_CLEAR:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_FLAG_CLEAR - 1)
+            return FALSE;
+        pkt[0] = typeByte;
+        { u8 i; for (i = 1; i < MP_PKT_SIZE_FLAG_CLEAR; i++) Mp_Pop(&gMpRecvRing, &pkt[i]); }
+        if (Mp_DecodeFlagClear(pkt, MP_PKT_SIZE_FLAG_CLEAR, &flagId))
+            Multiplayer_HandleRemoteFlagClear(flagId);
         break;
 
     case MP_PKT_VAR_SET:
@@ -534,6 +560,13 @@ void Multiplayer_SendFlagSet(u16 flagId)
     MpRing_Write(&gMpSendRing, pkt, len);
 }
 
+void Multiplayer_SendFlagClear(u16 flagId)
+{
+    u8 pkt[MP_PKT_SIZE_FLAG_CLEAR];
+    u8 len = Mp_EncodeFlagClear(pkt, flagId);
+    MpRing_Write(&gMpSendRing, pkt, len);
+}
+
 void Multiplayer_SendVarSet(u16 varId, u16 value)
 {
     u8 pkt[MP_PKT_SIZE_VAR_SET];
@@ -605,9 +638,16 @@ void Multiplayer_ApplyFullSync(const u8 *payload, u16 payloadLen)
     if (!gSaveBlock1Ptr || payloadLen != FULL_SYNC_PAYLOAD_SIZE)
         return;
 
-    // OR into our flags so any flag set by either player remains set (union-wins).
+    // Story range: HIDE flags (bytes 4-69) use AND-merge so that if either player
+    // has revealed an NPC (cleared its HIDE flag), both see it visible.
+    // Story-completion flags (bytes 70-95) use OR-merge as they only accumulate.
     for (i = FULL_SYNC_STORY_BYTE_START; i <= FULL_SYNC_STORY_BYTE_END; i++)
-        gSaveBlock1Ptr->flags[i] |= payload[offset++];
+    {
+        if (i <= FULL_SYNC_STORY_HIDE_BYTE_END)
+            gSaveBlock1Ptr->flags[i] &= payload[offset++];
+        else
+            gSaveBlock1Ptr->flags[i] |= payload[offset++];
+    }
     for (i = FULL_SYNC_ITEMS_BYTE_START; i <= FULL_SYNC_ITEMS_BYTE_END; i++)
         gSaveBlock1Ptr->flags[i] |= payload[offset++];
     for (i = FULL_SYNC_BOSSES_BYTE_START; i <= FULL_SYNC_BOSSES_BYTE_END; i++)
@@ -794,7 +834,14 @@ void Multiplayer_BossReady_Lorelei(void)  { BossReadyCommon(BOSS_ID_LORELEI); }
 void Multiplayer_BossReady_Bruno(void)    { BossReadyCommon(BOSS_ID_BRUNO); }
 void Multiplayer_BossReady_Agatha(void)   { BossReadyCommon(BOSS_ID_AGATHA); }
 void Multiplayer_BossReady_Lance(void)    { BossReadyCommon(BOSS_ID_LANCE); }
-void Multiplayer_BossReady_Champion(void) { BossReadyCommon(BOSS_ID_CHAMPION); }
+void Multiplayer_BossReady_Champion(void)       { BossReadyCommon(BOSS_ID_CHAMPION); }
+void Multiplayer_BossReady_RivalOaksLab(void)   { BossReadyCommon(BOSS_ID_RIVAL_OAKS_LAB); }
+void Multiplayer_BossReady_RivalRoute22_1(void) { BossReadyCommon(BOSS_ID_RIVAL_ROUTE22_1); }
+void Multiplayer_BossReady_RivalCerulean(void)  { BossReadyCommon(BOSS_ID_RIVAL_CERULEAN); }
+void Multiplayer_BossReady_RivalSsAnne(void)    { BossReadyCommon(BOSS_ID_RIVAL_SS_ANNE); }
+void Multiplayer_BossReady_RivalSilph(void)     { BossReadyCommon(BOSS_ID_RIVAL_SILPH); }
+void Multiplayer_BossReady_RivalRoute22_2(void) { BossReadyCommon(BOSS_ID_RIVAL_ROUTE22_2); }
+void Multiplayer_BossReady_RivalChampion(void)  { BossReadyCommon(BOSS_ID_RIVAL_CHAMPION); }
 
 void Multiplayer_BossCancel(void)
 {

@@ -296,6 +296,14 @@ PalletTown_ProfessorOaksLab_EventScript_RivalBattle::
 	closemessage
 	applymovement LOCALID_OAKS_LAB_PROF_OAK, Common_Movement_FaceDown
 	waitmovement 0
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch
+	special Multiplayer_BossReady_RivalOaksLab
+	message PalletTown_ProfessorOaksLab_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch::
 	goto_if_eq VAR_STARTER_MON, 0, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmander
 	goto_if_eq VAR_STARTER_MON, 1, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaur
 	goto_if_eq VAR_STARTER_MON, 2, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtle
@@ -1330,6 +1338,9 @@ PalletTown_ProfessorOaksLab_Text_RivalLetsCheckOutMons::
 	.string "{RIVAL}: Wait, {PLAYER}!\n"
 	.string "Let's check out our POKéMON!\p"
 	.string "Come on, I'll take you on!$"
+
+PalletTown_ProfessorOaksLab_Text_WaitingForPartner::
+	.string "Waiting for partner...$"
 
 PalletTown_ProfessorOaksLab_Text_RivalDefeat::
 	.string "WHAT?\n"

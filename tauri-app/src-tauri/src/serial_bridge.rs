@@ -74,6 +74,7 @@ const PKT_BOSS_START:           u8 = 0x0A;
 const PKT_PARTNER_CONNECTED:    u8 = 0x0B;
 const PKT_PARTNER_DISCONNECTED: u8 = 0x0C;
 const PKT_ITEM_GIVE:            u8 = 0x0D; // 4 bytes: type + item_hi + item_lo + quantity
+const PKT_FLAG_CLEAR:           u8 = 0x0E; // 3 bytes: type + flagId_hi + flagId_lo
 
 // FULL_SYNC payload is exactly this many bytes (must match FULL_SYNC_PAYLOAD_SIZE in ROM).
 // Layout: story(92) + items(24) + bosses(2) + trainers(96) + badges(2) = 216 bytes.
@@ -346,6 +347,7 @@ fn packet_size(raw: &[u8], pos: usize) -> usize {
         PKT_PARTNER_CONNECTED    => 1,
         PKT_PARTNER_DISCONNECTED => 1,
         PKT_ITEM_GIVE            => 4,
+        PKT_FLAG_CLEAR           => 3,
         _ => 0,
     }
 }
@@ -426,6 +428,12 @@ fn packet_to_json(pkt: &[u8]) -> Option<Value> {
             Some(json!({ "type": "item_give", "itemId": item_id, "quantity": quantity }))
         }
 
+        // [type][flagId_hi][flagId_lo]  (big-endian)
+        PKT_FLAG_CLEAR if pkt.len() == 3 => {
+            let flag_id = ((pkt[1] as u32) << 8) | pkt[2] as u32;
+            Some(json!({ "type": "flag_clear", "flagId": flag_id }))
+        }
+
         _ => {
             log::warn!("serial_bridge: unknown outbound packet type 0x{:02X}", pkt[0]);
             None
@@ -499,6 +507,11 @@ fn json_to_packet(msg: &Value) -> Option<Vec<u8>> {
             let item_id  = msg.get("itemId")?.as_u64()? as u16;
             let quantity = msg.get("quantity")?.as_u64()? as u8;
             Some(vec![PKT_ITEM_GIVE, (item_id >> 8) as u8, item_id as u8, quantity])
+        }
+
+        "flag_clear" => {
+            let flag_id = msg.get("flagId")?.as_u64()? as u16;
+            Some(vec![PKT_FLAG_CLEAR, (flag_id >> 8) as u8, flag_id as u8])
         }
 
         // boss_waiting is server telling us to wait — ROM already polls bossReadyBossId.
@@ -647,6 +660,15 @@ mod tests {
     }
 
     #[test]
+    fn pkt_to_json_flag_clear() {
+        // flagId = 0x0230 (a HIDE flag in the NPC range)
+        let pkt = [PKT_FLAG_CLEAR, 0x02, 0x30];
+        let msg = packet_to_json(&pkt).unwrap();
+        assert_eq!(msg["type"],   "flag_clear");
+        assert_eq!(msg["flagId"], 0x0230u32);
+    }
+
+    #[test]
     fn pkt_to_json_wrong_length_returns_none() {
         // position needs exactly 6 bytes
         assert!(packet_to_json(&[PKT_POSITION, 0, 0, 0, 0]).is_none());
@@ -680,6 +702,18 @@ mod tests {
         let msg = json!({ "type": "flag_set", "flagId": 0x04B0u32 });
         let pkt = json_to_packet(&msg).unwrap();
         assert_eq!(pkt, vec![PKT_FLAG_SET, 0x04, 0xB0]);
+    }
+
+    #[test]
+    fn json_to_pkt_flag_clear() {
+        let msg = json!({ "type": "flag_clear", "flagId": 0x0230u32 });
+        let pkt = json_to_packet(&msg).unwrap();
+        assert_eq!(pkt, vec![PKT_FLAG_CLEAR, 0x02, 0x30]);
+    }
+
+    #[test]
+    fn packet_size_flag_clear() {
+        assert_eq!(packet_size(&[PKT_FLAG_CLEAR, 0x02, 0x30], 0), 3);
     }
 
     #[test]

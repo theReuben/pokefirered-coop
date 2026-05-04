@@ -652,6 +652,13 @@ gSpecials::
 	def_special Multiplayer_BossReady_Agatha
 	def_special Multiplayer_BossReady_Lance
 	def_special Multiplayer_BossReady_Champion
+	def_special Multiplayer_BossReady_RivalOaksLab
+	def_special Multiplayer_BossReady_RivalRoute22_1
+	def_special Multiplayer_BossReady_RivalCerulean
+	def_special Multiplayer_BossReady_RivalSsAnne
+	def_special Multiplayer_BossReady_RivalSilph
+	def_special Multiplayer_BossReady_RivalRoute22_2
+	def_special Multiplayer_BossReady_RivalChampion
 	def_special Multiplayer_BossCancel
 	def_special Multiplayer_ScriptCheckBossStart
 	def_special Multiplayer_IsConnected
