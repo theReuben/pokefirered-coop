@@ -2,7 +2,19 @@ CeladonCity_DepartmentStore_4F_Frlg_MapScripts::
 	.byte 0
 
 CeladonCity_DepartmentStore_4F_EventScript_Man::
-	msgbox CeladonCity_DepartmentStore_4F_Text_GettingPokeDollAsPresent, MSGBOX_NPC
+	lock
+	faceplayer
+	checkflag FLAG_UNUSED_0x4A7
+	goto_if_set CeladonCity_DepartmentStore_4F_EventScript_ManAlreadyGaveRing
+	msgbox CeladonCity_DepartmentStore_4F_Text_HereIsMegaRing, MSGBOX_DEFAULT
+	giveitem ITEM_MEGA_RING
+	setflag FLAG_UNUSED_0x4A7
+	release
+	end
+
+CeladonCity_DepartmentStore_4F_EventScript_ManAlreadyGaveRing::
+	msgbox CeladonCity_DepartmentStore_4F_Text_HaveFunMegaEvolving, MSGBOX_NPC
+	release
 	end
 
 CeladonCity_DepartmentStore_4F_EventScript_Youngster::
@@ -53,9 +65,71 @@ CeladonCity_DepartmentStore_4F_Items::
 	.2byte ITEM_PRISM_SCALE
 	.2byte ITEM_SACHET
 	.2byte ITEM_WHIPPED_DREAM
+	@ Mega Stones
+	.2byte ITEM_RED_ORB
+	.2byte ITEM_BLUE_ORB
+	.2byte ITEM_VENUSAURITE
+	.2byte ITEM_CHARIZARDITE_X
+	.2byte ITEM_CHARIZARDITE_Y
+	.2byte ITEM_BLASTOISINITE
+	.2byte ITEM_BEEDRILLITE
+	.2byte ITEM_PIDGEOTITE
+	.2byte ITEM_ALAKAZITE
+	.2byte ITEM_SLOWBRONITE
+	.2byte ITEM_GENGARITE
+	.2byte ITEM_KANGASKHANITE
+	.2byte ITEM_PINSIRITE
+	.2byte ITEM_GYARADOSITE
+	.2byte ITEM_AERODACTYLITE
+	.2byte ITEM_MEWTWONITE_X
+	.2byte ITEM_MEWTWONITE_Y
+	.2byte ITEM_AMPHAROSITE
+	.2byte ITEM_STEELIXITE
+	.2byte ITEM_SCIZORITE
+	.2byte ITEM_HERACRONITE
+	.2byte ITEM_HOUNDOOMINITE
+	.2byte ITEM_TYRANITARITE
+	.2byte ITEM_SCEPTILITE
+	.2byte ITEM_BLAZIKENITE
+	.2byte ITEM_SWAMPERTITE
+	.2byte ITEM_GARDEVOIRITE
+	.2byte ITEM_SABLENITE
+	.2byte ITEM_MAWILITE
+	.2byte ITEM_AGGRONITE
+	.2byte ITEM_MEDICHAMITE
+	.2byte ITEM_MANECTITE
+	.2byte ITEM_SHARPEDONITE
+	.2byte ITEM_CAMERUPTITE
+	.2byte ITEM_ALTARIANITE
+	.2byte ITEM_BANETTITE
+	.2byte ITEM_ABSOLITE
+	.2byte ITEM_GLALITITE
+	.2byte ITEM_SALAMENCITE
+	.2byte ITEM_METAGROSSITE
+	.2byte ITEM_LATIASITE
+	.2byte ITEM_LATIOSITE
+	.2byte ITEM_LOPUNNITE
+	.2byte ITEM_GARCHOMPITE
+	.2byte ITEM_LUCARIONITE
+	.2byte ITEM_ABOMASITE
+	.2byte ITEM_GALLADITE
+	.2byte ITEM_AUDINITE
+	.2byte ITEM_DIANCITE
 	.2byte ITEM_NONE
 	release
 	end
+
+CeladonCity_DepartmentStore_4F_Text_HereIsMegaRing::
+	.string "I'm a researcher studying the\n"
+	.string "mysteries of Mega Evolution.\p"
+	.string "I have a spare MEGA RING —\n"
+	.string "you should have it!\p"
+	.string "Hold it and your POKéMON's MEGA\n"
+	.string "STONE will react in battle!$"
+
+CeladonCity_DepartmentStore_4F_Text_HaveFunMegaEvolving::
+	.string "Use that MEGA RING well!\n"
+	.string "Mega Evolution is amazing.$"
 
 CeladonCity_DepartmentStore_4F_Text_GettingPokeDollAsPresent::
 	.string "I'm getting a present for my\n"
