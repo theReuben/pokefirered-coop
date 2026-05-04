@@ -208,10 +208,11 @@ static void TestIsSyncableFlag(void)
     ASSERT_EQ(IsSyncableFlag(0x0000), FALSE);
     ASSERT_EQ(IsSyncableFlag(0x001F), FALSE);
 
-    // NPC HIDE flags (0x020-0x22F): NOT syncable (would break per-player scripted sequences).
-    ASSERT_EQ(IsSyncableFlag(0x020),  FALSE);
-    ASSERT_EQ(IsSyncableFlag(0x028),  FALSE); // FLAG_HIDE_BULBASAUR_BALL
-    // Story completion flags (0x230-0x2FF): syncable.
+    // NPC HIDE flags (0x020-0x22F): syncable — VAR_MAP_SCENE sync is disabled so
+    // each player still runs their own scripted sequences independently.
+    ASSERT_EQ(IsSyncableFlag(0x020),  TRUE);
+    ASSERT_EQ(IsSyncableFlag(0x028),  TRUE);  // FLAG_HIDE_BULBASAUR_BALL
+    // Story completion flags (0x230-0x2FF): also syncable (within range).
     ASSERT_EQ(IsSyncableFlag(0x230),  TRUE);  // STORY_FLAGS_START
     ASSERT_EQ(IsSyncableFlag(0x2FF),  TRUE);  // last story flag
 

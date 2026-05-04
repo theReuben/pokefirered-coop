@@ -80,13 +80,12 @@
 //   0x800+        SYS_FLAGS   — safari mode, VS seeker, etc.; local state
 // ---------------------------------------------------------------------------
 
-// Story range: NPC hide/show (0x028), item ball pickups (0x154),
-//              and story quest flags (STORY_FLAGS_START=0x230) through 0x2FF.
-// Flags 0x020-0x22F are NPC HIDE flags (FLAG_HIDE_OAK_IN_HIS_LAB etc.).
-// Syncing them blocks per-player scripted sequences (e.g. rival in lab hides
-// for player B before their own fight).  Named story-completion flags
-// (GOT_*, BEAT_*, VISITED_*) begin at 0x230, so we start there.
-#define SYNC_FLAG_STORY_START       0x230
+// Story range: includes NPC hide/show flags (0x020-0x22F) and named story-
+// completion flags (GOT_*, BEAT_*, VISITED_*, 0x230-0x2FF).
+// VAR_MAP_SCENE_* sync is disabled, so NPC HIDE flags can sync safely —
+// each player still runs their own scripted sequences, and hide/show flags
+// just control which NPCs are visible (shared world state).
+#define SYNC_FLAG_STORY_START       0x020
 #define SYNC_FLAG_STORY_END         0x2FF
 
 // Hidden ground items (A-button pickup spots).
@@ -114,12 +113,12 @@
 // player remains set).
 //
 //   Payload offset    flags[] byte range          Purpose
-//   0..25             [70..95]  (story)            GOT_*/BEAT_*/VISITED_* (0x230-0x2FF)
-//   26..49            [125..148](hidden items)     ground item pickups
-//   50..51            [150..151](bosses)           gym leader / E4 / champion clears
-//   52..147           [160..255](trainers)         trainer defeat bits
-//   148..149          [268..269](badges)           badge flags
-//   Total: 150 bytes
+//   0..91             [4..95]   (story/NPC HIDE)  NPC hide/show + GOT_*/BEAT_*/VISITED_* (0x020-0x2FF)
+//   92..115           [125..148](hidden items)     ground item pickups
+//   116..117          [150..151](bosses)           gym leader / E4 / champion clears
+//   118..213          [160..255](trainers)         trainer defeat bits
+//   214..215          [268..269](badges)           badge flags
+//   Total: 216 bytes
 // ---------------------------------------------------------------------------
 #define FULL_SYNC_STORY_BYTE_START      (SYNC_FLAG_STORY_START    / 8)  /* 70 */
 #define FULL_SYNC_STORY_BYTE_END        (SYNC_FLAG_STORY_END      / 8)  /* 95 */
@@ -133,7 +132,7 @@
 #define FULL_SYNC_BADGES_BYTE_END       (SYNC_FLAG_BADGES_END     / 8)  /* 269 */
 
 #define FULL_SYNC_STORY_LEN    \
-    (FULL_SYNC_STORY_BYTE_END    - FULL_SYNC_STORY_BYTE_START    + 1)  /* 26  */
+    (FULL_SYNC_STORY_BYTE_END    - FULL_SYNC_STORY_BYTE_START    + 1)  /* 92  */
 #define FULL_SYNC_ITEMS_LEN    \
     (FULL_SYNC_ITEMS_BYTE_END    - FULL_SYNC_ITEMS_BYTE_START    + 1)  /* 24  */
 #define FULL_SYNC_BOSSES_LEN   \
@@ -145,7 +144,7 @@
 
 // Total data bytes in a FULL_SYNC payload (fits within the 252-byte ring max).
 #define FULL_SYNC_PAYLOAD_SIZE \
-    (FULL_SYNC_STORY_LEN + FULL_SYNC_ITEMS_LEN + FULL_SYNC_BOSSES_LEN + FULL_SYNC_TRAINERS_LEN + FULL_SYNC_BADGES_LEN) /* 150 */
+    (FULL_SYNC_STORY_LEN + FULL_SYNC_ITEMS_LEN + FULL_SYNC_BOSSES_LEN + FULL_SYNC_TRAINERS_LEN + FULL_SYNC_BADGES_LEN) /* 216 */
 
 // ---------------------------------------------------------------------------
 // Syncable variable ranges (FRLG-specific vars)

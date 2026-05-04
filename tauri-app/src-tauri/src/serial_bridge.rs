@@ -76,9 +76,9 @@ const PKT_PARTNER_DISCONNECTED: u8 = 0x0C;
 const PKT_ITEM_GIVE:            u8 = 0x0D; // 4 bytes: type + item_hi + item_lo + quantity
 
 // FULL_SYNC payload is exactly this many bytes (must match FULL_SYNC_PAYLOAD_SIZE in ROM).
-// Layout: story(26) + items(24) + bosses(2) + trainers(96) + badges(2) = 150 bytes.
-// Story range raised to 0x230-0x2FF (bytes 70-95) to skip NPC HIDE flags 0x020-0x22F.
-const FULL_SYNC_PAYLOAD_SIZE: usize = 150;
+// Layout: story(92) + items(24) + bosses(2) + trainers(96) + badges(2) = 216 bytes.
+// Story range covers 0x020-0x2FF (bytes 4-95): NPC hide/show + completion flags.
+const FULL_SYNC_PAYLOAD_SIZE: usize = 216;
 
 pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
     let tick = unsafe { TICK_COUNT += 1; TICK_COUNT };
@@ -542,7 +542,7 @@ fn build_full_sync_payload(flags: &[Value]) -> [u8; FULL_SYNC_PAYLOAD_SIZE] {
 
     let mut payload = [0u8; FULL_SYNC_PAYLOAD_SIZE];
     let mut off = 0;
-    for i in 70..=95usize   { payload[off] = bitmap[i]; off += 1; } // story (0x230-0x2FF)
+    for i in 4..=95usize    { payload[off] = bitmap[i]; off += 1; } // story (0x020-0x2FF)
     for i in 125..=148usize { payload[off] = bitmap[i]; off += 1; } // items
     for i in 150..=151usize { payload[off] = bitmap[i]; off += 1; } // bosses
     for i in 160..=255usize { payload[off] = bitmap[i]; off += 1; } // trainers
@@ -734,36 +734,36 @@ mod tests {
 
     #[test]
     fn full_sync_payload_story_flag() {
-        // Flag 0x230 = 560 → byte 70, bit 0.
-        // Byte 70 is in story range [70..=95]; offset in payload = 70 - 70 = 0.
-        let flags = vec![json!(560u32)];
+        // Flag 0x020 = 32 → byte 4, bit 0.
+        // Story range starts at byte 4; offset in payload = 4 - 4 = 0.
+        let flags = vec![json!(32u32)];
         let payload = build_full_sync_payload(&flags);
-        assert_eq!(payload[0], 1, "story flag 0x230 should be bit 0 at payload offset 0");
+        assert_eq!(payload[0], 1, "story flag 0x020 should be bit 0 at payload offset 0");
     }
 
     #[test]
     fn full_sync_payload_trainer_flag() {
         // SYNC_FLAG_TRAINERS_START = 0x500 = 1280 → byte 160, bit 0.
-        // Trainers start at payload offset = 26+24+2 = 52; byte 160 is offset 0 of trainers.
+        // Trainers start at payload offset = 92+24+2 = 118; byte 160 is offset 0 of trainers.
         let flags = vec![json!(0x500u32)];
         let payload = build_full_sync_payload(&flags);
-        let trainer_off = 26 + 24 + 2; // = 52
-        assert_eq!(payload[trainer_off], 1, "trainer flag 0x500 should be bit 0 at payload offset 52");
+        let trainer_off = 92 + 24 + 2; // = 118
+        assert_eq!(payload[trainer_off], 1, "trainer flag 0x500 should be bit 0 at payload offset 118");
     }
 
     #[test]
     fn full_sync_payload_badge_flag() {
         // FLAG_BADGE01_GET = 0x867 = 2151 → byte 268, bit 7.
-        // Badges are last 2 bytes: offsets 148 and 149.
+        // Badges are last 2 bytes: offsets 214 and 215.
         let flags = vec![json!(0x867u32)]; // 2151 / 8 = 268 r 7
         let payload = build_full_sync_payload(&flags);
-        let badge_off = FULL_SYNC_PAYLOAD_SIZE - 2; // = 148
-        assert_eq!(payload[badge_off], 0x80, "badge flag 0x867 should be bit 7 at payload offset 148");
+        let badge_off = FULL_SYNC_PAYLOAD_SIZE - 2; // = 214
+        assert_eq!(payload[badge_off], 0x80, "badge flag 0x867 should be bit 7 at payload offset 214");
     }
 
     #[test]
-    fn full_sync_payload_size_is_150() {
-        assert_eq!(FULL_SYNC_PAYLOAD_SIZE, 150);
+    fn full_sync_payload_size_is_216() {
+        assert_eq!(FULL_SYNC_PAYLOAD_SIZE, 216);
     }
 
     #[test]

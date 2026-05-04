@@ -573,7 +573,7 @@ void Multiplayer_SendBossCancel(void)
 
 void Multiplayer_SendFullSync(void)
 {
-    // 3-byte header + 214-byte payload = 217 bytes, fits in the 255-byte ring.
+    // 3-byte header + 216-byte payload = 219 bytes, fits in the 255-byte ring.
     u8 pkt[MP_PKT_SIZE_FULL_SYNC_HDR + FULL_SYNC_PAYLOAD_SIZE];
     u8 payload[FULL_SYNC_PAYLOAD_SIZE];
     u16 offset = 0;
