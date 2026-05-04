@@ -1,5 +1,5 @@
-#ifndef GUARD_TEST_RUNNER_H
-#define GUARD_TEST_RUNNER_H
+#ifndef GUARD_COOP_TEST_RUNNER_H
+#define GUARD_COOP_TEST_RUNNER_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,4 +26,4 @@ static int sTestsFailed = 0;
     return sTestsFailed == 0 ? 0 : 1; \
 } while (0)
 
-#endif // GUARD_TEST_RUNNER_H
+#endif // GUARD_COOP_TEST_RUNNER_H

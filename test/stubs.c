@@ -91,6 +91,11 @@ void Multiplayer_HandleRemoteFlagSet(u16 flagId)
     gTestLastRemoteFlagId = flagId;
 }
 
+void Multiplayer_HandleRemoteFlagClear(u16 flagId)
+{
+    (void)flagId;
+}
+
 void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value)
 {
     gTestRemoteVarSetCallCount++;

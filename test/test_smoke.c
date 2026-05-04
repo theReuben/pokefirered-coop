@@ -407,25 +407,31 @@ static void TestFullSyncSendBuildsPacket(void)
 static void TestFullSyncApplyORsFlags(void)
 {
     // Build a payload with a trainer flag set; apply it to a save block
-    // that already has a story flag set.  Both flags should remain set.
+    // that already has a story-completion flag set.  Both flags should remain set.
+    // Note: HIDE flags (0x020-0x22F) use AND-merge; story-completion flags (0x230-0x2FF)
+    // and trainer flags use OR-merge.
     u8 payload[FULL_SYNC_PAYLOAD_SIZE];
+    u16 storyCompletionFlag = 0x230; // first flag in OR-merge story-completion range
+    u16 storyCompletionPayloadOffset; // offset within payload for 0x230
     u16 trainerPayloadOffset;
 
     memset(payload, 0, sizeof(payload));
     memset(&sSyncSave, 0, sizeof(sSyncSave));
     gSaveBlock1Ptr = &sSyncSave;
 
-    // Pre-set story flag 0x020 in sSyncSave.
-    sSyncSave.flags[SYNC_FLAG_STORY_START / 8] |= (1 << (SYNC_FLAG_STORY_START & 7));
+    // Pre-set story-completion flag 0x230 in sSyncSave (OR-merge range).
+    sSyncSave.flags[storyCompletionFlag / 8] |= (1 << (storyCompletionFlag & 7));
 
-    // Payload has trainer flag 0x500 set (at payload byte FULL_SYNC_STORY_LEN+FULL_SYNC_ITEMS_LEN+FULL_SYNC_BOSSES_LEN).
+    // Payload has trainer flag 0x500 set.
     trainerPayloadOffset = FULL_SYNC_STORY_LEN + FULL_SYNC_ITEMS_LEN + FULL_SYNC_BOSSES_LEN;
     payload[trainerPayloadOffset] |= (1 << (SYNC_FLAG_TRAINERS_START & 7));
 
     Multiplayer_ApplyFullSync(payload, FULL_SYNC_PAYLOAD_SIZE);
 
-    // Story flag should still be set (was pre-set, payload was 0 for that byte).
-    ASSERT_NE(sSyncSave.flags[SYNC_FLAG_STORY_START / 8] & (1 << (SYNC_FLAG_STORY_START & 7)), 0);
+    // Story-completion flag should still be set (OR-merge preserves pre-set flags).
+    storyCompletionPayloadOffset = (storyCompletionFlag / 8) - FULL_SYNC_STORY_BYTE_START;
+    (void)storyCompletionPayloadOffset; // used implicitly via the flags array
+    ASSERT_NE(sSyncSave.flags[storyCompletionFlag / 8] & (1 << (storyCompletionFlag & 7)), 0);
     // Trainer flag should now be set (ORed in from payload).
     ASSERT_NE(sSyncSave.flags[SYNC_FLAG_TRAINERS_START / 8] & (1 << (SYNC_FLAG_TRAINERS_START & 7)), 0);
 }
