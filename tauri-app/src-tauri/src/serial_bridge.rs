@@ -75,6 +75,7 @@ const PKT_PARTNER_CONNECTED:    u8 = 0x0B;
 const PKT_PARTNER_DISCONNECTED: u8 = 0x0C;
 const PKT_ITEM_GIVE:            u8 = 0x0D; // 4 bytes: type + item_hi + item_lo + quantity
 const PKT_FLAG_CLEAR:           u8 = 0x0E; // 3 bytes: type + flagId_hi + flagId_lo
+const PKT_STARTER_PICK:         u8 = 0x0F; // 3 bytes: type + species_hi + species_lo
 
 // FULL_SYNC payload is exactly this many bytes (must match FULL_SYNC_PAYLOAD_SIZE in ROM).
 // Layout: story(92) + items(24) + bosses(2) + trainers(96) + badges(2) = 216 bytes.
@@ -348,6 +349,7 @@ fn packet_size(raw: &[u8], pos: usize) -> usize {
         PKT_PARTNER_DISCONNECTED => 1,
         PKT_ITEM_GIVE            => 4,
         PKT_FLAG_CLEAR           => 3,
+        PKT_STARTER_PICK         => 3,
         _ => 0,
     }
 }
@@ -434,6 +436,12 @@ fn packet_to_json(pkt: &[u8]) -> Option<Value> {
             Some(json!({ "type": "flag_clear", "flagId": flag_id }))
         }
 
+        // [type][species_hi][species_lo]  (big-endian)
+        PKT_STARTER_PICK if pkt.len() == 3 => {
+            let species_id = ((pkt[1] as u32) << 8) | pkt[2] as u32;
+            Some(json!({ "type": "starter_pick", "speciesId": species_id }))
+        }
+
         _ => {
             log::warn!("serial_bridge: unknown outbound packet type 0x{:02X}", pkt[0]);
             None
@@ -514,11 +522,17 @@ fn json_to_packet(msg: &Value) -> Option<Vec<u8>> {
             Some(vec![PKT_FLAG_CLEAR, (flag_id >> 8) as u8, flag_id as u8])
         }
 
+        // Partner has claimed a starter — write to ROM so it can unlock the waiting script.
+        "starter_taken" => {
+            let species_id = msg.get("speciesId")?.as_u64()? as u16;
+            Some(vec![PKT_STARTER_PICK, (species_id >> 8) as u8, species_id as u8])
+        }
+
         // boss_waiting is server telling us to wait — ROM already polls bossReadyBossId.
         // role is handled by the Tauri app state, not the ROM.
         // room_full / session_mismatch are handled by the frontend.
         "boss_waiting" | "role" | "room_full" | "session_mismatch"
-        | "starter_denied" | "starter_taken" | "party_sync" | "battle_turn" => None,
+        | "starter_denied" | "party_sync" | "battle_turn" => None,
 
         other => {
             log::debug!("serial_bridge: unhandled inbound message type: {other}");
