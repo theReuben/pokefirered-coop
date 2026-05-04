@@ -99,8 +99,9 @@
 
 // Hidden ground items (A-button pickup spots).
 // FLAG_HIDDEN_ITEMS_START = 0x3E8; last used item is at offset 190 = 0x4A6.
+// 0x4A7 = FLAG_UNUSED_0x4A7, used for the Mega Ring one-time NPC gift.
 #define SYNC_FLAG_ITEMS_START       0x3E8
-#define SYNC_FLAG_ITEMS_END         0x4A6
+#define SYNC_FLAG_ITEMS_END         0x4A7
 
 // Gym leader + Elite Four + Champion clear flags.
 #define SYNC_FLAG_BOSSES_START      0x4B0   // FLAG_DEFEATED_BROCK
