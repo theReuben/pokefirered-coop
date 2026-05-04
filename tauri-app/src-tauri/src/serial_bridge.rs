@@ -15,16 +15,32 @@ use crate::emulator::EmulatorHandle;
 use crate::net::NetHandle;
 use serde_json::{json, Value};
 
-// Addresses are set from the ROM linker map at runtime; defaults match a
-// reference build.  Both rings are 260 bytes each (256-byte buf + 4 ctrl bytes).
-static mut SEND_RING_ADDR: u32 = 0x0203_1454;
-static mut RECV_RING_ADDR: u32 = 0x0203_1350;
+// ── Address discovery ─────────────────────────────────────────────────────────
+//
+// IWRAM layout varies between build toolchains (devkitARM vs gcc-arm-none-eabi)
+// and between codebase revisions, so all key ROM addresses are discovered at
+// runtime rather than hardcoded.
+//
+// ROM side (src/multiplayer.c): Multiplayer_Init() fills gMpAddrTable[5]:
+//   [0] = 0xC0DEC0DE  (MP_DISCOVERY_MAGIC)
+//   [1] = &gMultiplayerState
+//   [2] = &gMpSendRing
+//   [3] = &gMpRecvRing
+//   [4] = &gCoopSettings
+//
+// Tauri side: tick() calls try_discover() every frame until all five u32 values
+// are read from IWRAM (0x03000000–0x03008000).  Until then all ring/heartbeat
+// operations are skipped (the ROM hasn't called Multiplayer_Init yet anyway).
 
-// gMultiplayerState is in IWRAM (0x0300157c from nm pokefirered.elf).
-// connState is the second byte (+1 offset).  We write it directly every frame
-// so that any ROM build picks up the connection state without requiring the
-// new PKT_PARTNER_CONNECTED ring-packet handler to be compiled in.
-const CONN_STATE_ADDR: u32 = 0x0300_157d;
+const DISCOVERY_MAGIC: u32 = 0xC0DEC0DE;
+const IWRAM_START: u32 = 0x0300_0000;
+const IWRAM_END:   u32 = 0x0300_8000; // exclusive
+
+// Discovered addresses; 0 = not yet found.
+static mut MULTIPLAYER_STATE_ADDR: u32 = 0; // &gMultiplayerState
+static mut SEND_RING_ADDR:         u32 = 0; // &gMpSendRing
+static mut RECV_RING_ADDR:         u32 = 0; // &gMpRecvRing
+static mut COOP_SETTINGS_ADDR:     u32 = 0; // &gCoopSettings
 
 // Tracks whether the relay has a connected partner for us.
 // Written from the Tauri network thread; read only in tick() on the emu thread.
@@ -32,7 +48,8 @@ static mut PARTNER_CONNECTED: bool = false;
 
 // Encounter seed from the host's session.  Set once by set_encounter_seed()
 // when the emulator starts; written directly to gCoopSettings.encounterSeed
-// every tick so it takes effect as soon as the game initialises the field.
+// (+4 from gCoopSettings base) every tick so it takes effect as soon as the
+// game initialises the field.
 static mut ENCOUNTER_SEED: u32 = 0;
 
 // Diagnostic counters — updated in tick(), read by get_debug_state().
@@ -42,16 +59,80 @@ static mut PACKETS_RECV:  u64 = 0;
 // Role received from relay: 0=none, 1=host, 2=guest
 static mut RECEIVED_ROLE: u8  = 0;
 
-// gCoopSettings (0x0300_158c) layout: u8 flags @ +0, u32 encounterSeed @ +4,
-// u32 sendRingAddr @ +8, u32 recvRingAddr @ +12.
-const COOP_SEED_ADDR:              u32 = 0x0300_1590; // gCoopSettings.encounterSeed
-const COOP_SETTINGS_ADDR:          u32 = 0x0300_158c; // gCoopSettings.randomizeEncounters byte
-const RING_ADDR_DISCOVERY_SEND:    u32 = 0x0300_1594; // gCoopSettings.sendRingAddr
-const RING_ADDR_DISCOVERY_RECV:    u32 = 0x0300_1598; // gCoopSettings.recvRingAddr
-
 /// Call once from start_emulator to prime the encounter seed for this session.
 pub fn set_encounter_seed(seed: u32) {
     unsafe { ENCOUNTER_SEED = seed; }
+}
+
+/// Reset all discovered addresses (called when emulator stops/restarts).
+pub fn reset_discovery() {
+    unsafe {
+        MULTIPLAYER_STATE_ADDR = 0;
+        SEND_RING_ADDR         = 0;
+        RECV_RING_ADDR         = 0;
+        COOP_SETTINGS_ADDR     = 0;
+        PARTNER_CONNECTED      = false;
+        RECEIVED_ROLE          = 0;
+        PACKETS_SENT           = 0;
+        PACKETS_RECV           = 0;
+        TICK_COUNT             = 0;
+        ENCOUNTER_SEED         = 0;
+    }
+}
+
+/// Scan IWRAM for MP_DISCOVERY_MAGIC and cache all addresses.
+/// Returns true when discovery is complete; subsequent calls are instant no-ops.
+fn try_discover(emu: &EmulatorHandle) -> bool {
+    unsafe {
+        if MULTIPLAYER_STATE_ADDR != 0 {
+            return true; // already discovered
+        }
+    }
+
+    // Read all of IWRAM in one shot: 32 KB = 8192 u32 values.
+    let iwram = emu.read_bytes(IWRAM_START, (IWRAM_END - IWRAM_START) as usize);
+    if iwram.len() < 20 {
+        return false; // emulator not running
+    }
+
+    let words: Vec<u32> = iwram
+        .chunks_exact(4)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+
+    // Search for the magic value followed by four plausible GBA addresses.
+    for i in 0..words.len().saturating_sub(4) {
+        if words[i] != DISCOVERY_MAGIC {
+            continue;
+        }
+        let mp_addr   = words[i + 1];
+        let send_addr = words[i + 2];
+        let recv_addr = words[i + 3];
+        let coop_addr = words[i + 4];
+
+        // Sanity: all four must look like valid GBA addresses (EWRAM or IWRAM).
+        let plausible = |a: u32| -> bool {
+            (0x0200_0000..0x0204_0000).contains(&a) || // EWRAM
+            (0x0300_0000..0x0300_8000).contains(&a)    // IWRAM
+        };
+        if !plausible(mp_addr) || !plausible(send_addr) || !plausible(recv_addr) || !plausible(coop_addr) {
+            continue;
+        }
+
+        unsafe {
+            MULTIPLAYER_STATE_ADDR = mp_addr;
+            SEND_RING_ADDR         = send_addr;
+            RECV_RING_ADDR         = recv_addr;
+            COOP_SETTINGS_ADDR     = coop_addr;
+        }
+        log::info!(
+            "serial_bridge: discovered addresses — mp=0x{:08X} snd=0x{:08X} rcv=0x{:08X} coop=0x{:08X}",
+            mp_addr, send_addr, recv_addr, coop_addr
+        );
+        return true;
+    }
+
+    false
 }
 
 const RING_BUF_SIZE:  usize = 256;
@@ -85,28 +166,46 @@ const FULL_SYNC_PAYLOAD_SIZE: usize = 216;
 pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
     let tick = unsafe { TICK_COUNT += 1; TICK_COUNT };
 
-    // Discover ring buffer addresses from gCoopSettings fields written by
-    // Multiplayer_Init().  This corrects for EWRAM BSS layout differences
-    // between toolchains (local devkitARM vs CI arm-none-eabi-gcc).
-    // GBA is little-endian; read 4 bytes and reassemble.
-    let send_raw = emu.read_bytes(RING_ADDR_DISCOVERY_SEND, 4);
-    if send_raw.len() == 4 {
-        let addr = u32::from_le_bytes([send_raw[0], send_raw[1], send_raw[2], send_raw[3]]);
-        if addr != 0 && addr != unsafe { SEND_RING_ADDR } {
-            log::info!("serial_bridge: discovered sendRingAddr = 0x{:08X}", addr);
-            unsafe { SEND_RING_ADDR = addr; }
-        }
-    }
-    let recv_raw = emu.read_bytes(RING_ADDR_DISCOVERY_RECV, 4);
-    if recv_raw.len() == 4 {
-        let addr = u32::from_le_bytes([recv_raw[0], recv_raw[1], recv_raw[2], recv_raw[3]]);
-        if addr != 0 && addr != unsafe { RECV_RING_ADDR } {
-            log::info!("serial_bridge: discovered recvRingAddr = 0x{:08X}", addr);
-            unsafe { RECV_RING_ADDR = addr; }
-        }
-    }
+    // Discover all key addresses by scanning IWRAM for MP_DISCOVERY_MAGIC.
+    // This is a no-op after the first successful discovery (returns instantly).
+    // All ring/heartbeat operations below are gated on discovery being complete.
+    let discovered = try_discover(emu);
 
     // Drain outbound (ROM → relay) first so the partner sees our position.
+    if !discovered {
+        // Multiplayer_Init hasn't run yet; nothing to do until it does.
+        // Still process inbound so partner_connected / role arrive promptly.
+        for msg in net.drain_inbound() {
+            match msg.get("type").and_then(|t| t.as_str()) {
+                Some("partner_connected") => {
+                    unsafe { PARTNER_CONNECTED = true; }
+                    log::info!("serial_bridge: partner connected (pre-discovery)");
+                }
+                Some("partner_disconnected") => {
+                    unsafe { PARTNER_CONNECTED = false; }
+                }
+                Some("role") => {
+                    let role_str = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
+                    let role_num: u8 = match role_str { "host" => 1, "guest" => 2, _ => 0 };
+                    unsafe { RECEIVED_ROLE = role_num; }
+                    if role_str == "guest" {
+                        unsafe { PARTNER_CONNECTED = true; }
+                    }
+                }
+                Some("session_settings") => {
+                    if let Some(seed) = msg.get("encounterSeed").and_then(|v| v.as_u64()) {
+                        if seed != 0 { unsafe { ENCOUNTER_SEED = seed as u32; } }
+                    }
+                }
+                _ => {}
+            }
+            // Queue packet so it can be delivered once recv ring is live.
+            // For now we drop — the relay will replay full_sync on reconnect anyway.
+        }
+        return;
+    }
+
+    // Skipped until addresses are known (before Multiplayer_Init runs).
     let outbound = drain_send_ring(emu);
     for pkt in outbound {
         if let Some(msg) = packet_to_json(&pkt) {
@@ -133,17 +232,12 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
                 let role_num: u8 = match role_str { "host" => 1, "guest" => 2, _ => 0 };
                 unsafe { RECEIVED_ROLE = role_num; }
                 log::info!("serial_bridge: received role={}", role_str);
-                // Belt-and-suspenders: if the server assigns us "guest" role the
-                // host was already present when we joined — mark as connected now
-                // rather than waiting for the separate partner_connected message.
                 if role_str == "guest" {
                     unsafe { PARTNER_CONNECTED = true; }
                     log::info!("serial_bridge: guest role assigned — host already present");
                 }
             }
             Some("session_settings") => {
-                // Guest receives host's settings from relay on connect.
-                // Store the seed; it will be written to ROM each tick.
                 if let Some(seed) = msg.get("encounterSeed").and_then(|v| v.as_u64()) {
                     if seed != 0 {
                         unsafe { ENCOUNTER_SEED = seed as u32; }
@@ -159,25 +253,22 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
         }
     }
 
-    // Heartbeat: write gMultiplayerState.connState directly every frame so the
-    // ROM always reflects the correct connection state regardless of ROM build
-    // version.  MP_STATE_CONNECTED = 2, MP_STATE_DISCONNECTED = 0.
-    // This also handles the race where Multiplayer_Init() resets connState to 0
-    // after partner_connected already arrived from the relay.
+    // Heartbeat: write gMultiplayerState.connState (+1 from base) directly every
+    // frame so the ROM always reflects the connection state.
+    // MP_STATE_CONNECTED = 2, MP_STATE_DISCONNECTED = 0.
+    let conn_state_addr = unsafe { MULTIPLAYER_STATE_ADDR } + 1;
     let target_conn_state: u8 = if unsafe { PARTNER_CONNECTED } { 2 } else { 0 };
-    let current = emu.read_bytes(CONN_STATE_ADDR, 1);
+    let current = emu.read_bytes(conn_state_addr, 1);
     if !current.is_empty() && current[0] != target_conn_state {
         log::info!("serial_bridge: connState {} → {}", current[0], target_conn_state);
-        emu.write_bytes(CONN_STATE_ADDR, &[target_conn_state]);
+        emu.write_bytes(conn_state_addr, &[target_conn_state]);
     }
 
-    // Write encounter seed directly to gCoopSettings.encounterSeed every tick.
-    // This bypasses the ring buffer so the seed is available the instant the
-    // game loads, regardless of when Multiplayer_Init() runs.
+    // Write encounter seed to gCoopSettings.encounterSeed (+4 from coop base).
     let seed = unsafe { ENCOUNTER_SEED };
     if seed != 0 {
-        let bytes = seed.to_le_bytes();
-        emu.write_bytes(COOP_SEED_ADDR, &bytes);
+        let coop_seed_addr = unsafe { COOP_SETTINGS_ADDR } + 4;
+        emu.write_bytes(coop_seed_addr, &seed.to_le_bytes());
     }
 
     // Log a one-line status summary once per second (≈60 ticks).
@@ -218,12 +309,15 @@ pub struct DebugState {
 }
 
 pub fn get_debug_state(emu: &EmulatorHandle) -> DebugState {
-    let cs = {
-        let v = emu.read_bytes(CONN_STATE_ADDR, 1);
-        if v.is_empty() { 0 } else { v[0] }
+    let (mp_addr, send_addr, recv_addr) = unsafe {
+        (MULTIPLAYER_STATE_ADDR, SEND_RING_ADDR, RECV_RING_ADDR)
     };
-    let sr = emu.read_bytes(unsafe { SEND_RING_ADDR } + RING_HEAD_OFF, 3);
-    let rr = emu.read_bytes(unsafe { RECV_RING_ADDR } + RING_HEAD_OFF, 3);
+    let cs = if mp_addr != 0 {
+        let v = emu.read_bytes(mp_addr + 1, 1); // +1 = connState offset
+        if v.is_empty() { 0 } else { v[0] }
+    } else { 0 };
+    let sr = if send_addr != 0 { emu.read_bytes(send_addr + RING_HEAD_OFF, 3) } else { vec![] };
+    let rr = if recv_addr != 0 { emu.read_bytes(recv_addr + RING_HEAD_OFF, 3) } else { vec![] };
     let (sh, st, sm) = if sr.len() >= 3 { (sr[0], sr[1], sr[2]) } else { (0, 0, 0) };
     let (rh, rt, rm) = if rr.len() >= 3 { (rr[0], rr[1], rr[2]) } else { (0, 0, 0) };
     unsafe {
@@ -248,10 +342,11 @@ pub fn get_debug_state(emu: &EmulatorHandle) -> DebugState {
 
 fn drain_send_ring(emu: &mut EmulatorHandle) -> Vec<Vec<u8>> {
     let base = unsafe { SEND_RING_ADDR };
+    if base == 0 { return vec![]; }
 
     // Read the full 260-byte struct in one shot for a consistent snapshot.
     let raw = emu.read_bytes(base, 260);
-    if raw[258] != RING_MAGIC {
+    if raw.len() < 260 || raw[258] != RING_MAGIC {
         return vec![];
     }
     let head = raw[256]; // ROM writes (producer)
@@ -296,10 +391,11 @@ fn drain_send_ring(emu: &mut EmulatorHandle) -> Vec<Vec<u8>> {
 
 fn push_recv_ring(emu: &mut EmulatorHandle, pkt: &[u8]) {
     let base = unsafe { RECV_RING_ADDR };
+    if base == 0 { return; }
 
     // Read just the 4 control bytes (head, tail, magic, pad) at offset 256.
     let ctrl = emu.read_bytes(base + RING_HEAD_OFF, 4);
-    if ctrl[2] != RING_MAGIC {
+    if ctrl.len() < 3 || ctrl[2] != RING_MAGIC {
         return;
     }
     let head = ctrl[0]; // Tauri writes (producer)

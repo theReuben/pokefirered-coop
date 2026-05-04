@@ -161,6 +161,9 @@ pub async fn stop_emulator(state: State<'_, AppState>) -> Result<(), String> {
     let mut net = state.net.lock().unwrap();
     net.disconnect().map_err(|e| e.to_string())?;
 
+    // Reset bridge state so the next start_emulator re-discovers addresses.
+    serial_bridge::reset_discovery();
+
     Ok(())
 }
 

@@ -126,9 +126,22 @@ struct CoopSettings {
     u8  randomizeEncounters : 1;
     u8  padding : 7;
     u32 encounterSeed;
-    u32 sendRingAddr;   // set by Multiplayer_Init; Tauri reads to locate gMpSendRing
-    u32 recvRingAddr;   // set by Multiplayer_Init; Tauri reads to locate gMpRecvRing
 };
+
+// Address discovery table written by Multiplayer_Init so the Tauri host
+// can locate every key variable regardless of build toolchain or codebase
+// changes that shift IWRAM layout.
+//
+// Layout: [0] = MP_DISCOVERY_MAGIC
+//         [1] = &gMultiplayerState
+//         [2] = &gMpSendRing
+//         [3] = &gMpRecvRing
+//         [4] = &gCoopSettings
+//
+// Tauri scans IWRAM (0x03000000–0x03008000) in 4-byte strides looking for
+// MP_DISCOVERY_MAGIC at [0], then reads [1]–[4] in one shot.
+#define MP_DISCOVERY_MAGIC  0xC0DEC0DEu
+extern u32 gMpAddrTable[5];
 
 struct MultiplayerState {
     u8  role;            // MP_ROLE_*

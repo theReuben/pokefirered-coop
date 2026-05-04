@@ -13,9 +13,13 @@
 struct MultiplayerState gMultiplayerState;
 struct CoopSettings gCoopSettings;
 
-// Ring buffers in EWRAM.  Tauri locates them via ELF symbol + magic check.
+// Ring buffers in EWRAM.  Tauri locates them via the discovery table.
 EWRAM_DATA struct MpRingBuf gMpSendRing;
 EWRAM_DATA struct MpRingBuf gMpRecvRing;
+
+// Address discovery table in IWRAM.  Populated once by Multiplayer_Init.
+// Tauri scans IWRAM for MP_DISCOVERY_MAGIC at index 0, then reads [1]–[4].
+IWRAM_DATA u32 gMpAddrTable[5];
 
 // ---------------------------------------------------------------------------
 // Encode helpers — write a packet into a flat byte buffer.
@@ -475,10 +479,13 @@ void Multiplayer_Init(void)
     gMpRecvRing.tail  = 0;
     gMpRecvRing.magic = MP_RING_MAGIC;
 
-    // Publish ring addresses so the Tauri bridge can locate them dynamically
-    // instead of relying on hardcoded addresses that differ between toolchains.
-    gCoopSettings.sendRingAddr = (u32)&gMpSendRing;
-    gCoopSettings.recvRingAddr = (u32)&gMpRecvRing;
+    // Publish all key addresses so the Tauri bridge can find them by scanning
+    // IWRAM for MP_DISCOVERY_MAGIC regardless of build toolchain or IWRAM layout.
+    gMpAddrTable[0] = MP_DISCOVERY_MAGIC;
+    gMpAddrTable[1] = (u32)&gMultiplayerState;
+    gMpAddrTable[2] = (u32)&gMpSendRing;
+    gMpAddrTable[3] = (u32)&gMpRecvRing;
+    gMpAddrTable[4] = (u32)&gCoopSettings;
 
 #if MP_DEBUG_TEST_GHOST
     gMultiplayerState.connState       = MP_STATE_CONNECTED;
