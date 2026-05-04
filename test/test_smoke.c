@@ -220,10 +220,11 @@ static void TestIsSyncableFlag(void)
     ASSERT_EQ(IsSyncableFlag(0x300),  FALSE);
     ASSERT_EQ(IsSyncableFlag(0x3E7),  FALSE);
 
-    // Hidden items (0x3E8-0x4A6): syncable.
+    // Hidden items + Mega Ring flag (0x3E8-0x4A7): syncable.
     ASSERT_EQ(IsSyncableFlag(0x3E8),  TRUE);  // FLAG_HIDDEN_ITEMS_START
     ASSERT_EQ(IsSyncableFlag(0x4A6),  TRUE);  // last hidden item
-    ASSERT_EQ(IsSyncableFlag(0x4A7),  FALSE); // just past range
+    ASSERT_EQ(IsSyncableFlag(0x4A7),  TRUE);  // FLAG_UNUSED_0x4A7 (Mega Ring gift)
+    ASSERT_EQ(IsSyncableFlag(0x4A8),  FALSE); // just past range
 
     // Boss clear flags (0x4B0-0x4BC): syncable.
     ASSERT_EQ(IsSyncableFlag(0x4B0),  TRUE);  // FLAG_DEFEATED_BROCK
