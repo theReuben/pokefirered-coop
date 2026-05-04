@@ -122,7 +122,7 @@ CeladonCity_DepartmentStore_4F_Items::
 CeladonCity_DepartmentStore_4F_Text_HereIsMegaRing::
 	.string "I'm a researcher studying the\n"
 	.string "mysteries of Mega Evolution.\p"
-	.string "I have a spare MEGA RING —\n"
+	.string "I have a spare MEGA RING -\n"
 	.string "you should have it!\p"
 	.string "Hold it and your POKéMON's MEGA\n"
 	.string "STONE will react in battle!$"
