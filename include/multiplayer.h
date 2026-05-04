@@ -145,6 +145,7 @@ struct MultiplayerState {
     u8  partnerIsInScript;  // TRUE while partner has sent SCRIPT_LOCK
     u8  posFrameCounter;    // counts frames; send position every 4 frames
     u16 partnerStarterSpecies; // 0 until partner sends MP_PKT_STARTER_PICK
+    u8  remoteUpdateThisFrame; // set when any remote flag/var applied; cleared next Multiplayer_Update
 };
 
 extern struct MultiplayerState gMultiplayerState;

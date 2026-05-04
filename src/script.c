@@ -410,6 +410,12 @@ bool8 TryRunOnFrameMapScript(void)
     if (!ptr)
         return FALSE;
 
+    // Don't fire map scripts on the same frame a remote flag/var arrived.
+    // Prevents the partner's world-state changes from triggering local cutscenes
+    // (e.g. syncing a story flag while standing in Oak's lab mid-scene).
+    if (gMultiplayerState.remoteUpdateThisFrame)
+        return FALSE;
+
     ScriptContext_SetupScript(ptr);
     return TRUE;
 }

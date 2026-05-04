@@ -216,7 +216,10 @@ static bool8 ProcessOneRecvPacket(void)
         pkt[0] = typeByte;
         { u8 i; for (i = 1; i < MP_PKT_SIZE_FLAG_SET; i++) Mp_Pop(&gMpRecvRing, &pkt[i]); }
         if (Mp_DecodeFlagSet(pkt, MP_PKT_SIZE_FLAG_SET, &flagId))
+        {
+            gMultiplayerState.remoteUpdateThisFrame = TRUE;
             Multiplayer_HandleRemoteFlagSet(flagId);
+        }
         break;
 
     case MP_PKT_FLAG_CLEAR:
@@ -225,7 +228,10 @@ static bool8 ProcessOneRecvPacket(void)
         pkt[0] = typeByte;
         { u8 i; for (i = 1; i < MP_PKT_SIZE_FLAG_CLEAR; i++) Mp_Pop(&gMpRecvRing, &pkt[i]); }
         if (Mp_DecodeFlagClear(pkt, MP_PKT_SIZE_FLAG_CLEAR, &flagId))
+        {
+            gMultiplayerState.remoteUpdateThisFrame = TRUE;
             Multiplayer_HandleRemoteFlagClear(flagId);
+        }
         break;
 
     case MP_PKT_VAR_SET:
@@ -234,7 +240,10 @@ static bool8 ProcessOneRecvPacket(void)
         pkt[0] = typeByte;
         { u8 i; for (i = 1; i < MP_PKT_SIZE_VAR_SET; i++) Mp_Pop(&gMpRecvRing, &pkt[i]); }
         if (Mp_DecodeVarSet(pkt, MP_PKT_SIZE_VAR_SET, &varId, &val))
+        {
+            gMultiplayerState.remoteUpdateThisFrame = TRUE;
             Multiplayer_HandleRemoteVarSet(varId, val);
+        }
         break;
 
     case MP_PKT_BOSS_READY:
@@ -307,6 +316,7 @@ static bool8 ProcessOneRecvPacket(void)
         fullPkt[2] = lenLo;
         for (i = 0; i < dataLen; i++)
             Mp_Pop(&gMpRecvRing, &fullPkt[3 + i]);
+        gMultiplayerState.remoteUpdateThisFrame = TRUE;
         Multiplayer_ApplyFullSync(&fullPkt[3], dataLen);
         break;
     }
@@ -481,6 +491,11 @@ void Multiplayer_Init(void)
 
 void Multiplayer_Update(void)
 {
+    // Clear the remote-update flag from the previous frame before processing new packets.
+    // TryRunOnFrameMapScript (called later this frame) checks this to avoid firing
+    // map scripts triggered by incoming flag/var changes rather than local player actions.
+    gMultiplayerState.remoteUpdateThisFrame = FALSE;
+
     // Process all pending incoming packets (one per frame is fine for low-rate data).
     while (ProcessOneRecvPacket()) {}
 
