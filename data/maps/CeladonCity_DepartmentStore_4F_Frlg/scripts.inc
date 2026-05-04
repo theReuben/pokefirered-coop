@@ -4,8 +4,7 @@ CeladonCity_DepartmentStore_4F_Frlg_MapScripts::
 CeladonCity_DepartmentStore_4F_EventScript_Man::
 	lock
 	faceplayer
-	checkflag FLAG_UNUSED_0x4A7
-	goto_if_set CeladonCity_DepartmentStore_4F_EventScript_ManAlreadyGaveRing
+	goto_if_set FLAG_UNUSED_0x4A7, CeladonCity_DepartmentStore_4F_EventScript_ManAlreadyGaveRing
 	msgbox CeladonCity_DepartmentStore_4F_Text_HereIsMegaRing, MSGBOX_DEFAULT
 	giveitem ITEM_MEGA_RING
 	setflag FLAG_UNUSED_0x4A7
