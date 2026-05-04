@@ -659,6 +659,13 @@ gSpecials::
 	def_special Multiplayer_BossReady_RivalSilph
 	def_special Multiplayer_BossReady_RivalRoute22_2
 	def_special Multiplayer_BossReady_RivalChampion
+	def_special Multiplayer_BossReady_Escort
 	def_special Multiplayer_BossCancel
 	def_special Multiplayer_ScriptCheckBossStart
 	def_special Multiplayer_IsConnected
+	def_special Multiplayer_SendStarterPick
+	def_special Multiplayer_GetStarterForBall0
+	def_special Multiplayer_GetStarterForBall1
+	def_special Multiplayer_GetStarterForBall2
+	def_special Multiplayer_GetRivalStarterSpecies
+	def_special Multiplayer_GetRivalStarterSlot
