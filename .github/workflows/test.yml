@@ -5,6 +5,10 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+  schedule:
+    # Nightly run at 09:00 UTC for the slower two-instance coop suite.
+    - cron: "0 9 * * *"
 
 jobs:
   # ── Job 1: C unit tests (native gcc) ─────────────────────────────────────────
@@ -89,10 +93,20 @@ jobs:
 
       - name: Extract symbols to Lua
         run: |
-          python3 extract_symbols.py pokefirered.map \
-            --output test/lua/memory_map.lua
+          python3 tools/extract_symbols.py pokefirered.map \
+            test/lua/memory_map.lua
           echo "=== Generated memory_map.lua ==="
-          head -20 test/lua/memory_map.lua
+          cat test/lua/memory_map.lua
+
+      - name: Upload ROM + map for downstream jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: rom
+          path: |
+            pokefirered.gba
+            pokefirered.map
+            test/lua/memory_map.lua
+          retention-days: 1
 
   # ── Job 4: TypeScript type check ──────────────────────────────────────────────
   test-tauri-ts:
@@ -161,8 +175,103 @@ jobs:
 
       - name: Syntax-check Lua test scripts
         run: |
-          for f in test/lua/*.lua; do
+          fail=0
+          # Both top-level lua/ and the scenarios/ subdir.
+          while IFS= read -r f; do
             echo "Checking $f ..."
-            luac -p "$f" || exit 1
-          done
+            luac -p "$f" || fail=1
+          done < <(find test/lua -name '*.lua' -print | sort)
+          if [ $fail -ne 0 ]; then exit 1; fi
           echo "All Lua scripts passed syntax check."
+
+  # ── Job 7: Headless mGBA scenario tests ──────────────────────────────────────
+  # Drives the actual built ROM under xvfb and asserts via memory reads that
+  # the in-ROM packet dispatcher behaves correctly. Catches regressions that
+  # check-native cannot (real boot path, IWRAM placement, frame loop).
+  test-lua:
+    name: Headless mGBA Scenarios
+    runs-on: ubuntu-latest
+    needs: test-rom
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mGBA + xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mgba-qt xvfb lua5.4
+
+      - name: Download ROM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rom
+
+      - name: Place ROM artifact in repo layout
+        run: |
+          # download-artifact unpacks to cwd; relocate test/lua/memory_map.lua
+          # so the scenarios can require() it via the standard package.path.
+          mkdir -p test/lua
+          if [ -f memory_map.lua ]; then mv memory_map.lua test/lua/memory_map.lua; fi
+          ls -la pokefirered.gba pokefirered.map test/lua/memory_map.lua
+
+      - name: Run Lua scenarios
+        run: make check-lua
+
+  # ── Job 8: Two-instance coop scenarios (slow, on-demand) ─────────────────────
+  # Boots two headless mGBA processes per scenario and bridges their ring
+  # buffers. Manual or nightly runs only; per-push CI is too slow.
+  test-coop:
+    name: Two-Instance Coop Scenarios
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    needs: test-rom
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mGBA + xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mgba-qt xvfb python3
+
+      - name: Download ROM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rom
+
+      - name: Place ROM artifact in repo layout
+        run: |
+          mkdir -p test/lua
+          if [ -f memory_map.lua ]; then mv memory_map.lua test/lua/memory_map.lua; fi
+          ls -la pokefirered.gba pokefirered.map test/lua/memory_map.lua
+
+      - name: Run two-instance coop scenarios
+        run: make check-coop
+
+  # ── Job 9: Real-relay end-to-end smoke (Layer 4) ─────────────────────────────
+  # Boots `npx partykit dev` against the real relay-server and walks two
+  # Python WebSocket clients through role assignment, position relay,
+  # flag_set broadcast, and boss_ready handshake. workflow_dispatch +
+  # nightly only — partykit boot adds ~5s of overhead per run.
+  test-relay-e2e:
+    name: Relay Protocol Smoke (E2E)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: relay-server/package-lock.json
+
+      - name: Install relay-server deps
+        run: npm install --prefix relay-server
+
+      - name: Install Python WebSocket client
+        run: pip install websockets
+
+      - name: Run relay protocol smoke
+        run: make check-relay-e2e
