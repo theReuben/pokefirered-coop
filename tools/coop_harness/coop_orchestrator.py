@@ -162,8 +162,12 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.bridge == "partykit":
-        sys.exit("error: --bridge=partykit is provided by tools/coop_harness/"
-                 "run_relay_smoke.py (Layer 4); not yet wired into this entry point")
+        sys.exit("error: --bridge=partykit is provided by "
+                 "tools/coop_harness/relay_smoke.py (Layer 4 — relay-only "
+                 "JSON protocol smoke). Bridging two ROM instances through "
+                 "the real relay also needs a Python binary↔JSON translator "
+                 "for the ring buffer protocol; that translator is a "
+                 "follow-up to Layer 4.")
 
     if not args.rom.exists():
         sys.exit(f"error: ROM not found at {args.rom} — run 'make firered' first")

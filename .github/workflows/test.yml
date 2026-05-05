@@ -247,3 +247,31 @@ jobs:
 
       - name: Run two-instance coop scenarios
         run: make check-coop
+
+  # ── Job 9: Real-relay end-to-end smoke (Layer 4) ─────────────────────────────
+  # Boots `npx partykit dev` against the real relay-server and walks two
+  # Python WebSocket clients through role assignment, position relay,
+  # flag_set broadcast, and boss_ready handshake. workflow_dispatch +
+  # nightly only — partykit boot adds ~5s of overhead per run.
+  test-relay-e2e:
+    name: Relay Protocol Smoke (E2E)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: relay-server/package-lock.json
+
+      - name: Install relay-server deps
+        run: npm install --prefix relay-server
+
+      - name: Install Python WebSocket client
+        run: pip install websockets
+
+      - name: Run relay protocol smoke
+        run: make check-relay-e2e
