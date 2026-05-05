@@ -201,6 +201,18 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             mgba-qt xvfb lua5.4
 
+      - name: Verify mGBA has Lua scripting support
+        run: |
+          # The official macOS .app omits Lua; Ubuntu's mgba-qt includes it.
+          # Exit 1 here gives an actionable error rather than silent NO RESULTs.
+          if ! mgba-qt --help 2>&1 | grep -qE -- '-S|--script'; then
+            echo "FAIL: mgba-qt is missing Lua scripting support (-S flag)."
+            echo "      Ubuntu noble mgba-qt 0.10+ should include it."
+            echo "      Check that liblua5.4-dev was available at build time."
+            exit 1
+          fi
+          echo "OK: mgba-qt has Lua scripting support."
+
       - name: Download ROM artifact
         uses: actions/download-artifact@v4
         with:

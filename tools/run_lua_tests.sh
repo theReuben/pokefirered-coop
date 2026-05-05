@@ -44,6 +44,18 @@ if [[ -n "$TIMEOUT_BIN" ]]; then
     TIMEOUT_CMD=("$TIMEOUT_BIN" "$TIMEOUT_SECONDS")
 fi
 
+# Probe for Lua scripting support.  The official mGBA macOS .app is built
+# without Lua; the flag simply won't appear in --help.  On CI, Ubuntu's
+# mgba-qt package includes Lua support.
+if ! "$MGBA" --help 2>&1 | grep -qE -- '-S|--script'; then
+    echo "warning: $MGBA does not support Lua scripting (-S / --script)." >&2
+    echo "         The official mGBA macOS .app omits Lua scripting." >&2
+    echo "         Install a Lua-enabled build with:" >&2
+    echo "           brew install mgba          # adds 'mgba' to PATH" >&2
+    echo "         Then re-run: make check-lua" >&2
+    exit 2
+fi
+
 if [[ ! -f "$ROM" ]]; then
     echo "error: ROM not found at $ROM (build with 'make firered' first)" >&2
     exit 2
@@ -78,8 +90,8 @@ for scenario in "${SCENARIOS[@]}"; do
 
     echo "--- $name"
     LUA_TEST_RESULTS="$results_file" \
-        "${TIMEOUT_CMD[@]}" \
-        "${XVFB_RUN[@]}" \
+        ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} \
+        ${XVFB_RUN[@]+"${XVFB_RUN[@]}"} \
         "$MGBA" -S "$scenario" "$ROM" \
         > "$log_file" 2>&1
     exitcode=$?
