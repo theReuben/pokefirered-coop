@@ -267,7 +267,7 @@ MAKEFLAGS += --no-print-directory
 # Delete files that weren't built properly
 .DELETE_ON_ERROR:
 
-RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidycheck tidyrelease generated clean-generated clean-teachables clean-teachables_intermediates check-native check-relay check-tauri
+RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidycheck tidyrelease generated clean-generated clean-teachables clean-teachables_intermediates check-native check-relay check-tauri check-lua
 .PHONY: all rom agbcc modern compare check debug release
 .PHONY: $(RULES_NO_SCAN)
 
@@ -375,6 +375,16 @@ check-tauri:
 	touch tauri-app/src-tauri/rom/pokefirered.gba
 	@test -f tauri-app/src-tauri/icons/32x32.png || python3 tools/gen-icons.py
 	PATH="$$PATH:$$HOME/.cargo/bin" cargo check --manifest-path tauri-app/src-tauri/Cargo.toml
+
+# Run every Lua scenario under test/lua/scenarios/ against the built ROM.
+# Requires a prior `make firered` and an mGBA binary on PATH (mgba-qt or mgba),
+# plus xvfb-run for headless display. Regenerates memory_map.lua from the
+# fresh .map file so scenarios always see current addresses.
+check-lua:
+	@test -f pokefirered.gba || (echo "pokefirered.gba missing — run 'make firered' first" >&2; exit 1)
+	@test -f pokefirered.map || (echo "pokefirered.map missing — run 'make firered' first" >&2; exit 1)
+	python3 tools/extract_symbols.py pokefirered.map test/lua/memory_map.lua
+	bash tools/run_lua_tests.sh
 
 # Generate placeholder app icons (solid red PNGs + ICO + ICNS).
 # Run once before 'npm run tauri build'. Replace icons with real artwork before distributing.

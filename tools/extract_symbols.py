@@ -24,8 +24,7 @@ WANTED_PATTERNS = [
     r"^gMpSendRing$",
     r"^gMpRecvRing$",
     r"^gCoopSettings$",
-    # Phase 3+: flag/var globals will be added here when implemented.
-    # r"^gSaveBlock1Ptr$",
+    r"^gMpAddrTable$",   # discovery table magic + pointers (Tauri scan target)
 ]
 
 _WANTED_RE = [re.compile(p) for p in WANTED_PATTERNS]
