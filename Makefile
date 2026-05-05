@@ -267,7 +267,7 @@ MAKEFLAGS += --no-print-directory
 # Delete files that weren't built properly
 .DELETE_ON_ERROR:
 
-RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidycheck tidyrelease generated clean-generated clean-teachables clean-teachables_intermediates check-native check-relay check-tauri check-lua
+RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidycheck tidyrelease generated clean-generated clean-teachables clean-teachables_intermediates check-native check-relay check-tauri check-lua check-coop
 .PHONY: all rom agbcc modern compare check debug release
 .PHONY: $(RULES_NO_SCAN)
 
@@ -385,6 +385,22 @@ check-lua:
 	@test -f pokefirered.map || (echo "pokefirered.map missing — run 'make firered' first" >&2; exit 1)
 	python3 tools/extract_symbols.py pokefirered.map test/lua/memory_map.lua
 	bash tools/run_lua_tests.sh
+
+# Run every two-instance coop scenario under test/lua/coop/<name>/ that has
+# both a p1.lua and p2.lua. New scenarios are picked up automatically.
+# Same prerequisites as check-lua, plus a couple seconds longer per scenario
+# because two emulators are booted in parallel.
+check-coop:
+	@test -f pokefirered.gba || (echo "pokefirered.gba missing — run 'make firered' first" >&2; exit 1)
+	@test -f pokefirered.map || (echo "pokefirered.map missing — run 'make firered' first" >&2; exit 1)
+	python3 tools/extract_symbols.py pokefirered.map test/lua/memory_map.lua
+	@status=0; for d in test/lua/coop/*/; do \
+		test -f $$d/p1.lua -a -f $$d/p2.lua || continue; \
+		echo "==> Coop scenario: $$d"; \
+		python3 tools/coop_harness/coop_orchestrator.py "$$d" || status=1; \
+	done; \
+	if [ $$status -ne 0 ]; then echo "Coop scenarios failed."; exit 1; fi; \
+	echo "All coop scenarios passed."
 
 # Generate placeholder app icons (solid red PNGs + ICO + ICNS).
 # Run once before 'npm run tauri build'. Replace icons with real artwork before distributing.

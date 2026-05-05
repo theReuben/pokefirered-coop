@@ -98,6 +98,7 @@ H.MP_OFF_IS_IN_SCRIPT        = 10
 H.MP_OFF_PARTNER_IN_SCRIPT   = 11
 H.MP_OFF_POS_FRAME_COUNTER   = 12
 H.MP_OFF_PARTNER_STARTER     = 14   -- u16, 2-byte aligned (offset is approximate)
+H.MP_OFF_REMOTE_UPDATE       = 16   -- u8, set when a remote flag/var applied this frame
 
 -- ------------------------------------------------------------------ --
 -- Ring buffer helpers — push bytes into gMpRecvRing, drain gMpSendRing.

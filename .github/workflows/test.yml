@@ -5,6 +5,10 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+  schedule:
+    # Nightly run at 09:00 UTC for the slower two-instance coop suite.
+    - cron: "0 9 * * *"
 
 jobs:
   # ── Job 1: C unit tests (native gcc) ─────────────────────────────────────────
@@ -212,3 +216,34 @@ jobs:
 
       - name: Run Lua scenarios
         run: make check-lua
+
+  # ── Job 8: Two-instance coop scenarios (slow, on-demand) ─────────────────────
+  # Boots two headless mGBA processes per scenario and bridges their ring
+  # buffers. Manual or nightly runs only; per-push CI is too slow.
+  test-coop:
+    name: Two-Instance Coop Scenarios
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    needs: test-rom
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mGBA + xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mgba-qt xvfb python3
+
+      - name: Download ROM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rom
+
+      - name: Place ROM artifact in repo layout
+        run: |
+          mkdir -p test/lua
+          if [ -f memory_map.lua ]; then mv memory_map.lua test/lua/memory_map.lua; fi
+          ls -la pokefirered.gba pokefirered.map test/lua/memory_map.lua
+
+      - name: Run two-instance coop scenarios
+        run: make check-coop
