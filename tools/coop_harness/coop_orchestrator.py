@@ -47,20 +47,22 @@ def find_mgba() -> str:
         path = shutil.which(binary)
         if path:
             return path
-    sys.exit("error: mGBA not found on PATH (need mgba-qt or mgba)")
+    # macOS app bundle fallback
+    macos_bundle = "/Applications/mGBA.app/Contents/MacOS/mGBA"
+    if os.path.isfile(macos_bundle) and os.access(macos_bundle, os.X_OK):
+        return macos_bundle
+    sys.exit("error: mGBA not found (tried PATH and /Applications/mGBA.app)")
 
 
-def find_xvfb() -> str:
-    path = shutil.which("xvfb-run")
-    if not path:
-        sys.exit("error: xvfb-run not found on PATH")
-    return path
+def find_xvfb() -> str | None:
+    """Returns xvfb-run path, or None on macOS/non-Linux where it isn't needed."""
+    return shutil.which("xvfb-run")
 
 
 def spawn_instance(
     *,
     mgba: str,
-    xvfb: str,
+    xvfb: str | None,
     rom: Path,
     workdir: Path,
     instance_id: str,
@@ -88,7 +90,12 @@ def spawn_instance(
     env["LUA_TEST_RESULTS"] = str(inst_dir / "result.txt")
 
     log = open(inst_dir / "mgba.log", "w")
-    cmd = [xvfb, "-a", mgba, "-l", str(script), str(rom)]
+    # -S loads a Lua script (mGBA 0.10+ Qt and SDL frontends).
+    # xvfb is None on macOS where a real display is always available.
+    if xvfb:
+        cmd = [xvfb, "-a", mgba, "-S", str(script), str(rom)]
+    else:
+        cmd = [mgba, "-S", str(script), str(rom)]
     print(f"  spawning {instance_id}: {' '.join(cmd)}")
     return subprocess.Popen(
         cmd,
@@ -178,7 +185,7 @@ def main() -> int:
         sys.exit(f"error: scenario {args.scenario_dir} must contain p1.lua and p2.lua")
 
     mgba = find_mgba()
-    xvfb = find_xvfb()
+    xvfb = find_xvfb()  # None on macOS
     workdir = Path(tempfile.mkdtemp(prefix=f"coop_{args.scenario_dir.name}_"))
     print(f"==> Workdir: {workdir}")
 

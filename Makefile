@@ -267,7 +267,7 @@ MAKEFLAGS += --no-print-directory
 # Delete files that weren't built properly
 .DELETE_ON_ERROR:
 
-RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidycheck tidyrelease generated clean-generated clean-teachables clean-teachables_intermediates check-native check-relay check-tauri check-lua check-coop check-relay-e2e
+RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidycheck tidyrelease generated clean-generated clean-teachables clean-teachables_intermediates check-native check-relay check-tauri check-lua check-coop check-relay-e2e build-states
 .PHONY: all rom agbcc modern compare check debug release
 .PHONY: $(RULES_NO_SCAN)
 
@@ -409,6 +409,21 @@ check-coop:
 # Needs node + npm (for partykit) and the `websockets` Python package.
 check-relay-e2e:
 	python3 tools/coop_harness/relay_smoke.py
+
+# Build mGBA save-state checkpoints used by the advanced coop test scenarios.
+# Run once after a ROM rebuild, or when test/lua/states/ is missing.
+# Automates through the FRLG intro to key checkpoints (Oak's lab, Route 1,
+# Pewter Gym). Requires an mGBA binary; writes to test/lua/states/.
+build-states:
+	@test -f pokefirered.gba || (echo "pokefirered.gba missing — run 'make firered' first" >&2; exit 1)
+	@mkdir -p test/lua/states
+	@MGBA="$$(command -v mgba-qt || command -v mgba || true)"; \
+	 if [ -z "$$MGBA" ] && [ -x "/Applications/mGBA.app/Contents/MacOS/mGBA" ]; then \
+	     MGBA="/Applications/mGBA.app/Contents/MacOS/mGBA"; \
+	 fi; \
+	 if [ -z "$$MGBA" ]; then echo "error: mGBA not found" >&2; exit 1; fi; \
+	 echo "Using mGBA: $$MGBA"; \
+	 "$$MGBA" -S tools/build_save_states.lua pokefirered.gba
 
 # Generate placeholder app icons (solid red PNGs + ICO + ICNS).
 # Run once before 'npm run tauri build'. Replace icons with real artwork before distributing.

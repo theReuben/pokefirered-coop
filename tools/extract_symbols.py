@@ -24,7 +24,8 @@ WANTED_PATTERNS = [
     r"^gMpSendRing$",
     r"^gMpRecvRing$",
     r"^gCoopSettings$",
-    r"^gMpAddrTable$",   # discovery table magic + pointers (Tauri scan target)
+    r"^gMpAddrTable$",      # discovery table magic + pointers (Tauri scan target)
+    r"^gSaveBlock1Ptr$",    # pointer to SaveBlock1; dereference to reach flags[]
 ]
 
 _WANTED_RE = [re.compile(p) for p in WANTED_PATTERNS]

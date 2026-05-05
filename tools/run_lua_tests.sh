@@ -18,13 +18,30 @@ ROM="${ROM:-$REPO_ROOT/pokefirered.gba}"
 SCENARIO_DIR="$REPO_ROOT/test/lua/scenarios"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-60}"
 
-# Pick whichever mGBA binary is on PATH. Prefer mgba-qt because its
-# scripting API is the most stable; fall back to mgba (SDL frontend
-# in 0.10+) if qt isn't installed.
+# Pick whichever mGBA binary is available. On macOS the app bundle is
+# not on PATH, so check the standard install location as a fallback.
 MGBA="$(command -v mgba-qt || command -v mgba || true)"
 if [[ -z "$MGBA" ]]; then
-    echo "error: mGBA not found on PATH (need mgba-qt or mgba)" >&2
+    if [[ -x "/Applications/mGBA.app/Contents/MacOS/mGBA" ]]; then
+        MGBA="/Applications/mGBA.app/Contents/MacOS/mGBA"
+    fi
+fi
+if [[ -z "$MGBA" ]]; then
+    echo "error: mGBA not found (tried PATH and /Applications/mGBA.app)" >&2
     exit 2
+fi
+
+# xvfb-run is only needed on headless Linux (CI). On macOS, skip it.
+XVFB_RUN=()
+if command -v xvfb-run &>/dev/null; then
+    XVFB_RUN=(xvfb-run -a)
+fi
+
+# GNU timeout (Linux) or gtimeout (macOS Homebrew coreutils), or no timeout.
+TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+TIMEOUT_CMD=()
+if [[ -n "$TIMEOUT_BIN" ]]; then
+    TIMEOUT_CMD=("$TIMEOUT_BIN" "$TIMEOUT_SECONDS")
 fi
 
 if [[ ! -f "$ROM" ]]; then
@@ -61,8 +78,9 @@ for scenario in "${SCENARIOS[@]}"; do
 
     echo "--- $name"
     LUA_TEST_RESULTS="$results_file" \
-        timeout "$TIMEOUT_SECONDS" \
-        xvfb-run -a "$MGBA" -l "$scenario" "$ROM" \
+        "${TIMEOUT_CMD[@]}" \
+        "${XVFB_RUN[@]}" \
+        "$MGBA" -S "$scenario" "$ROM" \
         > "$log_file" 2>&1
     exitcode=$?
 
