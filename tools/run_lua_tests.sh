@@ -18,16 +18,24 @@ ROM="${ROM:-$REPO_ROOT/pokefirered.gba}"
 SCENARIO_DIR="$REPO_ROOT/test/lua/scenarios"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-60}"
 
-# Pick whichever mGBA binary is available. On macOS the app bundle is
-# not on PATH, so check the standard install location as a fallback.
-MGBA="$(command -v mgba-qt || command -v mgba || true)"
-if [[ -z "$MGBA" ]]; then
-    if [[ -x "/Applications/mGBA.app/Contents/MacOS/mGBA" ]]; then
-        MGBA="/Applications/mGBA.app/Contents/MacOS/mGBA"
-    fi
-fi
-if [[ -z "$MGBA" ]]; then
-    echo "error: mGBA not found (tried PATH and /Applications/mGBA.app)" >&2
+# Pick whichever mGBA binary is available.
+# Priority: env override > SDL binary > headless binary > macOS app bundle.
+# mgba-headless is the fallback for source builds where the SDL frontend cmake
+# fails (a cmake 4.x compat issue on macOS); it uses --script instead of -S.
+if [[ -n "${MGBA:-}" ]]; then
+    : # caller-supplied, use as-is
+elif command -v mgba-qt &>/dev/null; then
+    MGBA="$(command -v mgba-qt)"
+elif command -v mgba &>/dev/null; then
+    MGBA="$(command -v mgba)"
+elif [[ -x "/tmp/mgba-build/mgba" ]]; then
+    MGBA="/tmp/mgba-build/mgba"
+elif [[ -x "/tmp/mgba-build/mgba-headless" ]]; then
+    MGBA="/tmp/mgba-build/mgba-headless"
+elif [[ -x "/Applications/mGBA.app/Contents/MacOS/mGBA" ]]; then
+    MGBA="/Applications/mGBA.app/Contents/MacOS/mGBA"
+else
+    echo "error: mGBA not found (tried PATH, /tmp/mgba-build/, /Applications/mGBA.app)" >&2
     exit 2
 fi
 
@@ -44,25 +52,30 @@ if [[ -n "$TIMEOUT_BIN" ]]; then
     TIMEOUT_CMD=("$TIMEOUT_BIN" "$TIMEOUT_SECONDS")
 fi
 
-# Probe for Lua scripting support by running a trivial script.
-# Checking --help is unreliable (some builds support -S without listing it).
-# We write a sentinel file from within the script; if mGBA loads it,
-# scripting works regardless of what --help says.
+# Probe for Lua scripting support.
+# Try -S (SDL/Qt frontend) first, then --script (headless binary).
+# We write a sentinel file from within the script to confirm Lua actually ran.
 _probe_result="$(mktemp)"
 _probe_script="$(mktemp /tmp/mgba_probe_XXXXXX.lua)"
 printf 'local f=io.open(os.getenv("_MGBA_PROBE"),"w"); if f then f:write("ok"); f:close() end; if emu and emu.quit then emu:quit() end\n' \
     > "$_probe_script"
-_MGBA_PROBE="$_probe_result" \
-    ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} \
-    "$MGBA" -S "$_probe_script" "$ROM" >/dev/null 2>&1 || true
-_probe_ok=false
-if grep -qs "ok" "$_probe_result" 2>/dev/null; then
-    _probe_ok=true
-fi
+
+# Detect which script flag the binary supports.
+SCRIPT_FLAG=""
+for _flag in "-S" "--script"; do
+    _MGBA_PROBE="$_probe_result" \
+        ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} \
+        "$MGBA" "$_flag" "$_probe_script" "$ROM" >/dev/null 2>&1 || true
+    if grep -qs "ok" "$_probe_result" 2>/dev/null; then
+        SCRIPT_FLAG="$_flag"
+        break
+    fi
+    : > "$_probe_result"  # clear for next try
+done
 rm -f "$_probe_result" "$_probe_script"
 
-if [[ "$_probe_ok" != "true" ]]; then
-    echo "warning: $MGBA does not support Lua scripting (-S flag)." >&2
+if [[ -z "$SCRIPT_FLAG" ]]; then
+    echo "warning: $MGBA does not support Lua scripting (-S or --script)." >&2
     echo "         The official mGBA macOS .app and Homebrew Qt build omit it." >&2
     echo "         Build mGBA from source with SDL + Lua enabled, or on CI use" >&2
     echo "         Ubuntu's mgba-qt which includes scripting support." >&2
@@ -106,7 +119,7 @@ for scenario in "${SCENARIOS[@]}"; do
     LUA_TEST_RESULTS="$results_file" \
         ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} \
         ${XVFB_RUN[@]+"${XVFB_RUN[@]}"} \
-        "$MGBA" -S "$scenario" "$ROM" \
+        "$MGBA" "$SCRIPT_FLAG" "$scenario" "$ROM" \
         > "$log_file" 2>&1
     exitcode=$?
 

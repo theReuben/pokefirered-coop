@@ -31,41 +31,39 @@ All prerequisites are available via Homebrew:
 brew install cmake sdl2 lua
 ```
 
-Clone and build (takes 3–5 minutes on Apple Silicon):
+Clone and build (takes 3–5 minutes on Apple Silicon). The SDL frontend has a
+cmake 4.x compatibility issue on macOS, so we build the headless binary
+instead — it uses `--script` instead of `-S` and the test runner detects this
+automatically.
 
 ```bash
+# Make the keg-only Homebrew lua visible to cmake
+brew link --force lua
+
 git clone --depth=1 https://github.com/mgba-emu/mgba /tmp/mgba-src
 
-cmake -B /tmp/mgba-build \
+cmake --fresh -B /tmp/mgba-build \
   -DBUILD_QT=OFF \
-  -DBUILD_SDL=ON \
+  -DBUILD_SDL=OFF \
+  -DBUILD_HEADLESS=ON \
   -DUSE_LUA=ON \
-  -DLUA_INCLUDE_DIR=$(brew --prefix lua)/include/lua \
-  -DLUA_LIBRARY=$(brew --prefix lua)/lib/liblua.dylib \
   -DCMAKE_BUILD_TYPE=Release \
   /tmp/mgba-src
 
 cmake --build /tmp/mgba-build -j$(sysctl -n hw.ncpu)
 ```
 
-The resulting binary is at `/tmp/mgba-build/mgba`. Point the test runner at
-it with the `MGBA` env var:
+The resulting binary is at `/tmp/mgba-build/mgba-headless`. The test runner
+finds it automatically if placed there. To run:
 
 ```bash
-MGBA=/tmp/mgba-build/mgba make check-lua
-```
-
-To make it permanent for your shell session:
-
-```bash
-export MGBA=/tmp/mgba-build/mgba
 make check-lua
 ```
 
-Or add to your shell profile:
+Or point explicitly at it:
 
 ```bash
-echo 'export MGBA=/tmp/mgba-build/mgba' >> ~/.zshrc
+MGBA=/tmp/mgba-build/mgba-headless make check-lua
 ```
 
 ## Linux (Ubuntu/Debian): install from apt
