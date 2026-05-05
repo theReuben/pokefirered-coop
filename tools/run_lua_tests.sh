@@ -44,15 +44,29 @@ if [[ -n "$TIMEOUT_BIN" ]]; then
     TIMEOUT_CMD=("$TIMEOUT_BIN" "$TIMEOUT_SECONDS")
 fi
 
-# Probe for Lua scripting support.  The official mGBA macOS .app is built
-# without Lua; the flag simply won't appear in --help.  On CI, Ubuntu's
-# mgba-qt package includes Lua support.
-if ! "$MGBA" --help 2>&1 | grep -qE -- '-S|--script'; then
-    echo "warning: $MGBA does not support Lua scripting (-S / --script)." >&2
-    echo "         The official mGBA macOS .app omits Lua scripting." >&2
-    echo "         Install a Lua-enabled build with:" >&2
-    echo "           brew install mgba          # adds 'mgba' to PATH" >&2
-    echo "         Then re-run: make check-lua" >&2
+# Probe for Lua scripting support by running a trivial script.
+# Checking --help is unreliable (some builds support -S without listing it).
+# We write a sentinel file from within the script; if mGBA loads it,
+# scripting works regardless of what --help says.
+_probe_result="$(mktemp)"
+_probe_script="$(mktemp /tmp/mgba_probe_XXXXXX.lua)"
+printf 'local f=io.open(os.getenv("_MGBA_PROBE"),"w"); if f then f:write("ok"); f:close() end; if emu and emu.quit then emu:quit() end\n' \
+    > "$_probe_script"
+_MGBA_PROBE="$_probe_result" \
+    ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} \
+    "$MGBA" -S "$_probe_script" "$ROM" >/dev/null 2>&1 || true
+_probe_ok=false
+if grep -qs "ok" "$_probe_result" 2>/dev/null; then
+    _probe_ok=true
+fi
+rm -f "$_probe_result" "$_probe_script"
+
+if [[ "$_probe_ok" != "true" ]]; then
+    echo "warning: $MGBA does not support Lua scripting (-S flag)." >&2
+    echo "         The official mGBA macOS .app and Homebrew Qt build omit it." >&2
+    echo "         Build mGBA from source with SDL + Lua enabled, or on CI use" >&2
+    echo "         Ubuntu's mgba-qt which includes scripting support." >&2
+    echo "         See: docs/dev/lua-tests.md for setup instructions." >&2
     exit 2
 fi
 
