@@ -356,6 +356,94 @@ def bridge_rings(from_id: str = "p1", to_id: str = "p2") -> str:
         f"Bytes: {drain['bytes']}"
     )
 
+# ── Tool: press_button ───────────────────────────────────────────────────
+
+# GBA button masks (active-high in mGBA setKeys)
+BUTTON_MASKS = {
+    "A": 0x001, "B": 0x002, "SELECT": 0x004, "START": 0x008,
+    "RIGHT": 0x010, "LEFT": 0x020, "UP": 0x040, "DOWN": 0x080,
+    "R": 0x100, "L": 0x200,
+}
+
+@mcp.tool()
+def press_button(
+    button: str,
+    hold_frames: int = 3,
+    release_frames: int = 3,
+    instance_id: str = "p1",
+) -> str:
+    """Press a GBA button for hold_frames then release for release_frames.
+
+    button: A, B, START, SELECT, UP, DOWN, LEFT, RIGHT, L, R
+    Advances the emulator by (hold_frames + release_frames) total.
+
+    Use spamA via inject_keys for fast dialogue advancement.
+    Use hold_frames=16 for a full tile walk step.
+    """
+    name = button.upper()
+    mask = BUTTON_MASKS.get(name)
+    if mask is None:
+        valid = ", ".join(sorted(BUTTON_MASKS))
+        return f"Unknown button '{button}'. Valid: {valid}"
+    r = _inst(instance_id).send({
+        "cmd": "press", "mask": mask,
+        "hold": hold_frames, "release": release_frames,
+    })
+    if r.get("ok"):
+        return (
+            f"Pressed {name} for {r['held']} frames, "
+            f"released for {r['released']} frames on '{instance_id}'."
+        )
+    return f"Error: {r.get('error')}"
+
+@mcp.tool()
+def set_keys(mask: int, instance_id: str = "p1") -> str:
+    """Set the raw key mask (held buttons bitmask) without advancing frames.
+
+    Useful for holding a direction while calling run_frames repeatedly.
+    Call set_keys(0) to release all buttons.
+    Mask bits: A=0x001 B=0x002 SELECT=0x004 START=0x008
+               RIGHT=0x010 LEFT=0x020 UP=0x040 DOWN=0x080 R=0x100 L=0x200
+    """
+    r = _inst(instance_id).send({"cmd": "keys", "mask": mask})
+    if r.get("ok"):
+        return f"Keys set to 0x{r['mask']:03X} on '{instance_id}'."
+    return f"Error: {r.get('error')}"
+
+@mcp.tool()
+def load_savestate(path: str, instance_id: str = "p1") -> str:
+    """Load a save state file into the emulator.
+
+    Typical state paths (relative to repo root):
+      test/lua/states/oaks_lab.ss1
+      test/lua/states/tall_grass_route1.ss1
+      test/lua/states/pewter_gym.ss1
+
+    The emulator continues running from the loaded state immediately.
+    After loading, call game_state() to confirm the ROM state.
+    """
+    abs_path = path if os.path.isabs(path) else str(REPO_ROOT / path)
+    if not os.path.exists(abs_path):
+        return f"State file not found: {abs_path}"
+    r = _inst(instance_id).send({"cmd": "loadstate", "path": abs_path})
+    if r.get("ok"):
+        return f"Loaded state '{abs_path}' into '{instance_id}'."
+    return f"Error: {r.get('error')}"
+
+@mcp.tool()
+def save_savestate(path: str, instance_id: str = "p1") -> str:
+    """Save the current emulator state to a file.
+
+    Use absolute paths or repo-root-relative paths.
+    Useful for creating checkpoints mid-playthrough.
+    """
+    abs_path = path if os.path.isabs(path) else str(REPO_ROOT / path)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    r = _inst(instance_id).send({"cmd": "savestate", "path": abs_path})
+    if r.get("ok"):
+        return f"Saved state to '{abs_path}'."
+    return f"Error: {r.get('error')}"
+
 # ── Tool: check_flag ─────────────────────────────────────────────────────
 
 @mcp.tool()

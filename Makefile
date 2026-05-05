@@ -417,13 +417,17 @@ check-relay-e2e:
 build-states:
 	@test -f pokefirered.gba || (echo "pokefirered.gba missing — run 'make firered' first" >&2; exit 1)
 	@mkdir -p test/lua/states
-	@MGBA="$$(command -v mgba-qt || command -v mgba || true)"; \
-	 if [ -z "$$MGBA" ] && [ -x "/Applications/mGBA.app/Contents/MacOS/mGBA" ]; then \
-	     MGBA="/Applications/mGBA.app/Contents/MacOS/mGBA"; \
+	@MGBA="$${MGBA:-}"; \
+	 if [ -z "$$MGBA" ]; then \
+	     for _c in /tmp/mgba-build/mgba-headless /tmp/mgba-build/mgba \
+	               "$$(command -v mgba-qt 2>/dev/null)" "$$(command -v mgba 2>/dev/null)" \
+	               "/Applications/mGBA.app/Contents/MacOS/mGBA"; do \
+	         [ -x "$$_c" ] && MGBA="$$_c" && break; \
+	     done; \
 	 fi; \
-	 if [ -z "$$MGBA" ]; then echo "error: mGBA not found" >&2; exit 1; fi; \
+	 if [ -z "$$MGBA" ]; then echo "error: mGBA not found (build with make build-mgba or set MGBA=)" >&2; exit 1; fi; \
 	 echo "Using mGBA: $$MGBA"; \
-	 "$$MGBA" -S tools/build_save_states.lua pokefirered.gba
+	 "$$MGBA" --script tools/build_save_states.lua pokefirered.gba
 
 # Generate placeholder app icons (solid red PNGs + ICO + ICNS).
 # Run once before 'npm run tauri build'. Replace icons with real artwork before distributing.

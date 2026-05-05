@@ -223,6 +223,32 @@ local function execute(cmd)
         if result == nil then return {ok=false, error="save block not available"} end
         return {ok=true, val=result and 1 or 0, set=result}
 
+    elseif c == "keys" then
+        emu:setKeys(cmd.mask or 0)
+        return {ok=true, mask=cmd.mask or 0}
+
+    elseif c == "press" then
+        local mask    = cmd.mask or 0
+        local hold    = cmd.hold or 3
+        local release = cmd.release or 3
+        emu:setKeys(mask)
+        for _ = 1, hold do emu:runFrame() end
+        emu:setKeys(0)
+        for _ = 1, release do emu:runFrame() end
+        return {ok=true, held=hold, released=release}
+
+    elseif c == "loadstate" then
+        if not cmd.path then return {ok=false, error="missing path"} end
+        local ok, err = pcall(function() emu:loadStateFile(cmd.path, 0) end)
+        if ok then return {ok=true, path=cmd.path}
+        else return {ok=false, error=tostring(err)} end
+
+    elseif c == "savestate" then
+        local path = cmd.path or "/tmp/mgba_savestate.ss0"
+        local ok, err = pcall(function() emu:saveStateFile(path, 0) end)
+        if ok then return {ok=true, path=path}
+        else return {ok=false, error=tostring(err)} end
+
     elseif c == "screenshot" then
         local path = cmd.path or "/tmp/mgba_screenshot.png"
         local ok, err = pcall(function() emu:screenshot(path) end)
@@ -251,6 +277,12 @@ local function atomic_write(path, data)
 end
 
 -- ── Main loop ─────────────────────────────────────────────────────────────
+
+-- Load initial save state if requested (set via MGBA_BRIDGE_SAVESTATE env var).
+local INIT_SAVESTATE = os.getenv("MGBA_BRIDGE_SAVESTATE")
+if INIT_SAVESTATE and INIT_SAVESTATE ~= "" then
+    pcall(function() emu:loadStateFile(INIT_SAVESTATE, 0) end)
+end
 
 -- Signal readiness to the MCP server.
 atomic_write(READY_FILE, "ready\n")

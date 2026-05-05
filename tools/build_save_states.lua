@@ -20,10 +20,10 @@
 --   WAIT value.  Run with VERBOSE=1 to see per-step progress prints.
 --
 -- mGBA Lua scripting API (0.10+):
---   emu:runFrame()        advance one frame
---   emu:setKeys(mask)     set held buttons (0 = nothing held)
---   emu:saveState(path)   save state to file
---   emu:quit()            exit after the script finishes
+--   emu:runFrame()             advance one frame
+--   emu:setKeys(mask)          set held buttons (0 = nothing held)
+--   emu:saveStateFile(path, 0) save state to file
+--   emu:quit()                 exit after the script finishes
 
 local VERBOSE = (os.getenv("VERBOSE") == "1")
 
@@ -86,16 +86,14 @@ end
 local function saveState(name)
     local path = STATES_DIR .. name
     log("saving state → " .. path)
-    -- Create the directory if mGBA doesn't do it automatically.
-    -- (mGBA 0.10 creates parent dirs; older builds may not.)
-    emu:saveState(path)
+    emu:saveStateFile(path, 0)
     print("[states] SAVED " .. name)
 end
 
 -- ── Verify mGBA scripting API is available ─────────────────────────────────
-if not emu or not emu.runFrame or not emu.setKeys or not emu.saveState then
+if not emu or not emu.runFrame or not emu.setKeys or not emu.saveStateFile then
     print("[states] ERROR: mGBA scripting API not available.")
-    print("         Load this script via: mGBA -S tools/build_save_states.lua rom.gba")
+    print("         Load this script via: mgba-headless --script tools/build_save_states.lua rom.gba")
     if emu and emu.quit then emu:quit() end
     return
 end
