@@ -25,6 +25,7 @@
 #include "trainer_hill.h"
 #include "test_runner.h"
 #include "constants/rgb.h"
+#include "multiplayer.h"
 
 static void VBlankIntr(void);
 static void HBlankIntr(void);
@@ -128,6 +129,7 @@ void AgbMain(void)
 #endif
 #endif
     gAgbMainLoop_sp = __builtin_frame_address(0);
+    Multiplayer_Init();
     AgbMainLoop();
 }
 
@@ -145,6 +147,8 @@ void AgbMainLoop(void)
             rfu_waitREQComplete();
             DoSoftReset();
         }
+
+        Multiplayer_PollPackets();
 
         if (Overworld_SendKeysToLinkIsRunning() == TRUE)
         {

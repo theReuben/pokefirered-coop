@@ -18,23 +18,22 @@ ROM="${ROM:-$REPO_ROOT/pokefirered.gba}"
 SCENARIO_DIR="$REPO_ROOT/test/lua/scenarios"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-60}"
 
-# Pick whichever mGBA binary is available.
-# Priority: env override > SDL binary > headless binary > macOS app bundle.
-# mgba-headless is the fallback for source builds where the SDL frontend cmake
-# fails (a cmake 4.x compat issue on macOS); it uses --script instead of -S.
+# Build ordered candidate list; probe each until one supports Lua scripting.
+# If $MGBA is set by the caller, only that binary is tried.
+# Otherwise: PATH binaries first (CI), then local source build (macOS dev).
+_MGBA_CANDIDATES=()
 if [[ -n "${MGBA:-}" ]]; then
-    : # caller-supplied, use as-is
-elif command -v mgba-qt &>/dev/null; then
-    MGBA="$(command -v mgba-qt)"
-elif command -v mgba &>/dev/null; then
-    MGBA="$(command -v mgba)"
-elif [[ -x "/tmp/mgba-build/mgba" ]]; then
-    MGBA="/tmp/mgba-build/mgba"
-elif [[ -x "/tmp/mgba-build/mgba-headless" ]]; then
-    MGBA="/tmp/mgba-build/mgba-headless"
-elif [[ -x "/Applications/mGBA.app/Contents/MacOS/mGBA" ]]; then
-    MGBA="/Applications/mGBA.app/Contents/MacOS/mGBA"
+    _MGBA_CANDIDATES+=("$MGBA")
 else
+    command -v mgba-qt &>/dev/null && _MGBA_CANDIDATES+=("$(command -v mgba-qt)")
+    command -v mgba   &>/dev/null && _MGBA_CANDIDATES+=("$(command -v mgba)")
+    [[ -x "/tmp/mgba-build/mgba"          ]] && _MGBA_CANDIDATES+=("/tmp/mgba-build/mgba")
+    [[ -x "/tmp/mgba-build/mgba-headless" ]] && _MGBA_CANDIDATES+=("/tmp/mgba-build/mgba-headless")
+    [[ -x "/Applications/mGBA.app/Contents/MacOS/mGBA" ]] && \
+        _MGBA_CANDIDATES+=("/Applications/mGBA.app/Contents/MacOS/mGBA")
+fi
+
+if [[ ${#_MGBA_CANDIDATES[@]} -eq 0 ]]; then
     echo "error: mGBA not found (tried PATH, /tmp/mgba-build/, /Applications/mGBA.app)" >&2
     exit 2
 fi
@@ -52,34 +51,36 @@ if [[ -n "$TIMEOUT_BIN" ]]; then
     TIMEOUT_CMD=("$TIMEOUT_BIN" "$TIMEOUT_SECONDS")
 fi
 
-# Probe for Lua scripting support.
-# Try -S (SDL/Qt frontend) first, then --script (headless binary).
-# We write a sentinel file from within the script to confirm Lua actually ran.
+# Probe each candidate binary for Lua scripting support.
+# For each binary try -S (SDL/Qt) then --script (headless); use the first pair
+# that actually writes the sentinel file, confirming Lua ran.
 _probe_result="$(mktemp)"
 _probe_script="$(mktemp /tmp/mgba_probe_XXXXXX.lua)"
 printf 'local f=io.open(os.getenv("_MGBA_PROBE"),"w"); if f then f:write("ok"); f:close() end; if emu and emu.quit then emu:quit() end\n' \
     > "$_probe_script"
 
-# Detect which script flag the binary supports.
+MGBA=""
 SCRIPT_FLAG=""
-for _flag in "-S" "--script"; do
-    _MGBA_PROBE="$_probe_result" \
-        ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} \
-        "$MGBA" "$_flag" "$_probe_script" "$ROM" >/dev/null 2>&1 || true
-    if grep -qs "ok" "$_probe_result" 2>/dev/null; then
-        SCRIPT_FLAG="$_flag"
-        break
-    fi
-    : > "$_probe_result"  # clear for next try
+for _candidate in "${_MGBA_CANDIDATES[@]}"; do
+    for _flag in "-S" "--script"; do
+        : > "$_probe_result"
+        _MGBA_PROBE="$_probe_result" \
+            ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} \
+            "$_candidate" "$_flag" "$_probe_script" "$ROM" >/dev/null 2>&1 || true
+        if grep -qs "ok" "$_probe_result" 2>/dev/null; then
+            MGBA="$_candidate"
+            SCRIPT_FLAG="$_flag"
+            break 2
+        fi
+    done
 done
 rm -f "$_probe_result" "$_probe_script"
 
 if [[ -z "$SCRIPT_FLAG" ]]; then
-    echo "warning: $MGBA does not support Lua scripting (-S or --script)." >&2
+    echo "warning: no mGBA binary with Lua scripting found." >&2
+    echo "         Tried: ${_MGBA_CANDIDATES[*]}" >&2
     echo "         The official mGBA macOS .app and Homebrew Qt build omit it." >&2
-    echo "         Build mGBA from source with SDL + Lua enabled, or on CI use" >&2
-    echo "         Ubuntu's mgba-qt which includes scripting support." >&2
-    echo "         See: docs/dev/lua-tests.md for setup instructions." >&2
+    echo "         Build mGBA from source: see docs/dev/lua-tests.md" >&2
     exit 2
 fi
 

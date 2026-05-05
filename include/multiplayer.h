@@ -168,6 +168,7 @@ extern struct CoopSettings gCoopSettings;
 // Core lifecycle
 // ---------------------------------------------------------------------------
 void Multiplayer_Init(void);
+void Multiplayer_PollPackets(void);
 void Multiplayer_Update(void);
 
 // Ghost NPC

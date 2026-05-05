@@ -26,6 +26,7 @@ WANTED_PATTERNS = [
     r"^gCoopSettings$",
     r"^gMpAddrTable$",      # discovery table magic + pointers (Tauri scan target)
     r"^gSaveBlock1Ptr$",    # pointer to SaveBlock1; dereference to reach flags[]
+    r"^gSaveblock1$",       # the actual SaveBlock1 struct (no game loaded → ptr is NULL)
 ]
 
 _WANTED_RE = [re.compile(p) for p in WANTED_PATTERNS]

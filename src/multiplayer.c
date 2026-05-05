@@ -497,20 +497,26 @@ void Multiplayer_Init(void)
 #endif
 }
 
+// Drain and dispatch the receive ring.  Safe to call every frame from the
+// main loop regardless of game state — no overworld globals are touched.
+// remoteUpdateThisFrame is cleared here so TryRunOnFrameMapScript (called
+// later the same frame, from the overworld callback) sees a fresh flag.
+void Multiplayer_PollPackets(void)
+{
+    if (gMpRecvRing.magic != MP_RING_MAGIC)
+        return;
+    gMultiplayerState.remoteUpdateThisFrame = FALSE;
+    while (ProcessOneRecvPacket()) {}
+}
+
+// Overworld-only update: ghost NPC management and outbound position send.
+// Called from the overworld game loop, after Multiplayer_PollPackets has
+// already consumed incoming packets for this frame.
 void Multiplayer_Update(void)
 {
-    // Clear the remote-update flag from the previous frame before processing new packets.
-    // TryRunOnFrameMapScript (called later this frame) checks this to avoid firing
-    // map scripts triggered by incoming flag/var changes rather than local player actions.
-    gMultiplayerState.remoteUpdateThisFrame = FALSE;
-
-    // Process all pending incoming packets (one per frame is fine for low-rate data).
-    while (ProcessOneRecvPacket()) {}
-
     GhostMapCheck();
     GhostTick();
 
-    // Send our position every 4 frames if connected.
     if (gMultiplayerState.connState == MP_STATE_CONNECTED)
     {
         gMultiplayerState.posFrameCounter++;

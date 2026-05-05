@@ -3,10 +3,12 @@
 
 local M = {}
 
-M.gCoopSettings = 0x0300158C
+M.gCoopSettings = 0x03001590
+M.gMpAddrTable = 0x0300159C
 M.gMpRecvRing = 0x02031350
 M.gMpSendRing = 0x02031454
 M.gMultiplayerState = 0x0300157C
-M.gSaveBlock1Ptr = 0x030052E8
+M.gSaveBlock1Ptr = 0x03005300
+M.gSaveblock1 = 0x0200FF94
 
 return M

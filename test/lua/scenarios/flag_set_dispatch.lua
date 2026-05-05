@@ -23,8 +23,14 @@ local FLAGS_OFF  = 0x1270  -- flags[] offset within SaveBlock1 (global.h:1128)
 local BROCK_BYTE = 150     -- 0x4B0 / 8
 local BROCK_BIT  = 0       -- 0x4B0 % 8
 
--- Dereference the save-block pointer.
+-- gSaveBlock1Ptr is NULL until the game loads a save.  In headless mode we
+-- have no save file, so wire the pointer to the static gSaveblock1 struct
+-- directly so FlagSet() has somewhere to write.
 local saveBlock1 = H.read32(mm.gSaveBlock1Ptr)
+if saveBlock1 == 0 and mm.gSaveblock1 ~= nil then
+    H.write32(mm.gSaveBlock1Ptr, mm.gSaveblock1)
+    saveBlock1 = mm.gSaveblock1
+end
 H.check(saveBlock1 ~= 0, "gSaveBlock1Ptr is non-null (new game initialised save)")
 
 -- Flag must start clear.
