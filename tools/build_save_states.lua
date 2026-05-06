@@ -82,20 +82,26 @@ local function walk(dir, tiles)
     end
 end
 
--- Save an mGBA state to the states directory.
+-- Save an mGBA state to the states directory via the buffer API.
+-- saveStateFile uses O_WRONLY which corrupts the VFile stream; instead we
+-- call saveStateBuffer (writes to in-memory VFile, no file-mode bug) and
+-- then write the buffer to disk ourselves.
 local function saveState(name)
     local path = STATES_DIR .. name
     log("saving state → " .. path)
-    emu:saveStateFile(path, 0)
-    print("[states] SAVED " .. name)
+    local buf = emu:saveStateBuffer(31)
+    assert(buf and #buf > 0, "saveStateBuffer returned empty result")
+    local f = assert(io.open(path, "wb"), "cannot open " .. path)
+    f:write(buf)
+    f:close()
+    print("[states] SAVED " .. name .. " (" .. #buf .. " bytes)")
 end
 
 -- ── Verify mGBA scripting API is available ─────────────────────────────────
-if not emu or not emu.runFrame or not emu.setKeys or not emu.saveStateFile then
+if not emu or not emu.runFrame or not emu.setKeys or not emu.saveStateBuffer then
     print("[states] ERROR: mGBA scripting API not available.")
     print("         Load this script via: mgba-headless --script tools/build_save_states.lua rom.gba")
-    if emu and emu.quit then emu:quit() end
-    return
+    os.exit(1)
 end
 
 -- ── PHASE 1: Title screen → New Game ──────────────────────────────────────
@@ -103,46 +109,50 @@ end
 -- then the title screen where pressing START leads to the main menu.
 log("phase 1: title screen")
 
--- Skip intro logos and title animation (≈ 300 frames for logos + 200 for title)
-idle(500)
+-- Nintendo logo (~75f) + GF logo (~175f) + title animation (~350f) = ~600 frames.
+idle(700)
 
 -- Press START to go from title screen to main menu.
-press(KEY_START, 3, 30)
+press(KEY_START, 5, 60)
 
 -- Main menu: NEW GAME is cursor position 0.  Press A.
-idle(60)
-press(KEY_A, 3, 30)
+idle(90)
+press(KEY_A, 5, 60)
 
 -- ── PHASE 2: Professor Oak's introduction ─────────────────────────────────
--- Oak speaks for ~8 dialogue boxes.  Each press of A advances one box.
+-- Oak speaks for ~5-6 dialogue boxes before the gender question.
 log("phase 2: oak intro speech")
-spamA(12, 30)
+idle(60)
+spamA(10, 40)
 
 -- ── PHASE 3: Gender selection ─────────────────────────────────────────────
 -- "Are you a boy or a girl?" — BOY is the default (left option in FRLG).
--- Just press A to confirm.
 log("phase 3: gender selection")
-idle(30)
-press(KEY_A, 3, 30)
+idle(60)
+press(KEY_A, 5, 60)
 
 -- ── PHASE 4: Player name entry ────────────────────────────────────────────
--- The name entry screen shows preset names.  "RED" is the first preset.
--- Press A once to select "RED" from the preset list, then A again to confirm.
+-- Press SELECT to open the preset-names menu, then A to choose the first
+-- entry ("RED"), then A again to confirm.
 log("phase 4: player name")
+idle(90)
+press(KEY_SELECT, 5, 30)   -- open preset-name sub-menu
 idle(60)
--- Navigate to preset names list (usually requires pressing RIGHT or DOWN first)
-press(KEY_DOWN, 3, 10)    -- move cursor to preset list
-press(KEY_A, 3, 10)       -- select first preset (RED)
-press(KEY_A, 3, 30)       -- confirm name
+press(KEY_A, 5, 60)        -- select first preset (RED)
+idle(60)
+press(KEY_A, 5, 60)        -- confirm chosen name
 
 -- ── PHASE 5: Rival name entry ─────────────────────────────────────────────
--- "And your friend's name?" — similar layout, "GARY" is first preset.
+-- Oak asks for your rival's name.
 log("phase 5: rival name")
-spamA(3, 30)              -- advance Oak's "your friend" dialogue
 idle(60)
-press(KEY_DOWN, 3, 10)    -- move to preset list
-press(KEY_A, 3, 10)       -- select first preset (GARY)
-press(KEY_A, 3, 30)       -- confirm name
+spamA(4, 40)               -- advance Oak's "your friend" dialogue
+idle(90)
+press(KEY_SELECT, 5, 30)   -- open preset-name sub-menu
+idle(60)
+press(KEY_A, 5, 60)        -- select first preset (GARY / BLUE)
+idle(60)
+press(KEY_A, 5, 60)        -- confirm chosen name
 
 -- ── PHASE 6: Bedroom → overworld ─────────────────────────────────────────
 -- Player wakes up in their bedroom (2F of player's house in Pallet Town).
@@ -244,4 +254,4 @@ saveState("pewter_gym.ss1")
 -- ── Done ──────────────────────────────────────────────────────────────────
 print("[states] All checkpoints saved to " .. STATES_DIR)
 print("[states] Checkpoints: oaks_lab.ss1  tall_grass_route1.ss1  pewter_gym.ss1")
-emu:quit()
+if emu.quit then emu:quit() else os.exit(0) end

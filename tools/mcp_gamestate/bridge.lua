@@ -239,15 +239,22 @@ local function execute(cmd)
 
     elseif c == "loadstate" then
         if not cmd.path then return {ok=false, error="missing path"} end
-        local ok, err = pcall(function() emu:loadStateFile(cmd.path, 0) end)
+        local f = io.open(cmd.path, "rb")
+        if not f then return {ok=false, error="cannot open: " .. cmd.path} end
+        local data = f:read("*a"); f:close()
+        local ok, err = pcall(function() emu:loadStateBuffer(data, 31) end)
         if ok then return {ok=true, path=cmd.path}
         else return {ok=false, error=tostring(err)} end
 
     elseif c == "savestate" then
         local path = cmd.path or "/tmp/mgba_savestate.ss0"
-        local ok, err = pcall(function() emu:saveStateFile(path, 0) end)
-        if ok then return {ok=true, path=path}
-        else return {ok=false, error=tostring(err)} end
+        local buf, err = nil, nil
+        local ok = pcall(function() buf = emu:saveStateBuffer(31) end)
+        if not ok or not buf then return {ok=false, error="saveStateBuffer failed"} end
+        local f = io.open(path, "wb")
+        if not f then return {ok=false, error="cannot write: " .. path} end
+        f:write(buf); f:close()
+        return {ok=true, path=path}
 
     elseif c == "screenshot" then
         local path = cmd.path or "/tmp/mgba_screenshot.png"
@@ -281,7 +288,11 @@ end
 -- Load initial save state if requested (set via MGBA_BRIDGE_SAVESTATE env var).
 local INIT_SAVESTATE = os.getenv("MGBA_BRIDGE_SAVESTATE")
 if INIT_SAVESTATE and INIT_SAVESTATE ~= "" then
-    pcall(function() emu:loadStateFile(INIT_SAVESTATE, 0) end)
+    local f = io.open(INIT_SAVESTATE, "rb")
+    if f then
+        local data = f:read("*a"); f:close()
+        pcall(function() emu:loadStateBuffer(data, 31) end)
+    end
 end
 
 -- Signal readiness to the MCP server.
