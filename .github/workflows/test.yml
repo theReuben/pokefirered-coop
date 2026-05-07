@@ -220,15 +220,23 @@ jobs:
             -DBUILD_HEADLESS=ON -DUSE_LUA=ON \
             -DUSE_DEBUGGERS=OFF -DUSE_GDB_STUB=OFF \
             -DBUILD_PYTHON=OFF -DBUILD_LIBRETRO=OFF
-          cmake --build /tmp/mgba-build --target mgba-headless
+          cmake --build /tmp/mgba-build
+          ls /tmp/mgba-build/
 
       - name: Verify mGBA has Lua scripting support
         run: |
-          if ! /tmp/mgba-build/mgba-headless --help 2>&1 | grep -qE -- '-S|--script'; then
+          BIN=$(find /tmp/mgba-build -maxdepth 2 -name 'mgba-headless' -type f | head -1)
+          if [ -z "$BIN" ]; then
+            echo "FAIL: mgba-headless binary not found in /tmp/mgba-build"; exit 1
+          fi
+          echo "Found: $BIN"
+          if ! "$BIN" --help 2>&1 | grep -qE -- '-S|--script'; then
             echo "FAIL: mgba-headless is missing Lua scripting support (-S flag)."
             exit 1
           fi
           echo "OK: mgba-headless has Lua scripting support."
+          # Symlink to stable path for downstream steps
+          ln -sf "$BIN" /tmp/mgba-build/mgba-headless || true
 
       - name: Download ROM artifact
         uses: actions/download-artifact@v4
@@ -282,7 +290,14 @@ jobs:
             -DBUILD_HEADLESS=ON -DUSE_LUA=ON \
             -DUSE_DEBUGGERS=OFF -DUSE_GDB_STUB=OFF \
             -DBUILD_PYTHON=OFF -DBUILD_LIBRETRO=OFF
-          cmake --build /tmp/mgba-build --target mgba-headless
+          cmake --build /tmp/mgba-build
+
+      - name: Locate mGBA headless binary
+        run: |
+          BIN=$(find /tmp/mgba-build -maxdepth 2 -name 'mgba-headless' -type f | head -1)
+          if [ -z "$BIN" ]; then echo "FAIL: mgba-headless not found"; exit 1; fi
+          ln -sf "$BIN" /tmp/mgba-build/mgba-headless || true
+          echo "Using: $BIN"
 
       - name: Download ROM artifact
         uses: actions/download-artifact@v4
