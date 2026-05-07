@@ -514,6 +514,9 @@ void Multiplayer_PollPackets(void)
 // already consumed incoming packets for this frame.
 void Multiplayer_Update(void)
 {
+    gMultiplayerState.remoteUpdateThisFrame = FALSE;
+    while (ProcessOneRecvPacket()) {}
+
     GhostMapCheck();
     GhostTick();
 
