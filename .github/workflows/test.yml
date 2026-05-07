@@ -195,23 +195,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install mGBA + xvfb
+      - name: Install build deps + xvfb
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            mgba-qt xvfb lua5.4
+            cmake ninja-build xvfb lua5.4 \
+            liblua5.4-dev libepoxy-dev libsdl2-dev \
+            zlib1g-dev libpng-dev
+
+      - name: Cache mGBA headless build
+        id: mgba-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/mgba-build
+          key: mgba-0.10.3-lua-${{ runner.os }}
+
+      - name: Build mGBA headless with Lua support
+        if: steps.mgba-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 -b 0.10.3 https://github.com/mgba-emu/mgba.git /tmp/mgba-src
+          cmake -B /tmp/mgba-build -S /tmp/mgba-src -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SDL=OFF -DBUILD_QT=OFF \
+            -DBUILD_HEADLESS=ON -DUSE_LUA=ON \
+            -DUSE_DEBUGGERS=OFF -DUSE_GDB_STUB=OFF \
+            -DBUILD_PYTHON=OFF -DBUILD_LIBRETRO=OFF
+          cmake --build /tmp/mgba-build --target mgba-headless
 
       - name: Verify mGBA has Lua scripting support
         run: |
-          # The official macOS .app omits Lua; Ubuntu's mgba-qt includes it.
-          # Exit 1 here gives an actionable error rather than silent NO RESULTs.
-          if ! mgba-qt --help 2>&1 | grep -qE -- '-S|--script'; then
-            echo "FAIL: mgba-qt is missing Lua scripting support (-S flag)."
-            echo "      Ubuntu noble mgba-qt 0.10+ should include it."
-            echo "      Check that liblua5.4-dev was available at build time."
+          if ! /tmp/mgba-build/mgba-headless --help 2>&1 | grep -qE -- '-S|--script'; then
+            echo "FAIL: mgba-headless is missing Lua scripting support (-S flag)."
             exit 1
           fi
-          echo "OK: mgba-qt has Lua scripting support."
+          echo "OK: mgba-headless has Lua scripting support."
 
       - name: Download ROM artifact
         uses: actions/download-artifact@v4
@@ -240,11 +257,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install mGBA + xvfb
+      - name: Install build deps + xvfb
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            mgba-qt xvfb python3
+            cmake ninja-build xvfb python3 lua5.4 \
+            liblua5.4-dev libepoxy-dev libsdl2-dev \
+            zlib1g-dev libpng-dev
+
+      - name: Cache mGBA headless build
+        id: mgba-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/mgba-build
+          key: mgba-0.10.3-lua-${{ runner.os }}
+
+      - name: Build mGBA headless with Lua support
+        if: steps.mgba-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 -b 0.10.3 https://github.com/mgba-emu/mgba.git /tmp/mgba-src
+          cmake -B /tmp/mgba-build -S /tmp/mgba-src -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SDL=OFF -DBUILD_QT=OFF \
+            -DBUILD_HEADLESS=ON -DUSE_LUA=ON \
+            -DUSE_DEBUGGERS=OFF -DUSE_GDB_STUB=OFF \
+            -DBUILD_PYTHON=OFF -DBUILD_LIBRETRO=OFF
+          cmake --build /tmp/mgba-build --target mgba-headless
 
       - name: Download ROM artifact
         uses: actions/download-artifact@v4
