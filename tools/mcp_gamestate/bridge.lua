@@ -1,16 +1,14 @@
 -- tools/mcp_gamestate/bridge.lua
--- Runs inside mgba-headless (--script flag).  Provides a file-based IPC
--- channel so the MCP server can read memory, inject packets, advance
--- frames, and take screenshots without scripting against the emulator
--- process directly.
+-- Runs inside mgba-headless (--script flag).
+-- Simulates a human player: screenshot, press buttons, wait.
 --
--- IPC protocol (atomic file rename, so reads never see partial writes):
---   CMD_FILE  → Python writes JSON command; Lua reads, deletes, executes.
---   RESP_FILE ← Lua writes JSON response; Python reads, deletes.
---   READY_FILE← Lua creates on startup; Python waits for it.
+-- IPC protocol (atomic rename, never partial reads):
+--   CMD_FILE   → Python writes JSON command; Lua reads, deletes, executes.
+--   RESP_FILE  ← Lua writes JSON response; Python reads, deletes.
+--   READY_FILE ← Lua creates on startup; Python waits for it.
 --
--- Command format: {"cmd":"<name>", ...args}
--- Response format: {"ok":true/false, ...fields}  (always one JSON line)
+-- Fully callback-based (no main while loop) so emu:screenshot() is always
+-- called from within the frame callback where the renderer is safe.
 
 local CMD_FILE   = os.getenv("MGBA_BRIDGE_CMD")   or "/tmp/mgba_bridge_cmd.json"
 local RESP_FILE  = os.getenv("MGBA_BRIDGE_RESP")  or "/tmp/mgba_bridge_resp.json"
@@ -20,7 +18,10 @@ local READY_FILE = os.getenv("MGBA_BRIDGE_READY") or "/tmp/mgba_bridge_ready"
 
 local function json_encode_val(v)
     local t = type(v)
-    if t == "string"  then return string.format('"%s"', (v:gsub('\\','\\\\'):gsub('"','\\"'))) end
+    if t == "string"  then
+        return string.format('"%s"',
+            v:gsub('\\','\\\\'):gsub('"','\\"'):gsub('\n','\\n'):gsub('\r','\\r'):gsub('\t','\\t'))
+    end
     if t == "number"  then return string.format("%d", v) end
     if t == "boolean" then return tostring(v) end
     if t == "table"   then
@@ -32,10 +33,8 @@ local function json_encode_val(v)
     end
     return "null"
 end
-
 local function json_encode(t) return json_encode_val(t) end
 
--- Minimal flat-object parser: handles string and integer values only.
 local function json_decode(s)
     local t = {}
     for k, v in s:gmatch('"([%w_]+)"%s*:%s*"([^"]*)"') do t[k] = v end
@@ -45,25 +44,41 @@ local function json_decode(s)
     return t
 end
 
--- ── Address map (injected by MCP server as env vars) ─────────────────────
+-- ── Ring buffer helpers (used by internal drain/inject relay commands) ────
 
 local ADDR = {}
 local ADDR_NAMES = {
-    "gMultiplayerState", "gMpSendRing", "gMpRecvRing",
-    "gCoopSettings", "gSaveBlock1Ptr", "gSaveblock1", "gMpAddrTable",
+    "gMpSendRing", "gMpRecvRing",
+    "gMultiplayerState", "gCoopSettings", "gSaveBlock1Ptr", "gSaveblock1", "gMpAddrTable",
+    "gStringVar4", "sFirstTextPrinter", "gDisableTextPrinters", "sGlobalScriptContextStatus",
 }
 for _, name in ipairs(ADDR_NAMES) do
-    local env_key = "ADDR_" .. name:upper()
-    local val = os.getenv(env_key)
+    local val = os.getenv("ADDR_" .. name:upper())
     if val then ADDR[name] = tonumber(val) end
 end
 
--- ── Ring buffer helpers ───────────────────────────────────────────────────
+-- ── FireRed charset → ASCII (for get_text command) ───────────────────────
+-- Source: charmap.txt in repo root.
+local CHARSET = {}
+CHARSET[0x00] = " "
+for i = 0, 9  do CHARSET[0xA1 + i] = string.char(48 + i) end  -- '0'..'9'
+CHARSET[0xAB] = "!"
+CHARSET[0xAC] = "?"
+CHARSET[0xAD] = "."
+CHARSET[0xAE] = "-"
+CHARSET[0xB3] = "'"
+CHARSET[0xB4] = "'"
+CHARSET[0xB8] = ","
+CHARSET[0xBA] = "/"
+for i = 0, 25 do CHARSET[0xBB + i] = string.char(65 + i) end  -- 'A'..'Z'
+for i = 0, 25 do CHARSET[0xD5 + i] = string.char(97 + i) end  -- 'a'..'z'
+CHARSET[0xFE] = "\n"
+-- 0xFF = EOS (handled as loop terminator, not in table)
+-- 0xFD = multi-byte variable escape (skip next byte, handled in decoder)
 
 local RING_BUF_OFF  = 0
 local RING_HEAD_OFF = 256
 local RING_TAIL_OFF = 257
-local RING_MAGIC_OFF = 258
 
 local function ring_push(base, bytes)
     for _, b in ipairs(bytes) do
@@ -85,193 +100,6 @@ local function ring_drain(base)
     return out
 end
 
-local function ring_available(base)
-    local h = emu:read8(base + RING_HEAD_OFF)
-    local t = emu:read8(base + RING_TAIL_OFF)
-    return (h - t) & 0xFF
-end
-
--- ── Save-block flag access ────────────────────────────────────────────────
-
-local FLAGS_OFFSET = 0x1270  -- flags[] within SaveBlock1
-
-local function resolve_save_block()
-    if not ADDR.gSaveBlock1Ptr then return nil end
-    local ptr = emu:read32(ADDR.gSaveBlock1Ptr)
-    if ptr == 0 then
-        -- headless boot: wire pointer to static gSaveblock1 struct
-        if ADDR.gSaveblock1 then
-            emu:write32(ADDR.gSaveBlock1Ptr, ADDR.gSaveblock1)
-            return ADDR.gSaveblock1
-        end
-        return nil
-    end
-    return ptr
-end
-
-local function check_flag(flag_id)
-    local save = resolve_save_block()
-    if not save then return nil end
-    local byte_idx = math.floor(flag_id / 8)
-    local bit_idx  = flag_id % 8
-    local byte_val = emu:read8(save + FLAGS_OFFSET + byte_idx)
-    return (byte_val & (1 << bit_idx)) ~= 0
-end
-
--- ── MultiplayerState field offsets ───────────────────────────────────────
-
-local MP = {
-    role=0, connState=1, partnerMapGroup=2, partnerMapNum=3,
-    targetX=4, targetY=5, targetFacing=6, ghostObjId=7,
-    bossReady=8, partnerBossId=9, isInScript=10, partnerIsInScript=11,
-    posFrameCounter=12,
-}
-
-local function get_mp_state()
-    if not ADDR.gMultiplayerState then return {error="no gMultiplayerState address"} end
-    local b = ADDR.gMultiplayerState
-    local s = {
-        role              = emu:read8(b + MP.role),
-        connState         = emu:read8(b + MP.connState),
-        partnerMapGroup   = emu:read8(b + MP.partnerMapGroup),
-        partnerMapNum     = emu:read8(b + MP.partnerMapNum),
-        targetX           = emu:read8(b + MP.targetX),
-        targetY           = emu:read8(b + MP.targetY),
-        targetFacing      = emu:read8(b + MP.targetFacing),
-        ghostObjId        = emu:read8(b + MP.ghostObjId),
-        isInScript        = emu:read8(b + MP.isInScript),
-        partnerIsInScript = emu:read8(b + MP.partnerIsInScript),
-    }
-    if ADDR.gMpSendRing then s.sendAvail = ring_available(ADDR.gMpSendRing) end
-    if ADDR.gMpRecvRing then s.recvAvail = ring_available(ADDR.gMpRecvRing) end
-    if ADDR.gMpSendRing then
-        s.ringsMagicOk = (emu:read8(ADDR.gMpSendRing + RING_MAGIC_OFF) == 0xC0) and
-                         (emu:read8(ADDR.gMpRecvRing + RING_MAGIC_OFF) == 0xC0)
-    end
-    return s
-end
-
--- ── Command dispatch ─────────────────────────────────────────────────────
-
-local running = true
-
-local function execute(cmd)
-    local c = cmd.cmd
-    if not c then return {ok=false, error="missing cmd field"} end
-
-    if c == "ping" then
-        return {ok=true, msg="pong"}
-
-    elseif c == "quit" then
-        running = false
-        return {ok=true}
-
-    elseif c == "run" then
-        local n = cmd.frames or 1
-        for _ = 1, n do emu:runFrame() end
-        return {ok=true, frames=n}
-
-    elseif c == "r8" then
-        if not cmd.addr then return {ok=false, error="missing addr"} end
-        return {ok=true, val=emu:read8(cmd.addr)}
-
-    elseif c == "r16" then
-        if not cmd.addr then return {ok=false, error="missing addr"} end
-        return {ok=true, val=emu:read16(cmd.addr)}
-
-    elseif c == "r32" then
-        if not cmd.addr then return {ok=false, error="missing addr"} end
-        return {ok=true, val=emu:read32(cmd.addr)}
-
-    elseif c == "w8" then
-        emu:write8(cmd.addr, cmd.val)
-        return {ok=true}
-
-    elseif c == "w16" then
-        emu:write16(cmd.addr, cmd.val)
-        return {ok=true}
-
-    elseif c == "w32" then
-        emu:write32(cmd.addr, cmd.val)
-        return {ok=true}
-
-    elseif c == "state" then
-        local s = get_mp_state()
-        s.ok = (s.error == nil)
-        return s
-
-    elseif c == "inject" then
-        -- bytes: space-separated hex, e.g. "0B" for PARTNER_CONNECTED
-        if not ADDR.gMpRecvRing then return {ok=false, error="no gMpRecvRing address"} end
-        local bytes = {}
-        for hex in (cmd.bytes or ""):gmatch("%S+") do
-            bytes[#bytes+1] = tonumber(hex, 16) or 0
-        end
-        ring_push(ADDR.gMpRecvRing, bytes)
-        return {ok=true, pushed=#bytes}
-
-    elseif c == "drain" then
-        if not ADDR.gMpSendRing then return {ok=false, error="no gMpSendRing address"} end
-        local bytes = ring_drain(ADDR.gMpSendRing)
-        local hex = {}
-        for _, b in ipairs(bytes) do hex[#hex+1] = string.format("%02X", b) end
-        return {ok=true, bytes=table.concat(hex, " "), count=#bytes}
-
-    elseif c == "flag" then
-        if cmd.id == nil then return {ok=false, error="missing id"} end
-        local result = check_flag(cmd.id)
-        if result == nil then return {ok=false, error="save block not available"} end
-        return {ok=true, val=result and 1 or 0, set=result}
-
-    elseif c == "keys" then
-        emu:setKeys(cmd.mask or 0)
-        return {ok=true, mask=cmd.mask or 0}
-
-    elseif c == "press" then
-        local mask    = cmd.mask or 0
-        local hold    = cmd.hold or 3
-        local release = cmd.release or 3
-        emu:setKeys(mask)
-        for _ = 1, hold do emu:runFrame() end
-        emu:setKeys(0)
-        for _ = 1, release do emu:runFrame() end
-        return {ok=true, held=hold, released=release}
-
-    elseif c == "loadstate" then
-        if not cmd.path then return {ok=false, error="missing path"} end
-        local f = io.open(cmd.path, "rb")
-        if not f then return {ok=false, error="cannot open: " .. cmd.path} end
-        local data = f:read("*a"); f:close()
-        local ok, err = pcall(function() emu:loadStateBuffer(data, 31) end)
-        if ok then return {ok=true, path=cmd.path}
-        else return {ok=false, error=tostring(err)} end
-
-    elseif c == "savestate" then
-        local path = cmd.path or "/tmp/mgba_savestate.ss0"
-        local buf, err = nil, nil
-        local ok = pcall(function() buf = emu:saveStateBuffer(31) end)
-        if not ok or not buf then return {ok=false, error="saveStateBuffer failed"} end
-        local f = io.open(path, "wb")
-        if not f then return {ok=false, error="cannot write: " .. path} end
-        f:write(buf); f:close()
-        return {ok=true, path=path}
-
-    elseif c == "screenshot" then
-        local path = cmd.path or "/tmp/mgba_screenshot.png"
-        local ok, err = pcall(function() emu:screenshot(path) end)
-        if ok then return {ok=true, path=path}
-        else return {ok=false, error=tostring(err)} end
-
-    elseif c == "addrs" then
-        local out = {ok=true}
-        for k, v in pairs(ADDR) do out[k] = v end
-        return out
-
-    else
-        return {ok=false, error="unknown command: " .. tostring(c)}
-    end
-end
-
 -- ── Atomic file write ─────────────────────────────────────────────────────
 
 local function atomic_write(path, data)
@@ -283,9 +111,208 @@ local function atomic_write(path, data)
     return os.rename(tmp, path)
 end
 
--- ── Main loop ─────────────────────────────────────────────────────────────
+local function write_resp(result)
+    atomic_write(RESP_FILE, json_encode(result) .. "\n")
+end
 
--- Load initial save state if requested (set via MGBA_BRIDGE_SAVESTATE env var).
+-- ── State machine for multi-frame operations ──────────────────────────────
+
+-- mode: "idle" | "waiting" | "pressing_hold" | "pressing_release"
+local mode             = "idle"
+local frames_left      = 0
+local press_rel_left   = 0  -- release frames queued after hold phase
+local press_hold_orig  = 0  -- original hold value (for response)
+local press_rel_orig   = 0  -- original release value (for response)
+local wait_frames_orig = 0  -- original frame count (for response)
+
+-- ── Frame callback ────────────────────────────────────────────────────────
+
+callbacks:add("frame", function()
+
+    -- Tick state machine.
+    if mode == "waiting" then
+        frames_left = frames_left - 1
+        if frames_left <= 0 then
+            write_resp({ok=true, frames=wait_frames_orig})
+            mode = "idle"
+        end
+        return
+    elseif mode == "pressing_hold" then
+        frames_left = frames_left - 1
+        if frames_left <= 0 then
+            emu:setKeys(0)
+            if press_rel_left <= 0 then
+                write_resp({ok=true, held=press_hold_orig, released=press_rel_orig})
+                mode = "idle"
+            else
+                mode = "pressing_release"
+                frames_left = press_rel_left
+            end
+        end
+        return
+    elseif mode == "pressing_release" then
+        frames_left = frames_left - 1
+        if frames_left <= 0 then
+            write_resp({ok=true, held=press_hold_orig, released=press_rel_orig})
+            mode = "idle"
+        end
+        return
+    end
+
+    -- Read next command (only when idle).
+    local f = io.open(CMD_FILE, "r")
+    if not f then return end
+
+    local data = f:read("*a")
+    f:close()
+    os.remove(CMD_FILE)
+
+    local ok, cmd = pcall(json_decode, data)
+    if not ok then
+        write_resp({ok=false, error="json parse error"})
+        return
+    end
+
+    local c = cmd.cmd
+
+    -- screenshot: safe here — we're inside the frame callback.
+    if c == "screenshot" then
+        local path = cmd.path or "/tmp/mgba_screenshot.png"
+        local ok2, err = pcall(function() emu:screenshot(path) end)
+        write_resp(ok2 and {ok=true, path=path} or {ok=false, error=tostring(err)})
+
+    -- wait/run: advance N frames without pressing anything.
+    elseif c == "wait" or c == "run" then
+        local n = cmd.frames or 60
+        wait_frames_orig = n
+        if n <= 1 then
+            write_resp({ok=true, frames=n})
+        else
+            frames_left = n - 1  -- current frame counts as 1
+            mode = "waiting"
+        end
+
+    -- press: hold mask for N frames, release for M frames.
+    elseif c == "press" then
+        local mask    = cmd.mask or 0
+        local hold    = cmd.hold or 8
+        local release = cmd.release or 8
+        press_hold_orig = hold
+        press_rel_orig  = release
+        emu:setKeys(mask)
+        if hold <= 1 then
+            emu:setKeys(0)
+            if release <= 1 then
+                write_resp({ok=true, held=hold, released=release})
+            else
+                mode = "pressing_release"
+                frames_left = release - 1
+                press_rel_left = 0
+            end
+        else
+            mode = "pressing_hold"
+            frames_left = hold - 1
+            press_rel_left = release
+        end
+
+    -- keys: set raw key mask for exactly one frame.
+    elseif c == "keys" then
+        emu:setKeys(cmd.mask or 0)
+        write_resp({ok=true})
+
+    -- drain: read all bytes from the send ring (internal relay use only).
+    elseif c == "drain" then
+        if not ADDR.gMpSendRing then
+            write_resp({ok=true, bytes="", count=0})
+            return
+        end
+        local bytes = ring_drain(ADDR.gMpSendRing)
+        local hex = {}
+        for _, b in ipairs(bytes) do hex[#hex+1] = string.format("%02X", b) end
+        write_resp({ok=true, bytes=table.concat(hex, " "), count=#bytes})
+
+    -- inject: push bytes into the recv ring (internal relay use only).
+    elseif c == "inject" then
+        if not ADDR.gMpRecvRing then
+            write_resp({ok=true, pushed=0})
+            return
+        end
+        local bytes = {}
+        for hex in (cmd.bytes or ""):gmatch("%S+") do
+            bytes[#bytes+1] = tonumber(hex, 16) or 0
+        end
+        ring_push(ADDR.gMpRecvRing, bytes)
+        write_resp({ok=true, pushed=#bytes})
+
+    -- get_text: read dialogue box state and best-effort text from gStringVar4.
+    -- box_open     true if text is printing OR script is paused waiting for input
+    -- printing     true only while character-by-character rendering is active
+    -- waiting      true when script paused (waitmessage / msgbox waiting for A)
+    -- text         UTF-8 decoded content of gStringVar4 (ShowFieldMessage target)
+    elseif c == "get_text" then
+        -- sFirstTextPrinter: non-NULL while a TextPrinter node is in the linked list
+        local printing = false
+        if ADDR.sFirstTextPrinter then
+            printing = (emu:read32(ADDR.sFirstTextPrinter) ~= 0)
+        end
+        -- sGlobalScriptContextStatus: 0=RUNNING 1=WAITING 2=SHUTDOWN
+        -- sGlobalScriptContext.mode (+4 from status): 0=STOPPED 1=BYTECODE 2=NATIVE
+        --   NATIVE means script is blocked in a C wait function (waitmessage, waitmovement…)
+        local waiting = false
+        local in_native = false
+        if ADDR.sGlobalScriptContextStatus then
+            waiting   = (emu:read8(ADDR.sGlobalScriptContextStatus)     == 1)
+            in_native = (emu:read8(ADDR.sGlobalScriptContextStatus + 4) == 2)
+        end
+        -- Decode gStringVar4 (all field messages are expanded here by ShowFieldMessage)
+        local text = ""
+        if ADDR.gStringVar4 then
+            local chars = {}
+            local i = 0
+            while i < 256 do
+                local b = emu:read8(ADDR.gStringVar4 + i)
+                if b == 0xFF then break end          -- EOS
+                if b == 0xFD then
+                    i = i + 2                        -- skip variable escape + tag byte
+                else
+                    chars[#chars+1] = CHARSET[b] or "?"
+                    i = i + 1
+                end
+            end
+            text = table.concat(chars)
+        end
+        write_resp({ok=true, box_open=(printing or waiting or in_native),
+                    printing=printing, waiting_for_input=waiting, in_native_script=in_native,
+                    text=text})
+
+    -- loadstate: load a save state file by path.
+    elseif c == "loadstate" then
+        local path = cmd.path or ""
+        local f = io.open(path, "rb")
+        if not f then
+            write_resp({ok=false, error="cannot open: " .. path})
+        else
+            local data = f:read("*a"); f:close()
+            local ok2, err = pcall(function() emu:loadStateBuffer(data, 31) end)
+            write_resp(ok2 and {ok=true, path=path} or {ok=false, error=tostring(err)})
+        end
+
+    -- ping: health check.
+    elseif c == "ping" then
+        write_resp({ok=true, msg="pong"})
+
+    -- quit: exit cleanly.
+    elseif c == "quit" then
+        write_resp({ok=true})
+        os.exit(0)
+
+    else
+        write_resp({ok=false, error="unknown command: " .. tostring(c)})
+    end
+end)
+
+-- ── Startup ───────────────────────────────────────────────────────────────
+
 local INIT_SAVESTATE = os.getenv("MGBA_BRIDGE_SAVESTATE")
 if INIT_SAVESTATE and INIT_SAVESTATE ~= "" then
     local f = io.open(INIT_SAVESTATE, "rb")
@@ -295,25 +322,5 @@ if INIT_SAVESTATE and INIT_SAVESTATE ~= "" then
     end
 end
 
--- Signal readiness to the MCP server.
+-- Signal readiness — emulator runs automatically after this.
 atomic_write(READY_FILE, "ready\n")
-
-while running do
-    emu:runFrame()
-
-    local f = io.open(CMD_FILE, "r")
-    if f then
-        local data = f:read("*a")
-        f:close()
-        os.remove(CMD_FILE)
-
-        local ok, result = pcall(function()
-            return execute(json_decode(data))
-        end)
-        if not ok then result = {ok=false, error=tostring(result)} end
-
-        atomic_write(RESP_FILE, json_encode(result) .. "\n")
-    end
-end
-
-if emu and emu.quit then emu:quit() end

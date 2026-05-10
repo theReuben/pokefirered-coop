@@ -1,61 +1,82 @@
 #!/usr/bin/env python3
 """
 tools/mcp_gamestate/server.py
-MCP server exposing GBA emulator control tools to Claude Code.
 
-Manages one or two mgba-headless instances via file-based IPC through
-bridge.lua.  Supports two-instance coop testing by bridging send→recv
-rings between player instances.
+MCP server that simulates a human player controlling one or two GBA
+emulator instances running pokefirered.gba.
+
+Exposed tools (player-level only — nothing a human couldn't do):
+  start_emulator   — boot a game instance
+  stop_emulator    — quit a game instance
+  list_instances   — see what's running
+  screenshot       — look at the screen (returns image)
+  press_button     — press a GBA button
+  wait             — do nothing for N frames
+
+When both p1 and p2 are running, a background thread automatically
+relays multiplayer packets between them so coop networking works
+without any manual intervention.
 
 Add to Claude Code:
-  claude mcp add --scope project gamestate \
+  claude mcp add --scope project gamestate \\
     -- python3 tools/mcp_gamestate/server.py
-
-Or in .mcp.json:
-  {"mcpServers": {"gamestate": {"command": "python3",
-    "args": ["tools/mcp_gamestate/server.py"]}}}
 """
 
+import base64
 import json
 import os
-import re
-import signal
 import subprocess
-import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 
 # ── Paths ─────────────────────────────────────────────────────────────────
 
-REPO_ROOT   = Path(__file__).parent.parent.parent
-BRIDGE_LUA  = Path(__file__).parent / "bridge.lua"
-MEMORY_MAP  = REPO_ROOT / "test" / "lua" / "memory_map.lua"
+REPO_ROOT  = Path(__file__).parent.parent.parent
+BRIDGE_LUA = Path(__file__).parent / "bridge.lua"
+MEMORY_MAP = REPO_ROOT / "test" / "lua" / "memory_map.lua"
 DEFAULT_ROM = REPO_ROOT / "pokefirered.gba"
-MGBA_BIN    = Path(os.environ.get("MGBA", "/tmp/mgba-build/mgba-headless"))
+MGBA_BIN   = Path(os.environ.get("MGBA", "/tmp/mgba-build/mgba-headless"))
 
-CMD_TIMEOUT   = 30    # seconds to wait for any single command response
-READY_TIMEOUT = 15    # seconds to wait for emulator to signal ready
+CMD_TIMEOUT   = 30   # seconds to wait for any single command response
+READY_TIMEOUT = 15   # seconds to wait for emulator to signal ready
+RELAY_INTERVAL = 0.05  # seconds between relay polls (~3 frames at 60fps)
 
-# ── Per-instance state ────────────────────────────────────────────────────
+# GBA button name → key mask
+KEY_MASKS = {
+    "A":      0x001,
+    "B":      0x002,
+    "SELECT": 0x004,
+    "START":  0x008,
+    "RIGHT":  0x010,
+    "LEFT":   0x020,
+    "UP":     0x040,
+    "DOWN":   0x080,
+    "R":      0x100,
+    "L":      0x200,
+}
+
+# ── Instance management ───────────────────────────────────────────────────
 
 class Instance:
     def __init__(self, iid: str, work_dir: str):
-        self.iid      = iid
-        self.work_dir = work_dir
+        self.iid       = iid
+        self.work_dir  = work_dir
         self.cmd_file  = os.path.join(work_dir, f"cmd_{iid}.json")
         self.resp_file = os.path.join(work_dir, f"resp_{iid}.json")
         self.ready_file = os.path.join(work_dir, f"ready_{iid}")
         self.process: Optional[subprocess.Popen] = None
         self.addrs: dict[str, int] = {}
+        self._lock = threading.Lock()  # one command at a time
 
     def alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
 
-    def send(self, cmd: dict) -> dict:
+    def send(self, cmd: dict, timeout: float = CMD_TIMEOUT) -> dict:
         if not self.alive():
             raise RuntimeError(f"Instance '{self.iid}' is not running")
 
@@ -64,27 +85,45 @@ class Instance:
             json.dump(cmd, f)
         os.replace(tmp, self.cmd_file)
 
-        deadline = time.monotonic() + CMD_TIMEOUT
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if os.path.exists(self.resp_file):
-                with open(self.resp_file) as f:
-                    raw = f.read().strip()
                 try:
+                    with open(self.resp_file) as f:
+                        raw = f.read().strip()
                     os.remove(self.resp_file)
-                except FileNotFoundError:
+                    return json.loads(raw)
+                except (FileNotFoundError, json.JSONDecodeError):
                     pass
-                return json.loads(raw)
-            time.sleep(0.01)
+            if not self.alive():
+                raise RuntimeError(f"Instance '{self.iid}' died while waiting for response")
+            time.sleep(0.005)
 
         raise TimeoutError(
-            f"No response from '{self.iid}' after {CMD_TIMEOUT}s "
-            f"(cmd={cmd.get('cmd')})"
+            f"No response from '{self.iid}' after {timeout}s (cmd={cmd.get('cmd')})"
         )
 
-# ── Global instance registry ──────────────────────────────────────────────
+    def send_locked(self, cmd: dict, timeout: float = CMD_TIMEOUT) -> dict:
+        """Thread-safe send — acquires the instance lock."""
+        with self._lock:
+            return self.send(cmd, timeout)
 
-_work_dir: Optional[tempfile.TemporaryDirectory] = None
+    def try_send_locked(self, cmd: dict, lock_timeout: float = 0.02,
+                        cmd_timeout: float = 2.0) -> Optional[dict]:
+        """Non-blocking attempt — returns None if lock is busy."""
+        if self._lock.acquire(timeout=lock_timeout):
+            try:
+                return self.send(cmd, cmd_timeout)
+            except Exception:
+                return None
+            finally:
+                self._lock.release()
+        return None
+
+
 _instances: dict[str, Instance] = {}
+_work_dir: Optional[tempfile.TemporaryDirectory] = None
+
 
 def _get_work_dir() -> str:
     global _work_dir
@@ -92,52 +131,88 @@ def _get_work_dir() -> str:
         _work_dir = tempfile.TemporaryDirectory(prefix="mgba_mcp_")
     return _work_dir.name
 
+
 def _inst(iid: str) -> Instance:
-    if iid not in _instances:
-        raise ValueError(f"No instance '{iid}'. Call start_emulator first.")
+    if iid not in _instances or not _instances[iid].alive():
+        raise ValueError(f"No running instance '{iid}'. Call start_emulator first.")
     return _instances[iid]
 
-# ── Parse memory_map.lua ──────────────────────────────────────────────────
 
-def _parse_memory_map(lua_path: Path) -> dict[str, int]:
+def _parse_memory_map(path: Path) -> dict[str, int]:
+    """Parse test/lua/memory_map.lua for symbol addresses."""
     addrs: dict[str, int] = {}
-    if not lua_path.exists():
+    if not path.exists():
         return addrs
-    pattern = re.compile(r'M\.(\w+)\s*=\s*(0x[0-9A-Fa-f]+)')
-    for line in lua_path.read_text().splitlines():
-        m = pattern.search(line)
-        if m:
-            addrs[m.group(1)] = int(m.group(2), 16)
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("M.") and "=" in line:
+            try:
+                name = line.split("M.")[1].split("=")[0].strip()
+                val  = line.split("=")[1].split("--")[0].strip()
+                addrs[name] = int(val, 16) if val.startswith("0x") else int(val)
+            except (ValueError, IndexError):
+                pass
     return addrs
+
+# ── Background relay thread ───────────────────────────────────────────────
+
+def _relay_loop() -> None:
+    """Continuously relay multiplayer packets between p1 and p2."""
+    while True:
+        time.sleep(RELAY_INTERVAL)
+        try:
+            p1 = _instances.get("p1")
+            p2 = _instances.get("p2")
+            if not (p1 and p1.alive() and p2 and p2.alive()):
+                continue
+
+            # p1 → p2
+            r = p1.try_send_locked({"cmd": "drain"})
+            if r and r.get("ok") and r.get("count", 0) > 0:
+                p2.try_send_locked({"cmd": "inject", "bytes": r["bytes"]})
+
+            # p2 → p1
+            r = p2.try_send_locked({"cmd": "drain"})
+            if r and r.get("ok") and r.get("count", 0) > 0:
+                p1.try_send_locked({"cmd": "inject", "bytes": r["bytes"]})
+        except Exception:
+            pass
+
+
+_relay_thread = threading.Thread(target=_relay_loop, daemon=True)
+_relay_thread.start()
 
 # ── MCP server ────────────────────────────────────────────────────────────
 
 mcp = FastMCP(
-    "mgba-gamestate",
+    "pokemon-player",
     instructions=(
-        "Control one or two GBA emulator instances running pokefirered.gba. "
-        "Use start_emulator to boot, then game_state/read_memory/inject_packet "
-        "to inspect and drive the ROM. For two-player tests use instance_id='p1' "
-        "and instance_id='p2' and call bridge_rings to relay packets between them."
+        "Control one or two GBA Pokémon FireRed instances as a human player. "
+        "Use start_emulator to boot, screenshot to see the screen, "
+        "press_button to press GBA buttons, and wait to let time pass. "
+        "For two-player testing use instance_id='p1' and 'p2' — "
+        "multiplayer packets are relayed automatically between them."
     ),
 )
 
 # ── Tool: start_emulator ──────────────────────────────────────────────────
 
 @mcp.tool()
-def start_emulator(
-    instance_id: str = "p1",
-    rom: str = "",
-    savestate: str = "",
-) -> str:
-    """Boot a GBA emulator instance.
+def start_emulator(instance_id: str = "p1", rom: str = "", savestate: str = "") -> str:
+    """Boot a GBA emulator instance running Pokémon FireRed.
+
+    Typical state paths (relative to repo root):
+      test/lua/states/oaks_lab.ss1
+      test/lua/states/tall_grass_route1.ss1
+      test/lua/states/pewter_gym.ss1
+
+    The emulator continues running from the loaded state immediately.
+    After loading, call game_state() to confirm the ROM state.
 
     Args:
-        instance_id: Label for this instance ('p1' or 'p2' for coop tests).
+        instance_id: 'p1' or 'p2' for two-player testing.
         rom: Path to .gba file. Defaults to pokefirered.gba in repo root.
-        savestate: Optional path to a .ss0 save state to load on boot.
-
-    Returns a status message and the addresses loaded from memory_map.lua.
+        savestate: Optional path to a .ss1 save state to load on boot.
     """
     if instance_id in _instances and _instances[instance_id].alive():
         return f"Instance '{instance_id}' is already running."
@@ -148,14 +223,20 @@ def start_emulator(
     if not MGBA_BIN.exists():
         return (
             f"mgba-headless not found at {MGBA_BIN}. "
-            "Build it with: cmake --fresh -B /tmp/mgba-build "
+            "Build with: cmake --fresh -B /tmp/mgba-build "
             "-DBUILD_HEADLESS=ON -DUSE_LUA=ON /tmp/mgba-src && "
             "cmake --build /tmp/mgba-build -j$(sysctl -n hw.ncpu)"
         )
 
-    work = _get_work_dir()
-    inst = Instance(instance_id, work)
+    # Resolve savestate path relative to repo root if not absolute
+    savestate_path = ""
+    if savestate:
+        p = Path(savestate)
+        if not p.is_absolute():
+            p = REPO_ROOT / p
+        savestate_path = str(p)
 
+    inst = Instance(instance_id, _get_work_dir())
     addrs = _parse_memory_map(MEMORY_MAP)
     inst.addrs = addrs
 
@@ -163,256 +244,206 @@ def start_emulator(
     env["MGBA_BRIDGE_CMD"]   = inst.cmd_file
     env["MGBA_BRIDGE_RESP"]  = inst.resp_file
     env["MGBA_BRIDGE_READY"] = inst.ready_file
+    if savestate_path:
+        env["MGBA_BRIDGE_SAVESTATE"] = savestate_path
     for name, addr in addrs.items():
         env[f"ADDR_{name.upper()}"] = str(addr)
-    if savestate:
-        env["MGBA_BRIDGE_SAVESTATE"] = savestate
-
-    cmd = [str(MGBA_BIN), "--script", str(BRIDGE_LUA), str(rom_path)]
 
     inst.process = subprocess.Popen(
-        cmd, env=env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        [str(MGBA_BIN), "--script", str(BRIDGE_LUA), str(rom_path)],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     _instances[instance_id] = inst
 
-    # Wait for ready signal
     deadline = time.monotonic() + READY_TIMEOUT
     while time.monotonic() < deadline:
         if os.path.exists(inst.ready_file):
             break
         if inst.process.poll() is not None:
-            return f"Emulator '{instance_id}' exited immediately (check ROM path)."
+            return f"Emulator '{instance_id}' exited immediately — check ROM path."
         time.sleep(0.1)
     else:
         inst.process.kill()
         return f"Emulator '{instance_id}' did not signal ready within {READY_TIMEOUT}s."
 
-    addr_summary = ", ".join(f"{k}=0x{v:08X}" for k, v in sorted(addrs.items()))
+    addrs_str = ", ".join(f"{k}={hex(v)}" for k, v in addrs.items())
     return (
         f"Instance '{instance_id}' running (pid {inst.process.pid}).\n"
         f"ROM: {rom_path}\n"
-        f"Addresses: {addr_summary or '(none — run make firered first)'}"
+        f"Addresses: {addrs_str}"
     )
 
 # ── Tool: stop_emulator ───────────────────────────────────────────────────
 
 @mcp.tool()
 def stop_emulator(instance_id: str = "p1") -> str:
-    """Stop a running emulator instance."""
-    if instance_id not in _instances:
-        return f"No instance '{instance_id}'."
-    inst = _instances.pop(instance_id)
-    if inst.alive():
-        try:
-            inst.send({"cmd": "quit"})
-            inst.process.wait(timeout=3)
-        except Exception:
-            inst.process.kill()
-    return f"Instance '{instance_id}' stopped."
-
-# ── Tool: run_frames ──────────────────────────────────────────────────────
-
-@mcp.tool()
-def run_frames(count: int = 60, instance_id: str = "p1") -> str:
-    """Advance the emulator by N frames (60 fps → 60 frames = 1 second).
-
-    Use small counts (2–10) when checking immediate packet dispatch.
-    Use 300+ to let the game reach a stable state after boot.
-    """
-    r = _inst(instance_id).send({"cmd": "run", "frames": count})
-    if r.get("ok"):
-        return f"Advanced {r['frames']} frames."
-    return f"Error: {r.get('error')}"
-
-# ── Tool: game_state ──────────────────────────────────────────────────────
-
-@mcp.tool()
-def game_state(instance_id: str = "p1") -> str:
-    """Read structured multiplayer state from the running ROM.
-
-    Returns connState, partner position, ghost NPC slot, ring occupancy,
-    and whether ring magic bytes are set (confirming Multiplayer_Init ran).
-    """
-    r = _inst(instance_id).send({"cmd": "state"})
-    if "error" in r and not r.get("ok", True):
-        return f"Error: {r['error']}"
-
-    conn_states = {0: "DISCONNECTED", 1: "CONNECTING", 2: "CONNECTED"}
-    lines = [
-        f"connState:         {conn_states.get(r.get('connState', -1), '?')} ({r.get('connState')})",
-        f"role:              {r.get('role')}",
-        f"partner map:       group={r.get('partnerMapGroup')} num={r.get('partnerMapNum')}",
-        f"partner pos:       x={r.get('targetX')} y={r.get('targetY')} facing={r.get('targetFacing')}",
-        f"ghost obj slot:    {r.get('ghostObjId')} (0xFF = none)",
-        f"isInScript:        {r.get('isInScript')}",
-        f"partnerIsInScript: {r.get('partnerIsInScript')}",
-        f"send ring avail:   {r.get('sendAvail', '?')} bytes",
-        f"recv ring avail:   {r.get('recvAvail', '?')} bytes",
-        f"rings magic ok:    {r.get('ringsMagicOk', '?')} (False = Multiplayer_Init not yet run)",
-    ]
-    return "\n".join(lines)
-
-# ── Tool: read_memory ─────────────────────────────────────────────────────
-
-@mcp.tool()
-def read_memory(address: int, width: int = 32, instance_id: str = "p1") -> str:
-    """Read a value from GBA memory.
+    """Stop a running emulator instance.
 
     Args:
-        address: GBA bus address (e.g. 0x0300157C).
-        width: 8, 16, or 32 bits.
-        instance_id: Which emulator instance.
+        instance_id: Which instance to stop ('p1' or 'p2').
     """
-    cmd_map = {8: "r8", 16: "r16", 32: "r32"}
-    cmd = cmd_map.get(width)
-    if not cmd:
-        return f"Invalid width {width}. Use 8, 16, or 32."
-    r = _inst(instance_id).send({"cmd": cmd, "addr": address})
-    if r.get("ok"):
-        val = r["val"]
-        return f"0x{address:08X} = {val} (0x{val & 0xFFFFFFFF:08X})"
-    return f"Error: {r.get('error')}"
+    inst = _instances.get(instance_id)
+    if not inst or not inst.alive():
+        return f"Instance '{instance_id}' is not running."
+    try:
+        inst.send_locked({"cmd": "quit"}, timeout=3)
+    except Exception:
+        pass
+    inst.process.terminate()
+    try:
+        inst.process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        inst.process.kill()
+    return f"Instance '{instance_id}' stopped."
 
-# ── Tool: write_memory ────────────────────────────────────────────────────
+# ── Tool: list_instances ──────────────────────────────────────────────────
 
 @mcp.tool()
-def write_memory(
-    address: int, value: int, width: int = 32, instance_id: str = "p1"
-) -> str:
-    """Write a value to GBA memory.
+def list_instances() -> str:
+    """List all emulator instances and whether they are running."""
+    if not _instances:
+        return "No instances started. Call start_emulator to boot one."
+    lines = []
+    for iid, inst in _instances.items():
+        status = "RUNNING" if inst.alive() else "DEAD"
+        lines.append(f"  {iid}: {status}")
+    return "Running instances:\n" + "\n".join(lines)
 
-    Useful for setting up test preconditions (e.g. wiring gSaveBlock1Ptr).
-    """
-    cmd_map = {8: "w8", 16: "w16", 32: "w32"}
-    cmd = cmd_map.get(width)
-    if not cmd:
-        return f"Invalid width {width}. Use 8, 16, or 32."
-    r = _inst(instance_id).send({"cmd": cmd, "addr": address, "val": value})
-    if r.get("ok"):
-        return f"Wrote {value} (0x{value & 0xFFFFFFFF:08X}) to 0x{address:08X}."
-    return f"Error: {r.get('error')}"
-
-# ── Tool: inject_packet ───────────────────────────────────────────────────
+# ── Tool: screenshot ──────────────────────────────────────────────────────
 
 @mcp.tool()
-def inject_packet(hex_bytes: str, instance_id: str = "p1") -> str:
-    """Push raw bytes into the ROM's gMpRecvRing receive buffer.
+def screenshot(instance_id: str = "p1") -> Image:
+    """Take a screenshot of the current game screen.
 
-    hex_bytes: space-separated hex bytes, e.g.:
-      "0B"              → MP_PKT_PARTNER_CONNECTED
-      "01 03 07 0A 0F 02" → MP_PKT_POSITION mapGroup=3 mapNum=7 x=10 y=15 facing=2
-      "02 04 B0"        → MP_PKT_FLAG_SET flagId=0x4B0 (FLAG_DEFEATED_BROCK)
+    Returns the screen image so you can see what the game is showing.
+    The GBA screen is 240×160 pixels.
 
-    After injecting, call run_frames(2) to let Multiplayer_PollPackets process them.
+    Args:
+        instance_id: Which player's screen to capture ('p1' or 'p2').
     """
-    r = _inst(instance_id).send({"cmd": "inject", "bytes": hex_bytes})
-    if r.get("ok"):
-        return f"Pushed {r['pushed']} byte(s) into recv ring of '{instance_id}'."
-    return f"Error: {r.get('error')}"
+    path = f"/tmp/mgba_screen_{instance_id}.png"
+    r = _inst(instance_id).send_locked({"cmd": "screenshot", "path": path})
+    if not r.get("ok"):
+        raise RuntimeError(f"Screenshot failed: {r.get('error', 'unknown')}")
+    return Image(data=open(path, "rb").read(), format="png")
 
-# ── Tool: drain_send_ring ─────────────────────────────────────────────────
-
-@mcp.tool()
-def drain_send_ring(instance_id: str = "p1") -> str:
-    """Read and consume all bytes from the ROM's gMpSendRing output buffer.
-
-    Returns the bytes as hex so you can decode what the ROM is broadcasting
-    (position updates, flag sets, etc.).  For two-player testing, pipe the
-    output of one instance into inject_packet of the other via bridge_rings.
-    """
-    r = _inst(instance_id).send({"cmd": "drain"})
-    if r.get("ok"):
-        count = r["count"]
-        if count == 0:
-            return f"Send ring of '{instance_id}' is empty."
-        return f"Drained {count} byte(s) from '{instance_id}': {r['bytes']}"
-    return f"Error: {r.get('error')}"
-
-# ── Tool: bridge_rings ────────────────────────────────────────────────────
-
-@mcp.tool()
-def bridge_rings(from_id: str = "p1", to_id: str = "p2") -> str:
-    """Relay packets between two emulator instances (one direction).
-
-    Drains from_id's send ring and injects the bytes into to_id's recv ring.
-    Call this for both directions to simulate the relay server:
-      bridge_rings("p1", "p2")
-      bridge_rings("p2", "p1")
-    Then run_frames on both instances to let them process the packets.
-    """
-    drain = _inst(from_id).send({"cmd": "drain"})
-    if not drain.get("ok"):
-        return f"Drain failed on '{from_id}': {drain.get('error')}"
-    if drain["count"] == 0:
-        return f"Nothing to relay: '{from_id}' send ring is empty."
-
-    inject = _inst(to_id).send({"cmd": "inject", "bytes": drain["bytes"]})
-    if not inject.get("ok"):
-        return f"Inject failed on '{to_id}': {inject.get('error')}"
-
-    return (
-        f"Relayed {drain['count']} byte(s): '{from_id}' → '{to_id}'\n"
-        f"Bytes: {drain['bytes']}"
-    )
-
-# ── Tool: press_button ───────────────────────────────────────────────────
-
-# GBA button masks (active-high in mGBA setKeys)
-BUTTON_MASKS = {
-    "A": 0x001, "B": 0x002, "SELECT": 0x004, "START": 0x008,
-    "RIGHT": 0x010, "LEFT": 0x020, "UP": 0x040, "DOWN": 0x080,
-    "R": 0x100, "L": 0x200,
-}
+# ── Tool: press_button ────────────────────────────────────────────────────
 
 @mcp.tool()
 def press_button(
     button: str,
-    hold_frames: int = 3,
-    release_frames: int = 3,
     instance_id: str = "p1",
+    hold_frames: int = 8,
+    release_frames: int = 8,
 ) -> str:
-    """Press a GBA button for hold_frames then release for release_frames.
+    """Press a GBA button.
 
-    button: A, B, START, SELECT, UP, DOWN, LEFT, RIGHT, L, R
-    Advances the emulator by (hold_frames + release_frames) total.
+    Buttons: A, B, START, SELECT, UP, DOWN, LEFT, RIGHT, L, R
 
-    Use spamA via inject_keys for fast dialogue advancement.
-    Use hold_frames=16 for a full tile walk step.
+    Tips:
+    - Menu navigation / dialogue: A or B, defaults are fine (8 frames each)
+    - Walking one tile: UP/DOWN/LEFT/RIGHT with hold_frames=16
+    - Mashing through text: call press_button A repeatedly
+
+    Args:
+        button: Button name (case-insensitive).
+        instance_id: Which player to control ('p1' or 'p2').
+        hold_frames: How long to hold the button (60 frames = 1 second).
+        release_frames: Gap after release before next input is accepted.
     """
-    name = button.upper()
-    mask = BUTTON_MASKS.get(name)
+    key = button.upper().strip()
+    mask = KEY_MASKS.get(key)
     if mask is None:
-        valid = ", ".join(sorted(BUTTON_MASKS))
-        return f"Unknown button '{button}'. Valid: {valid}"
-    r = _inst(instance_id).send({
-        "cmd": "press", "mask": mask,
-        "hold": hold_frames, "release": release_frames,
+        return f"Unknown button '{button}'. Valid: {', '.join(KEY_MASKS)}"
+
+    r = _inst(instance_id).send_locked({
+        "cmd": "press",
+        "mask": mask,
+        "hold": hold_frames,
+        "release": release_frames,
     })
-    if r.get("ok"):
-        return (
-            f"Pressed {name} for {r['held']} frames, "
-            f"released for {r['released']} frames on '{instance_id}'."
-        )
-    return f"Error: {r.get('error')}"
+    if not r.get("ok"):
+        return f"Button press failed: {r.get('error', 'unknown')}"
+    return f"{instance_id}: pressed {key} (held {hold_frames}f, released {release_frames}f)"
+
+# ── Tool: wait ────────────────────────────────────────────────────────────
 
 @mcp.tool()
-def set_keys(mask: int, instance_id: str = "p1") -> str:
-    """Set the raw key mask (held buttons bitmask) without advancing frames.
+def wait(frames: int = 60, instance_id: str = "p1") -> str:
+    """Advance the game by N frames without pressing any buttons.
 
-    Useful for holding a direction while calling run_frames repeatedly.
-    Call set_keys(0) to release all buttons.
-    Mask bits: A=0x001 B=0x002 SELECT=0x004 START=0x008
-               RIGHT=0x010 LEFT=0x020 UP=0x040 DOWN=0x080 R=0x100 L=0x200
+    Use this to:
+    - Let animations play out
+    - Wait for dialogue / cutscenes to progress automatically
+    - Give the game time to reach a stable state after boot
+
+    60 frames = 1 second of game time.
+
+    Args:
+        frames: Number of frames to wait (default 60 = 1 second).
+        instance_id: Which instance to advance ('p1' or 'p2').
     """
-    r = _inst(instance_id).send({"cmd": "keys", "mask": mask})
-    if r.get("ok"):
-        return f"Keys set to 0x{r['mask']:03X} on '{instance_id}'."
-    return f"Error: {r.get('error')}"
+    r = _inst(instance_id).send_locked({"cmd": "wait", "frames": frames})
+    if not r.get("ok"):
+        return f"Wait failed: {r.get('error', 'unknown')}"
+    return f"{instance_id}: waited {frames} frames ({frames/60:.1f}s)"
+
+# ── Tool: get_text_state ─────────────────────────────────────────────────
+
+@mcp.tool()
+def get_text_state(instance_id: str = "p1") -> str:
+    """Read the current dialogue / text-box state from game memory.
+
+    Returns whether a box is open, whether it is waiting for A, and the
+    decoded text content (best-effort from gStringVar4 — all overworld
+    messages from ShowFieldMessage are expanded there).
+
+    Use this to drive dialogue advancement reliably instead of guessing
+    how many A presses are needed:
+
+        while get_text_state(instance_id)["box_open"]:
+            press_button("A", instance_id=instance_id, hold_frames=12, release_frames=120)
+
+    Fields in the return dict (also stringified for display):
+        box_open          – True if text is printing, script is waiting, or in a native wait
+        printing          – True while character-by-character rendering is active
+        waiting_for_input – True when sGlobalScriptContextStatus == CONTEXT_WAITING
+        in_native_script  – True when script is blocked in a C native function (waitmessage etc.)
+        text              – Decoded ASCII content of gStringVar4
+
+    Args:
+        instance_id: Which instance to query ('p1' or 'p2').
+    """
+    r = _inst(instance_id).send_locked({"cmd": "get_text"})
+    if not r.get("ok"):
+        return f"get_text failed: {r.get('error', 'unknown')}"
+
+    box_open = r.get("box_open", False)
+    printing = r.get("printing", False)
+    waiting  = r.get("waiting_for_input", False)
+    text     = r.get("text", "").strip()
+
+    if printing:
+        status = "printing"
+    elif waiting:
+        status = "waiting for input"
+    else:
+        status = "no box"
+
+    out = f"box_open={box_open}, status={status}"
+    if text:
+        preview = text.replace("\n", " / ")[:80]
+        out += f', text="{preview}"'
+    return out
+
+
+# ── Tool: load_savestate ──────────────────────────────────────────────────
 
 @mcp.tool()
 def load_savestate(path: str, instance_id: str = "p1") -> str:
-    """Load a save state file into the emulator.
+    """Load a save state file into the running emulator.
 
     Typical state paths (relative to repo root):
       test/lua/states/oaks_lab.ss1
@@ -420,94 +451,40 @@ def load_savestate(path: str, instance_id: str = "p1") -> str:
       test/lua/states/pewter_gym.ss1
 
     The emulator continues running from the loaded state immediately.
-    After loading, call game_state() to confirm the ROM state.
+    After loading, wait ~300 frames before sending inputs (input cooldown).
+
+    Args:
+        path: Path to .ss1 file (relative to repo root or absolute).
+        instance_id: Which instance to load into ('p1' or 'p2').
     """
-    abs_path = path if os.path.isabs(path) else str(REPO_ROOT / path)
-    if not os.path.exists(abs_path):
-        return f"State file not found: {abs_path}"
-    r = _inst(instance_id).send({"cmd": "loadstate", "path": abs_path})
-    if r.get("ok"):
-        return f"Loaded state '{abs_path}' into '{instance_id}'."
-    return f"Error: {r.get('error')}"
+    p = Path(path)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    if not p.exists():
+        return f"Save state not found: {p}"
+    r = _inst(instance_id).send_locked({"cmd": "loadstate", "path": str(p)})
+    if not r.get("ok"):
+        return f"loadstate failed: {r.get('error', 'unknown')}"
+    return f"Loaded '{p}' into '{instance_id}'. Wait ~300 frames before sending inputs."
 
-@mcp.tool()
-def save_savestate(path: str, instance_id: str = "p1") -> str:
-    """Save the current emulator state to a file.
 
-    Use absolute paths or repo-root-relative paths.
-    Useful for creating checkpoints mid-playthrough.
-    """
-    abs_path = path if os.path.isabs(path) else str(REPO_ROOT / path)
-    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-    r = _inst(instance_id).send({"cmd": "savestate", "path": abs_path})
-    if r.get("ok"):
-        return f"Saved state to '{abs_path}'."
-    return f"Error: {r.get('error')}"
+# ── Cleanup ───────────────────────────────────────────────────────────────
 
-# ── Tool: check_flag ─────────────────────────────────────────────────────
+import atexit
 
-@mcp.tool()
-def check_flag(flag_id: int, instance_id: str = "p1") -> str:
-    """Check whether a save-data flag is set in the running ROM.
-
-    Common flags:
-      0x4B0 (1200) = FLAG_DEFEATED_BROCK
-      0x500 (1280) = FLAG_DEFEATED_MISTY
-      Use include/constants/flags.h for the full list.
-    """
-    r = _inst(instance_id).send({"cmd": "flag", "id": flag_id})
-    if r.get("ok"):
-        state = "SET" if r["val"] else "CLEAR"
-        return f"Flag 0x{flag_id:03X} ({flag_id}) is {state} in '{instance_id}'."
-    return f"Error: {r.get('error')}"
-
-# ── Tool: screenshot ──────────────────────────────────────────────────────
-
-@mcp.tool()
-def screenshot(
-    path: str = "/tmp/mgba_screenshot.png",
-    instance_id: str = "p1",
-) -> str:
-    """Take a screenshot of the current emulator frame.
-
-    Saves to the given path and returns it so you can view it.
-    Note: emu:screenshot() support depends on the mGBA build.
-    """
-    r = _inst(instance_id).send({"cmd": "screenshot", "path": path})
-    if r.get("ok"):
-        return r["path"]   # FastMCP will render this as an image if it's a path
-    return f"Screenshot failed: {r.get('error')}"
-
-# ── Tool: list_instances ──────────────────────────────────────────────────
-
-@mcp.tool()
-def list_instances() -> str:
-    """List all running emulator instances and their PIDs."""
-    if not _instances:
-        return "No instances running. Call start_emulator to boot one."
-    lines = []
-    for iid, inst in _instances.items():
-        status = f"pid={inst.process.pid}" if inst.alive() else "DEAD"
-        lines.append(f"  {iid}: {status}")
-    return "Running instances:\n" + "\n".join(lines)
-
-# ── Cleanup on exit ────────────────────────────────────────────────────────
-
-def _cleanup(sig=None, frame=None):
-    for inst in list(_instances.values()):
-        try:
-            if inst.alive():
+@atexit.register
+def _cleanup():
+    for inst in _instances.values():
+        if inst.alive():
+            try:
+                inst.process.terminate()
+                inst.process.wait(timeout=2)
+            except Exception:
                 inst.process.kill()
-        except Exception:
-            pass
     if _work_dir:
         _work_dir.cleanup()
-    sys.exit(0)
 
-signal.signal(signal.SIGTERM, _cleanup)
-signal.signal(signal.SIGINT,  _cleanup)
-
-# ── Entry point ────────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     mcp.run()

@@ -11,4 +11,12 @@ M.gMultiplayerState = 0x0300157C
 M.gSaveBlock1Ptr = 0x03005300
 M.gSaveblock1 = 0x0200FF94
 
+-- Text state symbols (manually added for get_text_state tool).
+-- sFirstTextPrinter and sGlobalScriptContextStatus are static (lowercase nm),
+-- but addresses are stable for a given build.
+M.gStringVar4 = 0x02036c58             -- 256-byte field message buffer (ShowFieldMessage expands here)
+M.sFirstTextPrinter = 0x02037340       -- ptr to head of TextPrinter linked list; non-NULL while printing
+M.gDisableTextPrinters = 0x02037348    -- bool8; 1 = all printing suppressed
+M.sGlobalScriptContextStatus = 0x03001801  -- 0=RUNNING, 1=WAITING (waitmessage etc.), 2=SHUTDOWN
+
 return M
