@@ -50,6 +50,7 @@ local ADDR = {}
 local ADDR_NAMES = {
     "gMpSendRing", "gMpRecvRing",
     "gMultiplayerState", "gCoopSettings", "gSaveBlock1Ptr", "gSaveblock1", "gMpAddrTable",
+    "gMpBlockExchange",
     "gStringVar4", "sFirstTextPrinter", "gDisableTextPrinters", "sGlobalScriptContextStatus",
 }
 for _, name in ipairs(ADDR_NAMES) do
@@ -219,6 +220,43 @@ callbacks:add("frame", function()
     elseif c == "keys" then
         emu:setKeys(cmd.mask or 0)
         write_resp({ok=true})
+
+    -- read_block_exchange: read gMpBlockExchange state for the coop battle relay.
+    -- Returns {ok, send_ready, recv_ready, from_idx, data} where data is hex bytes.
+    -- Used by the Python relay to shuttle SendBlock data between two instances.
+    elseif c == "read_block_exchange" then
+        if not ADDR.gMpBlockExchange then
+            write_resp({ok=false, error="gMpBlockExchange not mapped"})
+            return
+        end
+        local base = ADDR.gMpBlockExchange
+        local send_ready = emu:read8(base + 0)
+        local recv_ready = emu:read8(base + 1)
+        local from_idx   = emu:read8(base + 2)
+        local hex = {}
+        for i = 0, 255 do hex[#hex+1] = string.format("%02X", emu:read8(base + 4 + i)) end
+        write_resp({ok=true, send_ready=send_ready, recv_ready=recv_ready,
+                    from_idx=from_idx, data=table.concat(hex, " ")})
+
+    -- write_block_exchange: deposit a partner block into gMpBlockExchange for pickup.
+    -- cmd.from_idx: which gBlockRecvBuffer slot (0 or 1) to fill on the other side.
+    -- cmd.data: hex string of bytes to write.  Also clears send_ready.
+    elseif c == "write_block_exchange" then
+        if not ADDR.gMpBlockExchange then
+            write_resp({ok=false, error="gMpBlockExchange not mapped"})
+            return
+        end
+        local base = ADDR.gMpBlockExchange
+        local from_idx = cmd.from_idx or 0
+        local i = 0
+        for hex in (cmd.data or ""):gmatch("%S+") do
+            if i < 256 then emu:write8(base + 4 + i, tonumber(hex, 16) or 0) end
+            i = i + 1
+        end
+        emu:write8(base + 2, from_idx)  -- fromPlayerIdx
+        emu:write8(base + 1, 1)          -- recvReady = 1
+        emu:write8(base + 0, 0)          -- clear sendReady (relay consumed it)
+        write_resp({ok=true, written=i})
 
     -- drain: read all bytes from the send ring (internal relay use only).
     elseif c == "drain" then

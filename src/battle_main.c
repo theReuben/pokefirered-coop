@@ -495,6 +495,11 @@ void CB2_InitBattle(void)
         {
             CB2_InitBattleInternal();
         }
+        else if (gBattleTypeFlags & BATTLE_TYPE_COOP)
+        {
+            // Co-op boss battle: skip HandleLinkBattleSetup (no real link cable).
+            CB2_InitBattleInternal();
+        }
         else if (!(gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER))
         {
             HandleLinkBattleSetup();
@@ -587,7 +592,8 @@ static void CB2_InitBattleInternal(void)
 
     if ((IsMultibattleTest() && gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER)
     || (gBattleTypeFlags & BATTLE_TYPE_MULTI && gBattleTypeFlags & BATTLE_TYPE_BATTLE_TOWER)
-    || (gBattleTypeFlags & BATTLE_TYPE_MULTI && gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER))
+    || (gBattleTypeFlags & BATTLE_TYPE_MULTI && gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER)
+    || (gBattleTypeFlags & BATTLE_TYPE_MULTI && gBattleTypeFlags & BATTLE_TYPE_COOP))
         SetMainCallback2(CB2_HandleStartMultiPartnerBattle);
     else if (gBattleTypeFlags & BATTLE_TYPE_MULTI)
         SetMainCallback2(CB2_HandleStartMultiBattle);

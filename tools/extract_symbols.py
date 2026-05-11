@@ -25,6 +25,7 @@ WANTED_PATTERNS = [
     r"^gMpRecvRing$",
     r"^gCoopSettings$",
     r"^gMpAddrTable$",      # discovery table magic + pointers (Tauri scan target)
+    r"^gMpBlockExchange$",  # coop battle block relay staging buffer
     r"^gSaveBlock1Ptr$",    # pointer to SaveBlock1; dereference to reach flags[]
     r"^gSaveblock1$",       # the actual SaveBlock1 struct (no game loaded → ptr is NULL)
 ]

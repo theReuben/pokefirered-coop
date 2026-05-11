@@ -6,6 +6,8 @@
 #include "event_data.h"
 #include "item.h"
 #include "random.h"
+#include "link.h"
+#include "task.h"
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -17,9 +19,12 @@ struct CoopSettings gCoopSettings;
 EWRAM_DATA struct MpRingBuf gMpSendRing;
 EWRAM_DATA struct MpRingBuf gMpRecvRing;
 
+// Block exchange for coop boss battles: relay shuttles SendBlock data between instances.
+EWRAM_DATA struct MpBlockExchange gMpBlockExchange;
+
 // Address discovery table in IWRAM.  Populated once by Multiplayer_Init.
-// Tauri scans IWRAM for MP_DISCOVERY_MAGIC at index 0, then reads [1]–[4].
-IWRAM_DATA u32 gMpAddrTable[5];
+// Tauri scans IWRAM for MP_DISCOVERY_MAGIC at index 0, then reads [1]–[5].
+IWRAM_DATA u32 gMpAddrTable[6];
 
 // ---------------------------------------------------------------------------
 // Encode helpers — write a packet into a flat byte buffer.
@@ -486,6 +491,7 @@ void Multiplayer_Init(void)
     gMpAddrTable[2] = (u32)&gMpSendRing;
     gMpAddrTable[3] = (u32)&gMpRecvRing;
     gMpAddrTable[4] = (u32)&gCoopSettings;
+    gMpAddrTable[5] = (u32)&gMpBlockExchange;
 
 #if MP_DEBUG_TEST_GHOST
     gMultiplayerState.connState       = MP_STATE_CONNECTED;
@@ -987,4 +993,41 @@ u16 Multiplayer_IsConnected(void)
 bool8 Multiplayer_NativePollBossStart(void)
 {
     return (bool8)(Multiplayer_ScriptCheckBossStart() != 0);
+}
+
+// ---------------------------------------------------------------------------
+// Co-op boss battle block relay
+// ---------------------------------------------------------------------------
+
+// Per-frame task: if the relay has deposited a partner block, copy it into
+// gBlockRecvBuffer and set gBlockReceivedStatus so the battle engine sees it.
+static void Task_CoopBattleBlockRelay(u8 taskId)
+{
+    if (gMpBlockExchange.recvReady)
+    {
+        u8 from = gMpBlockExchange.fromPlayerIdx;
+        if (from < MAX_RFU_PLAYERS)
+        {
+            memcpy(gBlockRecvBuffer[from], gMpBlockExchange.data, BLOCK_BUFFER_SIZE);
+            gBlockReceivedStatus[from] = TRUE;
+        }
+        gMpBlockExchange.recvReady = 0;
+    }
+}
+
+// Called from BattleSetup_StartCoopBattle before DoTrainerBattle().
+// Clears the exchange buffer, primes the link player table so
+// CB2_HandleStartMultiPartnerBattle passes its gReceivedRemoteLinkPlayers
+// check, and creates the per-frame relay task.
+void Multiplayer_SetupCoopBattle(void)
+{
+    u32 i;
+
+    memset(&gMpBlockExchange, 0, sizeof(gMpBlockExchange));
+
+    for (i = 0; i < MAX_RFU_PLAYERS; i++)
+        gLinkPlayers[i].version = VERSION_EMERALD;
+    gReceivedRemoteLinkPlayers = TRUE;
+
+    CreateTask(Task_CoopBattleBlockRelay, 0);
 }

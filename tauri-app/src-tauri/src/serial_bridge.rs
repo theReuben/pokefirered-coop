@@ -21,14 +21,15 @@ use serde_json::{json, Value};
 // and between codebase revisions, so all key ROM addresses are discovered at
 // runtime rather than hardcoded.
 //
-// ROM side (src/multiplayer.c): Multiplayer_Init() fills gMpAddrTable[5]:
+// ROM side (src/multiplayer.c): Multiplayer_Init() fills gMpAddrTable[6]:
 //   [0] = 0xC0DEC0DE  (MP_DISCOVERY_MAGIC)
 //   [1] = &gMultiplayerState
 //   [2] = &gMpSendRing
 //   [3] = &gMpRecvRing
 //   [4] = &gCoopSettings
+//   [5] = &gMpBlockExchange  (coop boss battle block relay buffer)
 //
-// Tauri side: tick() calls try_discover() every frame until all five u32 values
+// Tauri side: tick() calls try_discover() every frame until all six u32 values
 // are read from IWRAM (0x03000000–0x03008000).  Until then all ring/heartbeat
 // operations are skipped (the ROM hasn't called Multiplayer_Init yet anyway).
 
@@ -41,6 +42,7 @@ static mut MULTIPLAYER_STATE_ADDR: u32 = 0; // &gMultiplayerState
 static mut SEND_RING_ADDR:         u32 = 0; // &gMpSendRing
 static mut RECV_RING_ADDR:         u32 = 0; // &gMpRecvRing
 static mut COOP_SETTINGS_ADDR:     u32 = 0; // &gCoopSettings
+static mut BLOCK_EXCHANGE_ADDR:    u32 = 0; // &gMpBlockExchange (coop battle relay)
 
 // Tracks whether the relay has a connected partner for us.
 // Written from the Tauri network thread; read only in tick() on the emu thread.
@@ -71,6 +73,7 @@ pub fn reset_discovery() {
         SEND_RING_ADDR         = 0;
         RECV_RING_ADDR         = 0;
         COOP_SETTINGS_ADDR     = 0;
+        BLOCK_EXCHANGE_ADDR    = 0;
         PARTNER_CONNECTED      = false;
         RECEIVED_ROLE          = 0;
         PACKETS_SENT           = 0;
@@ -100,22 +103,24 @@ fn try_discover(emu: &EmulatorHandle) -> bool {
         .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         .collect();
 
-    // Search for the magic value followed by four plausible GBA addresses.
-    for i in 0..words.len().saturating_sub(4) {
+    // Search for the magic value followed by five plausible GBA addresses.
+    for i in 0..words.len().saturating_sub(5) {
         if words[i] != DISCOVERY_MAGIC {
             continue;
         }
-        let mp_addr   = words[i + 1];
-        let send_addr = words[i + 2];
-        let recv_addr = words[i + 3];
-        let coop_addr = words[i + 4];
+        let mp_addr    = words[i + 1];
+        let send_addr  = words[i + 2];
+        let recv_addr  = words[i + 3];
+        let coop_addr  = words[i + 4];
+        let block_addr = words[i + 5];
 
-        // Sanity: all four must look like valid GBA addresses (EWRAM or IWRAM).
+        // Sanity: all five must look like valid GBA addresses (EWRAM or IWRAM).
         let plausible = |a: u32| -> bool {
             (0x0200_0000..0x0204_0000).contains(&a) || // EWRAM
             (0x0300_0000..0x0300_8000).contains(&a)    // IWRAM
         };
-        if !plausible(mp_addr) || !plausible(send_addr) || !plausible(recv_addr) || !plausible(coop_addr) {
+        if !plausible(mp_addr) || !plausible(send_addr) || !plausible(recv_addr)
+            || !plausible(coop_addr) || !plausible(block_addr) {
             continue;
         }
 
@@ -124,10 +129,11 @@ fn try_discover(emu: &EmulatorHandle) -> bool {
             SEND_RING_ADDR         = send_addr;
             RECV_RING_ADDR         = recv_addr;
             COOP_SETTINGS_ADDR     = coop_addr;
+            BLOCK_EXCHANGE_ADDR    = block_addr;
         }
         log::info!(
-            "serial_bridge: discovered addresses — mp=0x{:08X} snd=0x{:08X} rcv=0x{:08X} coop=0x{:08X}",
-            mp_addr, send_addr, recv_addr, coop_addr
+            "serial_bridge: discovered addresses — mp=0x{:08X} snd=0x{:08X} rcv=0x{:08X} coop=0x{:08X} blk=0x{:08X}",
+            mp_addr, send_addr, recv_addr, coop_addr, block_addr
         );
         return true;
     }

@@ -55,6 +55,7 @@
 #include "constants/trainer_hill.h"
 #include "constants/weather.h"
 #include "fishing.h"
+#include "multiplayer.h"
 
 enum TransitionType
 {
@@ -1371,6 +1372,21 @@ void BattleSetup_StartTrainerBattle(void)
     else
         DoTrainerBattle();
 
+    ScriptContext_Stop();
+}
+
+// Co-op boss battle: both players fight a gym leader as a synchronized double
+// battle.  Call after waitbossstart confirms both players are ready.
+// TRAINER_BATTLE_PARAM.opponentA must already be set by a preceding trainerbattle command.
+void BattleSetup_StartCoopBattle(void)
+{
+    gBattleTypeFlags = BATTLE_TYPE_COOP | BATTLE_TYPE_MULTI | BATTLE_TYPE_LINK
+                     | BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE;
+    // Use opponentA for both sides so GetFrontierTrainerName(opponentB) is safe.
+    TRAINER_BATTLE_PARAM.opponentB = TRAINER_BATTLE_PARAM.opponentA;
+    gMain.savedCallback = CB2_EndTrainerBattle;
+    Multiplayer_SetupCoopBattle();
+    DoTrainerBattle();
     ScriptContext_Stop();
 }
 

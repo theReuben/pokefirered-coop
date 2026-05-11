@@ -30,6 +30,19 @@
 #define MP_DEBUG_TEST_X            8
 #define MP_DEBUG_TEST_Y            5
 
+// Block exchange buffer — EWRAM staging area so the Tauri relay can shuttle
+// SendBlock data between the two emulator instances without a real link cable.
+// Size matches BLOCK_BUFFER_SIZE in link.h (0x100 = 256 bytes).
+#define MP_BLOCK_BUF_SIZE 0x100
+struct MpBlockExchange {
+    u8  sendReady;               // ROM sets 1 when data[] has a block to relay
+    u8  recvReady;               // relay sets 1 when data[] has partner's block
+    u8  fromPlayerIdx;           // relay sets: which gBlockRecvBuffer slot to fill
+    u8  _pad;
+    u8  data[MP_BLOCK_BUF_SIZE]; // raw block bytes
+};
+extern struct MpBlockExchange gMpBlockExchange;
+
 // ---------------------------------------------------------------------------
 // Ring buffer — shared memory interface between ROM and Tauri host app.
 //
@@ -141,7 +154,9 @@ struct CoopSettings {
 // Tauri scans IWRAM (0x03000000–0x03008000) in 4-byte strides looking for
 // MP_DISCOVERY_MAGIC at [0], then reads [1]–[4] in one shot.
 #define MP_DISCOVERY_MAGIC  0xC0DEC0DEu
-extern u32 gMpAddrTable[5];
+// [0]=magic [1]=&gMultiplayerState [2]=&gMpSendRing [3]=&gMpRecvRing
+// [4]=&gCoopSettings [5]=&gMpBlockExchange
+extern u32 gMpAddrTable[6];
 
 struct MultiplayerState {
     u8  role;            // MP_ROLE_*
@@ -218,6 +233,10 @@ u16  Multiplayer_ScriptCheckBossStart(void);
 u16  Multiplayer_IsConnected(void);
 // Native callback for SCR_OP_WAITBOSSSTART: returns TRUE when both players ready (or solo).
 bool8 Multiplayer_NativePollBossStart(void);
+
+// Co-op boss battle setup — call before DoTrainerBattle() when starting a coop gym fight.
+// Sets the link player table, block-exchange state, and creates the relay task.
+void Multiplayer_SetupCoopBattle(void);
 
 // Full sync (Phase 3) — called by host on connect to bring guest up to date.
 // Builds a FULL_SYNC packet from the current flag state and enqueues it.

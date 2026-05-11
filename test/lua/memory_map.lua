@@ -3,20 +3,13 @@
 
 local M = {}
 
-M.gCoopSettings = 0x03001590
-M.gMpAddrTable = 0x0300159C
-M.gMpRecvRing = 0x02031350
-M.gMpSendRing = 0x02031454
-M.gMultiplayerState = 0x0300157C
-M.gSaveBlock1Ptr = 0x03005300
-M.gSaveblock1 = 0x0200FF94
-
--- Text state symbols (manually added for get_text_state tool).
--- sFirstTextPrinter and sGlobalScriptContextStatus are static (lowercase nm),
--- but addresses are stable for a given build.
-M.gStringVar4 = 0x02036c58             -- 256-byte field message buffer (ShowFieldMessage expands here)
-M.sFirstTextPrinter = 0x02037340       -- ptr to head of TextPrinter linked list; non-NULL while printing
-M.gDisableTextPrinters = 0x02037348    -- bool8; 1 = all printing suppressed
-M.sGlobalScriptContextStatus = 0x03001801  -- 0=RUNNING, 1=WAITING (waitmessage etc.), 2=SHUTDOWN
+M.gCoopSettings = 0x03001490
+M.gMpAddrTable = 0x0300149C
+M.gMpBlockExchange = 0x02031240
+M.gMpRecvRing = 0x02031344
+M.gMpSendRing = 0x02031448
+M.gMultiplayerState = 0x0300147C
+M.gSaveBlock1Ptr = 0x03005208
+M.gSaveblock1 = 0x0200FF3C
 
 return M

@@ -157,7 +157,7 @@ def _parse_memory_map(path: Path) -> dict[str, int]:
 # ── Background relay thread ───────────────────────────────────────────────
 
 def _relay_loop() -> None:
-    """Continuously relay multiplayer packets between p1 and p2."""
+    """Continuously relay multiplayer packets and coop battle blocks between p1 and p2."""
     while True:
         time.sleep(RELAY_INTERVAL)
         try:
@@ -166,6 +166,7 @@ def _relay_loop() -> None:
             if not (p1 and p1.alive() and p2 and p2.alive()):
                 continue
 
+            # Ring-buffer packet relay (overworld position, flags, etc.)
             # p1 → p2
             r = p1.try_send_locked({"cmd": "drain"})
             if r and r.get("ok") and r.get("count", 0) > 0:
@@ -175,6 +176,19 @@ def _relay_loop() -> None:
             r = p2.try_send_locked({"cmd": "drain"})
             if r and r.get("ok") and r.get("count", 0) > 0:
                 p1.try_send_locked({"cmd": "inject", "bytes": r["bytes"]})
+
+            # Block-exchange relay (coop boss battle SendBlock data).
+            # p1 sendReady → copy data to p2 recvReady with fromPlayerIdx=0
+            r = p1.try_send_locked({"cmd": "read_block_exchange"})
+            if r and r.get("ok") and r.get("send_ready", 0):
+                p2.try_send_locked({"cmd": "write_block_exchange",
+                                    "from_idx": 0, "data": r["data"]})
+
+            # p2 sendReady → copy data to p1 recvReady with fromPlayerIdx=1
+            r = p2.try_send_locked({"cmd": "read_block_exchange"})
+            if r and r.get("ok") and r.get("send_ready", 0):
+                p1.try_send_locked({"cmd": "write_block_exchange",
+                                    "from_idx": 1, "data": r["data"]})
         except Exception:
             pass
 

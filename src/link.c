@@ -1,4 +1,5 @@
 #include "global.h"
+#include "multiplayer.h"
 #include "m4a.h"
 #include "malloc.h"
 #include "reload_save.h"
@@ -723,6 +724,9 @@ void ClearLinkCallback_2(void)
 
 u8 GetLinkPlayerCount(void)
 {
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED && (gBattleTypeFlags & BATTLE_TYPE_COOP))
+        return 2;
+
     if (gWirelessCommType)
         return Rfu_GetLinkPlayerCount();
 
@@ -983,6 +987,9 @@ static void UNUSED SendBerryBlenderNoSpaceForPokeblocks(void)
 
 u8 GetMultiplayerId(void)
 {
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED && (gBattleTypeFlags & BATTLE_TYPE_COOP))
+        return (gMultiplayerState.role == MP_ROLE_HOST) ? 0 : 1;
+
     if (gWirelessCommType == TRUE)
         return Rfu_GetMultiplayerId();
 
@@ -999,6 +1006,18 @@ u8 BitmaskAllOtherLinkPlayers(void)
 
 bool8 SendBlock(u8 unused, const void *src, u16 size)
 {
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED && (gBattleTypeFlags & BATTLE_TYPE_COOP))
+    {
+        u8 myIdx = GetMultiplayerId();
+        u16 copySize = (size > BLOCK_BUFFER_SIZE) ? BLOCK_BUFFER_SIZE : size;
+        memcpy(gMpBlockExchange.data, src, copySize);
+        gMpBlockExchange.sendReady = 1;
+        // Echo own block so GetBlockReceivedStatus bit for myIdx is immediately set.
+        memcpy(gBlockRecvBuffer[myIdx], src, copySize);
+        gBlockReceivedStatus[myIdx] = TRUE;
+        return TRUE;
+    }
+
     if (gWirelessCommType == TRUE)
         return Rfu_InitBlockSend(src, size);
 
@@ -1021,6 +1040,11 @@ bool8 SendBlockRequest(u8 blockReqType)
 
 bool8 IsLinkTaskFinished(void)
 {
+    // In coop mode the relay is asynchronous; signal "done" immediately so the
+    // battle init state machine does not spin waiting for hardware SIO.
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED && (gBattleTypeFlags & BATTLE_TYPE_COOP))
+        return TRUE;
+
     if (gWirelessCommType == TRUE)
         return IsLinkRfuTaskFinished();
 
@@ -1327,11 +1351,17 @@ void ResetLinkPlayerCount(void)
 
 u8 GetLinkPlayerCount_2(void)
 {
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED && (gBattleTypeFlags & BATTLE_TYPE_COOP))
+        return 2;
+
     return EXTRACT_PLAYER_COUNT(gLinkStatus);
 }
 
 bool8 IsLinkMaster(void)
 {
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED && (gBattleTypeFlags & BATTLE_TYPE_COOP))
+        return gMultiplayerState.role == MP_ROLE_HOST;
+
     if (gWirelessCommType)
         return Rfu_IsMaster();
 
