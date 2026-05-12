@@ -54,6 +54,15 @@ EventScript_DoNoIntroTrainerBattle::
 	dotrainerbattle
 	gotopostbattlescript
 
+EventScript_DoNoIntroCoopTrainerBattle::
+	setflag FLAG_SAFE_FOLLOWER_MOVEMENT
+	applymovement VAR_LAST_TALKED, Movement_RevealTrainer
+	waitmovement 0
+	clearflag FLAG_SAFE_FOLLOWER_MOVEMENT
+	special PlayTrainerEncounterMusic
+	docooptrainerbattle
+	gotopostbattlescript
+
 EventScript_TryDoRematchBattle::
 	call EventScript_RevealTrainer
 	specialvar VAR_RESULT, IsTrainerReadyForRematch

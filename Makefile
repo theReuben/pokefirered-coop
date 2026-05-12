@@ -383,7 +383,7 @@ check-tauri:
 check-lua:
 	@test -f pokefirered.gba || (echo "pokefirered.gba missing — run 'make firered' first" >&2; exit 1)
 	@test -f pokefirered.map || (echo "pokefirered.map missing — run 'make firered' first" >&2; exit 1)
-	python3 tools/extract_symbols.py pokefirered.map test/lua/memory_map.lua
+	python3 tools/extract_symbols.py pokefirered.map test/lua/memory_map.lua pokefirered.elf
 	bash tools/run_lua_tests.sh
 
 # Run every two-instance coop scenario under test/lua/coop/<name>/ that has
@@ -393,7 +393,7 @@ check-lua:
 check-coop:
 	@test -f pokefirered.gba || (echo "pokefirered.gba missing — run 'make firered' first" >&2; exit 1)
 	@test -f pokefirered.map || (echo "pokefirered.map missing — run 'make firered' first" >&2; exit 1)
-	python3 tools/extract_symbols.py pokefirered.map test/lua/memory_map.lua
+	python3 tools/extract_symbols.py pokefirered.map test/lua/memory_map.lua pokefirered.elf
 	@status=0; for d in test/lua/coop/*/; do \
 		test -f $$d/p1.lua -a -f $$d/p2.lua || continue; \
 		echo "==> Coop scenario: $$d"; \
@@ -417,6 +417,7 @@ check-relay-e2e:
 build-states:
 	@test -f pokefirered.gba || (echo "pokefirered.gba missing — run 'make firered' first" >&2; exit 1)
 	@mkdir -p test/lua/states
+	@python3 tools/extract_symbols.py pokefirered.map test/lua/memory_map.lua pokefirered.elf
 	@MGBA="$${MGBA:-}"; \
 	 if [ -z "$$MGBA" ]; then \
 	     for _c in /tmp/mgba-build/mgba-headless /tmp/mgba-build/mgba \

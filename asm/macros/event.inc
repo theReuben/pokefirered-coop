@@ -824,6 +824,11 @@
 	.byte SCR_OP_DOTRAINERBATTLE
 	.endm
 
+	@ Like dotrainerbattle but sets up BATTLE_TYPE_COOP for co-op multi battles.
+	.macro docooptrainerbattle
+	.byte SCR_OP_DOCOOPTRAINERBATTLE
+	.endm
+
 	@ Goes to address after the trainerbattle command (called by the battle functions, see battle_setup.c)
 	.macro gotopostbattlescript
 	.byte SCR_OP_GOTOPOSTBATTLESCRIPT

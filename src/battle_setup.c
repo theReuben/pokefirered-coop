@@ -1147,6 +1147,8 @@ const u8 *BattleSetup_ConfigureTrainerBattle(const u8 *data)
 #endif //FREE_MATCH_CALL
     case TRAINER_BATTLE_EARLY_RIVAL:
         SetMapVarsToTrainerA();
+        if (Multiplayer_IsConnected())
+            return EventScript_DoNoIntroCoopTrainerBattle;
         return EventScript_DoNoIntroTrainerBattle;
     case TRAINER_BATTLE_TWO_TRAINERS_NO_INTRO:
         gNoOfApproachingTrainers = 2; // set TWO_OPPONENTS gBattleTypeFlags
