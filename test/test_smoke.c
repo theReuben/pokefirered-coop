@@ -841,6 +841,37 @@ static void TestBossReadySoloProceeds(void)
     // State cleared after returning 1
     ASSERT_EQ(gMultiplayerState.bossReadyBossId, 0);
     ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
+    // Solo runs must NOT mark coopBattlePending — the next trainerbattle should
+    // run as the existing single-player script, not the coop double battle.
+    ASSERT_EQ(gMultiplayerState.coopBattlePending, FALSE);
+}
+
+static void TestCoopBattlePendingSetOnConnectedReady(void)
+{
+    // Connected handshake completion sets coopBattlePending so the next
+    // BattleSetup_ConfigureTrainerBattle routes through the coop battle path.
+    ResetAll();
+    gMultiplayerState.connState       = MP_STATE_CONNECTED;
+    gMultiplayerState.bossReadyBossId = BOSS_ID_BROCK;
+    gMultiplayerState.partnerBossId   = BOSS_ID_BROCK;
+
+    ASSERT_EQ(gMultiplayerState.coopBattlePending, FALSE);
+    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 1);
+    ASSERT_EQ(gMultiplayerState.coopBattlePending, TRUE);
+}
+
+static void TestCoopBattlePendingClearedOnScriptEnd(void)
+{
+    // A boss-ready handshake inside a script that has no trainerbattle (e.g.,
+    // the Pallet Town escort scene) must not leak coopBattlePending into the
+    // next script's trainer encounter.
+    ResetAll();
+    gMultiplayerState.connState         = MP_STATE_CONNECTED;
+    gMultiplayerState.isInScript        = TRUE;
+    gMultiplayerState.coopBattlePending = TRUE;
+
+    Multiplayer_OnScriptEnd();
+    ASSERT_EQ(gMultiplayerState.coopBattlePending, FALSE);
 }
 
 static void TestBossReadyConnectedWaitsForPartner(void)
@@ -1120,6 +1151,8 @@ int main(void)
     TestNoInvalidSpecies12Slots();
     TestRandomizedSpeciesPassThroughWhenDisabled();
     TestBossReadySoloProceeds();
+    TestCoopBattlePendingSetOnConnectedReady();
+    TestCoopBattlePendingClearedOnScriptEnd();
     TestBossReadyConnectedWaitsForPartner();
     TestBossReadyBothReadyProceeds();
     TestBossReadyKeepsMatchingPartnerReady();

@@ -500,6 +500,7 @@ void Multiplayer_Init(void)
     gMultiplayerState.posFrameCounter    = 0;
     gMultiplayerState.partnerGender      = MALE;
     gMultiplayerState.gotPartnerGender   = FALSE;
+    gMultiplayerState.coopBattlePending  = FALSE;
     gCoopSettings.randomizeEncounters    = 1;
 #if MP_DEBUG_TEST_SEED
     gCoopSettings.encounterSeed          = MP_DEBUG_TEST_SEED_VALUE;
@@ -940,6 +941,12 @@ void Multiplayer_OnScriptEnd(void)
 
     gMultiplayerState.isInScript = FALSE;
 
+    // Drop any unconsumed coop-battle routing: a boss-ready handshake that
+    // didn't lead to a trainerbattle inside this script (e.g., the Pallet Town
+    // escort scene, which just walks players into the lab) must not leak the
+    // flag into the next script's trainer encounter.
+    gMultiplayerState.coopBattlePending = FALSE;
+
     if (gMultiplayerState.connState != MP_STATE_CONNECTED)
         return;
 
@@ -1049,6 +1056,11 @@ u16 Multiplayer_ScriptCheckBossStart(void)
     // Both ready (or solo) — clear state and tell the script to start battle.
     gMultiplayerState.bossReadyBossId = 0;
     gMultiplayerState.partnerBossId   = 0;
+    // Mark the next trainerbattle to route through the coop double-battle
+    // path.  Solo runs (not connected) keep the flag clear so the existing
+    // single-player battle script fires normally.
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+        gMultiplayerState.coopBattlePending = TRUE;
     return 1;
 }
 

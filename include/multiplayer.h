@@ -182,6 +182,10 @@ struct MultiplayerState {
     u8  remoteUpdateThisFrame; // set when any remote flag/var applied; cleared next Multiplayer_Update
     u8  partnerGender;         // MALE/FEMALE; meaningful only when gotPartnerGender is TRUE
     u8  gotPartnerGender;      // TRUE once partner has sent MP_PKT_GENDER
+    u8  coopBattlePending;     // set by ScriptCheckBossStart when a connected boss-ready
+                               // handshake completes; consumed by BattleSetup_ConfigureTrainerBattle
+                               // to route the NEXT trainerbattle through the coop path
+                               // regardless of mode.  Auto-clears once routed.
 };
 
 extern struct MultiplayerState gMultiplayerState;

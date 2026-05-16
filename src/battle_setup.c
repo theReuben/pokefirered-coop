@@ -1115,6 +1115,27 @@ void SetMapVarsToTrainerB(void)
 // expects parameters have been loaded correctly with TrainerBattleLoadArgs
 const u8 *BattleSetup_ConfigureTrainerBattle(const u8 *data)
 {
+    // Co-op boss override: if the preceding script completed a connected
+    // boss-ready handshake (Multiplayer_ScriptCheckBossStart set the flag),
+    // route this trainerbattle through the synchronized double-battle script
+    // regardless of which trainerbattle_* macro the script used.  This makes
+    // every gym/E4/Champion/rival fight a real coop battle whenever both
+    // players are connected, without per-script edits.
+    //
+    // The fall-through to the normal switch (after clearing the flag) ensures
+    // single-player runs and non-boss trainer encounters keep their existing
+    // behaviour.
+    if (gMultiplayerState.coopBattlePending && Multiplayer_IsConnected())
+    {
+        gMultiplayerState.coopBattlePending = FALSE;
+        SetMapVarsToTrainerA();
+        return EventScript_DoNoIntroCoopTrainerBattle;
+    }
+    // Stale flag (handshake completed but partner dropped before the battle
+    // started, or some other path consumed the trainerbattle).  Clear it so
+    // the next unrelated trainer encounter doesn't accidentally go coop.
+    gMultiplayerState.coopBattlePending = FALSE;
+
     switch (TRAINER_BATTLE_PARAM.mode)
     {
     case TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT:
