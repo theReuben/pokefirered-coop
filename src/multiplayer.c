@@ -92,6 +92,13 @@ u8 Mp_EncodeSeedSync(u8 *out, u32 seed)
     return MP_PKT_SIZE_SEED_SYNC;
 }
 
+u8 Mp_EncodeGender(u8 *out, u8 gender)
+{
+    out[0] = MP_PKT_GENDER;
+    out[1] = gender;
+    return MP_PKT_SIZE_GENDER;
+}
+
 // ---------------------------------------------------------------------------
 // Decode helpers — read a packet from a flat byte buffer.
 // in[0] is the type byte; len is the total number of bytes available.
@@ -149,6 +156,14 @@ bool8 Mp_DecodeSeedSync(const u8 *in, u8 len, u32 *seed)
     if (len < MP_PKT_SIZE_SEED_SYNC)
         return FALSE;
     *seed = ((u32)in[1] << 24) | ((u32)in[2] << 16) | ((u32)in[3] << 8) | in[4];
+    return TRUE;
+}
+
+bool8 Mp_DecodeGender(const u8 *in, u8 len, u8 *gender)
+{
+    if (len < MP_PKT_SIZE_GENDER)
+        return FALSE;
+    *gender = in[1];
     return TRUE;
 }
 
@@ -280,6 +295,9 @@ static bool8 ProcessOneRecvPacket(void)
 
     case MP_PKT_PARTNER_CONNECTED:
         gMultiplayerState.connState = MP_STATE_CONNECTED;
+        // Announce our gender so the partner can render our ghost correctly.
+        // The partner does the same in response to their own PARTNER_CONNECTED.
+        Multiplayer_SendGender();
         break;
 
     case MP_PKT_PARTNER_DISCONNECTED:
@@ -354,6 +372,16 @@ static bool8 ProcessOneRecvPacket(void)
             Mp_Pop(&gMpRecvRing, &hi);
             Mp_Pop(&gMpRecvRing, &lo);
             gMultiplayerState.partnerStarterSpecies = ((u16)hi << 8) | lo;
+        }
+        break;
+
+    case MP_PKT_GENDER:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_GENDER - 1)
+            return FALSE;
+        {
+            u8 gender = 0;
+            Mp_Pop(&gMpRecvRing, &gender);
+            Multiplayer_HandleRemoteGender(gender);
         }
         break;
 
@@ -470,6 +498,8 @@ void Multiplayer_Init(void)
     gMultiplayerState.isInScript         = FALSE;
     gMultiplayerState.partnerIsInScript  = FALSE;
     gMultiplayerState.posFrameCounter    = 0;
+    gMultiplayerState.partnerGender      = MALE;
+    gMultiplayerState.gotPartnerGender   = FALSE;
     gCoopSettings.randomizeEncounters    = 1;
 #if MP_DEBUG_TEST_SEED
     gCoopSettings.encounterSeed          = MP_DEBUG_TEST_SEED_VALUE;
@@ -545,7 +575,7 @@ void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing)
         Multiplayer_DespawnGhost();
 
     objId = SpawnSpecialObjectEventParameterized(
-        OBJ_EVENT_GFX_PLAYER2,
+        Multiplayer_GhostGraphicsId(),
         MOVEMENT_TYPE_NONE,
         GHOST_LOCAL_ID,
         x, y,
@@ -558,6 +588,37 @@ void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing)
     gObjectEvents[objId].mapNum   = (u8)mapNum;
     SetObjectEventDirection(&gObjectEvents[objId], facing);
     gMultiplayerState.ghostObjectEventId = objId;
+}
+
+u16 Multiplayer_GhostGraphicsId(void)
+{
+    u8 ghostGender;
+    if (gMultiplayerState.gotPartnerGender)
+        ghostGender = gMultiplayerState.partnerGender;
+    else
+        // Fall back to opposite-of-self so the ghost is always visually distinct.
+        ghostGender = (gSaveBlock2Ptr->playerGender == FEMALE) ? MALE : FEMALE;
+    return (ghostGender == FEMALE) ? OBJ_EVENT_GFX_GREEN_NORMAL : OBJ_EVENT_GFX_RED_NORMAL;
+}
+
+void Multiplayer_SendGender(void)
+{
+    u8 pkt[MP_PKT_SIZE_GENDER];
+    Mp_EncodeGender(pkt, gSaveBlock2Ptr->playerGender);
+    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_GENDER);
+}
+
+void Multiplayer_HandleRemoteGender(u8 gender)
+{
+    if (gender != MALE && gender != FEMALE)
+        return; // ignore bogus values
+    if (gMultiplayerState.gotPartnerGender && gMultiplayerState.partnerGender == gender)
+        return; // no change
+    gMultiplayerState.partnerGender    = gender;
+    gMultiplayerState.gotPartnerGender = TRUE;
+    // Force respawn so the next GhostMapCheck picks the correct sprite.
+    if (gMultiplayerState.ghostObjectEventId < OBJECT_EVENTS_COUNT)
+        Multiplayer_DespawnGhost();
 }
 
 void Multiplayer_DespawnGhost(void)
@@ -918,7 +979,15 @@ void Multiplayer_SendSeedSync(u32 seed)
 static void BossReadyCommon(u8 bossId)
 {
     gMultiplayerState.bossReadyBossId = bossId;
-    gMultiplayerState.partnerBossId   = 0; // reset partner state for fresh check
+    // Don't clobber partnerBossId if the partner already sent BOSS_READY for the
+    // same boss before our script ran (issue #2 race: when both players reach
+    // the trigger near-simultaneously, the partner's BOSS_READY can land in the
+    // recv ring before BossReadyCommon executes, and the old unconditional
+    // `partnerBossId = 0` discarded it, leaving both ROMs hanging at
+    // waitbossstart).  A mismatched ID is reset so a stale ready from a
+    // previous interaction doesn't false-positive the new one.
+    if (gMultiplayerState.partnerBossId != bossId)
+        gMultiplayerState.partnerBossId = 0;
     if (gMultiplayerState.connState == MP_STATE_CONNECTED)
         Multiplayer_SendBossReady(bossId);
 }
@@ -962,12 +1031,16 @@ void Multiplayer_BossCancel(void)
 // 'specialvar VAR_RESULT, Multiplayer_ScriptCheckBossStart'.
 u16 Multiplayer_ScriptCheckBossStart(void)
 {
+    u8 myBoss = gMultiplayerState.bossReadyBossId;
     bool32 partnerReady;
 
-    if (gMultiplayerState.bossReadyBossId == 0)
+    if (myBoss == 0)
         return 0; // we haven't even sent BOSS_READY yet
 
-    partnerReady = (gMultiplayerState.partnerBossId != 0)
+    // Require an EXACT boss-id match: prevents a stale partner ready from a
+    // previous interaction (or a partner currently waiting on a different boss)
+    // from satisfying our check.
+    partnerReady = (gMultiplayerState.partnerBossId == myBoss)
                 || (gMultiplayerState.connState != MP_STATE_CONNECTED);
 
     if (!partnerReady)

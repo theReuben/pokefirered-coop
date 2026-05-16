@@ -17,6 +17,7 @@
 #define MP_PKT_ITEM_GIVE            0x0D   // 4 bytes — give item to partner (field/gift, not shop)
 #define MP_PKT_FLAG_CLEAR           0x0E   // 3 bytes — a syncable flag was cleared locally
 #define MP_PKT_STARTER_PICK         0x0F   // 3 bytes — player chose a starter (species hi + lo)
+#define MP_PKT_GENDER               0x10   // 2 bytes — partner's player gender (MALE/FEMALE)
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -67,6 +68,7 @@
 #define MP_PKT_SIZE_ITEM_GIVE               4  // type + item_hi + item_lo + quantity
 #define MP_PKT_SIZE_FLAG_CLEAR              3  // type + flagId_hi + flagId_lo
 #define MP_PKT_SIZE_STARTER_PICK            3  // type + species_hi + species_lo
+#define MP_PKT_SIZE_GENDER                  2  // type + gender
 
 // Player roles assigned by relay server
 #define MP_ROLE_NONE        0

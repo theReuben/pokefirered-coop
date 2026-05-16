@@ -36,13 +36,26 @@ static void SetPlayerMap(s8 mapGroup, s8 mapNum)
     gSaveBlock1Ptr              = &sTestSave;
 }
 
-// ---- Step 1.2: Sprite constant -------------------------------------------
+// ---- Step 1.2: Ghost sprite selection ------------------------------------
 
-static void TestSpriteConstant(void)
+static void TestGhostGraphicsId(void)
 {
-    // OBJ_EVENT_GFX_PLAYER2 must map to the FRLG Green (Leaf) walking sprite.
-    ASSERT_EQ(OBJ_EVENT_GFX_PLAYER2, OBJ_EVENT_GFX_GREEN_NORMAL);
-    ASSERT_EQ(OBJ_EVENT_GFX_GREEN_NORMAL, 251);
+    ResetAll();
+    // No partner gender yet: ghost should pick OPPOSITE of local player so it's
+    // always visually distinct.
+    gSaveBlock2Ptr->playerGender = MALE;
+    gMultiplayerState.gotPartnerGender = FALSE;
+    ASSERT_EQ(Multiplayer_GhostGraphicsId(), OBJ_EVENT_GFX_GREEN_NORMAL);
+
+    gSaveBlock2Ptr->playerGender = FEMALE;
+    ASSERT_EQ(Multiplayer_GhostGraphicsId(), OBJ_EVENT_GFX_RED_NORMAL);
+
+    // Once partner gender is known, ghost must match the partner.
+    gMultiplayerState.gotPartnerGender = TRUE;
+    gMultiplayerState.partnerGender    = MALE;
+    ASSERT_EQ(Multiplayer_GhostGraphicsId(), OBJ_EVENT_GFX_RED_NORMAL);
+    gMultiplayerState.partnerGender    = FEMALE;
+    ASSERT_EQ(Multiplayer_GhostGraphicsId(), OBJ_EVENT_GFX_GREEN_NORMAL);
 }
 
 // ---- Step 1.2 / 1.3: Init state ------------------------------------------
@@ -859,6 +872,32 @@ static void TestBossReadyBothReadyProceeds(void)
     ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
 }
 
+static void TestBossReadyKeepsMatchingPartnerReady(void)
+{
+    // Issue #2 regression: when partner's BOSS_READY arrives BEFORE the local
+    // script runs Multiplayer_BossReady_X (the simultaneous-trigger race), the
+    // local call must NOT clobber the partner's ready signal for the same boss.
+    ResetAll();
+    gMultiplayerState.connState     = MP_STATE_CONNECTED;
+    gMultiplayerState.partnerBossId = BOSS_ID_ESCORT; // partner readied first
+    Multiplayer_BossReady_Escort();
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, BOSS_ID_ESCORT);
+    ASSERT_EQ(gMultiplayerState.partnerBossId,   BOSS_ID_ESCORT);
+    // Both ready: ScriptCheckBossStart should return 1 on the very next poll.
+    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 1);
+}
+
+static void TestBossReadyResetsMismatchingPartnerReady(void)
+{
+    // Stale BOSS_READY for a different boss must not satisfy the new check.
+    ResetAll();
+    gMultiplayerState.connState     = MP_STATE_CONNECTED;
+    gMultiplayerState.partnerBossId = BOSS_ID_BROCK; // stale value
+    Multiplayer_BossReady_Misty();
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 0);   // wiped
+    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 0); // not ready
+}
+
 static void TestBossReadyCancelClearsState(void)
 {
     // Multiplayer_BossCancel resets state and sends a cancel packet
@@ -904,15 +943,17 @@ static void TestBossStartPacketRecv(void)
     ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 1);
 }
 
-static void TestBossReadyIdempotent(void)
+static void TestBossReadyClearsMismatchedStale(void)
 {
-    // Calling BossReady again resets partnerBossId so stale state doesn't trigger start.
+    // Stale partnerBossId for a DIFFERENT boss must be cleared on entry so it
+    // can't false-trigger the new check.  (A *matching* stale id is kept; see
+    // TestBossReadyKeepsMatchingPartnerReady.)
     ResetAll();
     gMultiplayerState.connState     = MP_STATE_CONNECTED;
-    gMultiplayerState.partnerBossId = BOSS_ID_BROCK; // stale from a previous fight
+    gMultiplayerState.partnerBossId = BOSS_ID_MISTY; // stale, wrong boss
 
-    Multiplayer_BossReady_Brock(); // re-enter readiness check
-    ASSERT_EQ(gMultiplayerState.partnerBossId, 0); // stale partner state cleared
+    Multiplayer_BossReady_Brock();
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
     ASSERT_EQ(gMultiplayerState.bossReadyBossId, BOSS_ID_BROCK);
 }
 
@@ -964,18 +1005,20 @@ static void TestBadgeFlagInFullSync(void)
               & (1 << (SYNC_FLAG_BADGES_END & 7)), 0);
 }
 
-static void TestBossReadyPartnerAnyIdProceeds(void)
+static void TestBossReadyRequiresMatchingId(void)
 {
-    // v1 design: partnerBossId != 0 is sufficient to proceed (relay enforces matching).
-    // A non-zero partner ID (even a different boss) triggers start for the local script.
+    // Stricter than v1: a partnerBossId for a DIFFERENT boss must not satisfy
+    // the local check.  This guards against stale ready signals from a prior
+    // interaction firing the wrong battle.  (Tightened as part of the issue #2
+    // race fix.)
     ResetAll();
     gMultiplayerState.connState       = MP_STATE_CONNECTED;
     gMultiplayerState.bossReadyBossId = BOSS_ID_BROCK;
     gMultiplayerState.partnerBossId   = BOSS_ID_MISTY; // different boss
 
-    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 1); // proceeds (relay guards)
-    ASSERT_EQ(gMultiplayerState.bossReadyBossId, 0);
-    ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
+    ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 0); // still waiting
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, BOSS_ID_BROCK);
+    ASSERT_EQ(gMultiplayerState.partnerBossId,   BOSS_ID_MISTY);
 }
 
 // ---- Step 9.5: Trainer randomization key space ----------------------------
@@ -1030,7 +1073,7 @@ static void TestIsConnectedReflectsState(void)
 
 int main(void)
 {
-    TestSpriteConstant();
+    TestGhostGraphicsId();
     TestInit();
     TestSpawnNoFreeSlot();
     TestSpawnSuccess();
@@ -1079,12 +1122,14 @@ int main(void)
     TestBossReadySoloProceeds();
     TestBossReadyConnectedWaitsForPartner();
     TestBossReadyBothReadyProceeds();
+    TestBossReadyKeepsMatchingPartnerReady();
+    TestBossReadyResetsMismatchingPartnerReady();
     TestBossReadyCancelClearsState();
     TestBossReadyPartnerCancelRecv();
     TestBossStartPacketRecv();
-    TestBossReadyIdempotent();
+    TestBossReadyClearsMismatchedStale();
     TestBadgeFlagInFullSync();
-    TestBossReadyPartnerAnyIdProceeds();
+    TestBossReadyRequiresMatchingId();
     TestTrainerKeysDontCollideWithWildKeys();
     TestIsConnectedReflectsState();
     TEST_SUMMARY();

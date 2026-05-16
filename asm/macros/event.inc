@@ -824,9 +824,19 @@
 	.byte SCR_OP_DOTRAINERBATTLE
 	.endm
 
-	@ Like dotrainerbattle but sets up BATTLE_TYPE_COOP for co-op multi battles.
-	.macro docooptrainerbattle
+	@ Starts a synchronized co-op double battle.  Two usage patterns:
+	@   1. `trainerbattle_* TRAINER_X, ...` followed by `docooptrainerbattle` —
+	@      the preceding trainerbattle opcode sets TRAINER_BATTLE_PARAM.opponentA;
+	@      `docooptrainerbattle` (no args) re-uses it.  Used by the existing
+	@      EARLY_RIVAL → EventScript_DoNoIntroCoopTrainerBattle dispatch path.
+	@   2. Standalone: `docooptrainerbattle TRAINER_X` — sets opponentA inline.
+	@      Useful in gym/boss scripts that want to skip trainerbattle's solo path
+	@      after a waitbossstart handshake.
+	@ The opponent id is duplicated into opponentB internally so one trainer drives
+	@ both partner trainer slots.
+	.macro docooptrainerbattle trainer=0xFFFF
 	.byte SCR_OP_DOCOOPTRAINERBATTLE
+	.2byte \trainer
 	.endm
 
 	@ Goes to address after the trainerbattle command (called by the battle functions, see battle_setup.c)

@@ -34,6 +34,9 @@ typedef u32 bool32;
 #define IWRAM_DATA
 #define EWRAM_CODE
 #define IWRAM_CODE
+// link.h declares `extern u16 ALIGNED(4) gRecvCmds[...]`; alignment is
+// irrelevant on the host so make it a no-op.
+#define ALIGNED(n)
 
 // Pull in OBJECT_EVENTS_COUNT, IS_FRLG, Direction enum, etc.
 // This is a pure-defines/enums file with no GBA hardware dependencies.
@@ -100,6 +103,12 @@ struct SaveBlock1 {
 };
 
 extern struct SaveBlock1 *gSaveBlock1Ptr;
+
+// Minimal SaveBlock2 — only the fields multiplayer.c reads.
+struct SaveBlock2 {
+    u8 playerGender; // MALE=0, FEMALE=1
+};
+extern struct SaveBlock2 *gSaveBlock2Ptr;
 
 // Minimal species constants needed by multiplayer.c starter functions.
 #define SPECIES_BULBASAUR   1

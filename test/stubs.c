@@ -14,6 +14,8 @@ u32 gTestRandom32Value = 0x11223344u;
 // Global arrays / pointers referenced by multiplayer.c
 struct ObjectEvent gObjectEvents[16];
 struct SaveBlock1 *gSaveBlock1Ptr;
+struct SaveBlock2 sTestSaveBlock2;
+struct SaveBlock2 *gSaveBlock2Ptr = &sTestSaveBlock2;
 struct PlayerAvatar gPlayerAvatar;
 
 // Set this to a valid slot (0-15) before a test that exercises spawn; 16 = no slot.
@@ -126,4 +128,21 @@ bool32 AddBagItem(u16 itemId, u16 count)
     gTestLastAddBagItemId    = itemId;
     gTestLastAddBagItemCount = count;
     return TRUE;
+}
+
+// ---------------------------------------------------------------------------
+// Stubs for link.c / task.c globals referenced by the coop-battle block relay.
+// These exist only so the native unit tests link cleanly; the tests don't
+// exercise the relay task path.
+// ---------------------------------------------------------------------------
+struct LinkPlayer { u16 version; u16 lp_field_2; u32 trainerId; u8 name[11]; u8 gender; u8 language; u32 linkType; u16 id; u16 trainerCode; };
+struct LinkPlayer gLinkPlayers[5];
+bool8 gReceivedRemoteLinkPlayers;
+u8 gBlockReceivedStatus[5];
+u16 gBlockRecvBuffer[5][0x100 / 2];
+
+u8 CreateTask(void (*func)(u8), u8 priority)
+{
+    (void)func; (void)priority;
+    return 0;
 }

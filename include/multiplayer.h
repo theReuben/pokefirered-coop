@@ -5,8 +5,10 @@
 #include "constants/multiplayer.h"
 #include "constants/event_objects.h"
 
-// Ghost NPC uses the FRLG Green (Leaf) walking sprite — visually distinct from Red.
-#define OBJ_EVENT_GFX_PLAYER2      OBJ_EVENT_GFX_GREEN_NORMAL
+// Ghost NPC graphics ID is picked at spawn time based on partner gender
+// (Multiplayer_GhostGraphicsId).  Until the partner sends MP_PKT_GENDER we
+// fall back to the opposite of the local player so the ghost is always
+// visually distinct from self.
 // LocalId 0xFE is above any map-defined NPC (maps rarely use IDs > 10).
 #define GHOST_LOCAL_ID             0xFE
 // Default elevation for overworld spawns.
@@ -118,6 +120,10 @@ bool8 Mp_DecodeVarSet(const u8 *in, u8 len, u16 *varId, u16 *value);
 u8 Mp_EncodeBossReady(u8 *out, u8 bossId);
 bool8 Mp_DecodeBossReady(const u8 *in, u8 len, u8 *bossId);
 
+// Gender packet: [type][gender]  (2 bytes).  gender is MALE/FEMALE.
+u8 Mp_EncodeGender(u8 *out, u8 gender);
+bool8 Mp_DecodeGender(const u8 *in, u8 len, u8 *gender);
+
 // Boss-cancel packet: [type]  (1 byte)
 u8 Mp_EncodeBossCancel(u8 *out);
 
@@ -174,6 +180,8 @@ struct MultiplayerState {
     u8  posFrameCounter;    // counts frames; send position every 4 frames
     u16 partnerStarterSpecies; // 0 until partner sends MP_PKT_STARTER_PICK
     u8  remoteUpdateThisFrame; // set when any remote flag/var applied; cleared next Multiplayer_Update
+    u8  partnerGender;         // MALE/FEMALE; meaningful only when gotPartnerGender is TRUE
+    u8  gotPartnerGender;      // TRUE once partner has sent MP_PKT_GENDER
 };
 
 extern struct MultiplayerState gMultiplayerState;
@@ -190,6 +198,9 @@ void Multiplayer_Update(void);
 void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);
 void Multiplayer_DespawnGhost(void);
 void Multiplayer_UpdateGhostPosition(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);
+// Returns the OBJ_EVENT_GFX_* constant to use when spawning the ghost: keyed
+// off partnerGender once known, otherwise opposite-of-self.
+u16 Multiplayer_GhostGraphicsId(void);
 
 // Packet send helpers (Phase 2 — now implemented via ring buffer)
 void Multiplayer_SendPosition(void);
@@ -198,6 +209,12 @@ void Multiplayer_SendFlagClear(u16 flagId);
 void Multiplayer_SendVarSet(u16 varId, u16 value);
 void Multiplayer_SendBossReady(u8 bossId);
 void Multiplayer_SendBossCancel(void);
+// Send local player gender to partner.  Idempotent; safe to call repeatedly.
+void Multiplayer_SendGender(void);
+// Apply partner gender received over the wire.  If a ghost is already spawned
+// with the wrong sprite, despawns it so the next GhostMapCheck respawns it
+// with the correct one.
+void Multiplayer_HandleRemoteGender(u8 gender);
 
 // Boss readiness protocol (Phase 5).
 // Each gym script calls the matching BossReady special, then polls via
