@@ -1,3 +1,14 @@
+@ Co-op ghost NPC interaction — shown when the player talks to their partner's ghost.
+@ gStringVar1 is pre-populated with the partner's name by C code before this runs.
+gText_GhostInteract::
+	.string "That's {STR_VAR_1},\nyour co-op partner!$"
+
+EventScript_GhostInteract::
+	lock
+	msgbox gText_GhostInteract, MSGBOX_DEFAULT
+	release
+	end
+
 gText_FollowerLovesYou::
 	.string "{STR_VAR_1} is regarding you with\nadoration!$"
 

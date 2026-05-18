@@ -1404,9 +1404,10 @@ void BattleSetup_StartTrainerBattle(void)
 void BattleSetup_StartCoopBattle(void)
 {
     gBattleTypeFlags = BATTLE_TYPE_COOP | BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER
-                     | BATTLE_TYPE_TWO_OPPONENTS | BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE;
-    // Use opponentA for both sides so GetFrontierTrainerName(opponentB) is safe.
-    TRAINER_BATTLE_PARAM.opponentB = TRAINER_BATTLE_PARAM.opponentA;
+                     | BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE;
+    // opponentB=0xFFFF triggers BATTLE_TWO_VS_ONE_OPPONENT: battler-3 slot is empty,
+    // giving a genuine 2-players-vs-1-trainer layout.
+    TRAINER_BATTLE_PARAM.opponentB = 0xFFFF;
     gMain.savedCallback = CB2_EndTrainerBattle;
     Multiplayer_SetupCoopBattle();
     DoTrainerBattle();

@@ -9,8 +9,10 @@
 // (Multiplayer_GhostGraphicsId).  Until the partner sends MP_PKT_GENDER we
 // fall back to the opposite of the local player so the ghost is always
 // visually distinct from self.
-// LocalId 0xFE is above any map-defined NPC (maps rarely use IDs > 10).
-#define GHOST_LOCAL_ID             0xFE
+// LocalId 0xFD is above any map-defined NPC (maps rarely use IDs > 10).
+// Must NOT be OBJ_EVENT_ID_FOLLOWER (0xFE) or the engine routes interaction
+// to EventScript_Follower instead of our ghost script.
+#define GHOST_LOCAL_ID             0xFD
 // Default elevation for overworld spawns.
 #define GHOST_ELEVATION            3
 // Sentinel value for ghostObjectEventId when no ghost is spawned.
@@ -182,6 +184,7 @@ struct MultiplayerState {
     u8  remoteUpdateThisFrame; // set when any remote flag/var applied; cleared next Multiplayer_Update
     u8  partnerGender;         // MALE/FEMALE; meaningful only when gotPartnerGender is TRUE
     u8  gotPartnerGender;      // TRUE once partner has sent MP_PKT_GENDER
+    u8  partnerName[PLAYER_NAME_LENGTH + 1]; // received via MP_PKT_NAME; default "???" until known
     u8  coopBattlePending;     // set by ScriptCheckBossStart when a connected boss-ready
                                // handshake completes; consumed by BattleSetup_ConfigureTrainerBattle
                                // to route the NEXT trainerbattle through the coop path
@@ -215,10 +218,14 @@ void Multiplayer_SendBossReady(u8 bossId);
 void Multiplayer_SendBossCancel(void);
 // Send local player gender to partner.  Idempotent; safe to call repeatedly.
 void Multiplayer_SendGender(void);
+// Send local player name to partner.  Called alongside SendGender on connect.
+void Multiplayer_SendName(void);
 // Apply partner gender received over the wire.  If a ghost is already spawned
 // with the wrong sprite, despawns it so the next GhostMapCheck respawns it
 // with the correct one.
 void Multiplayer_HandleRemoteGender(u8 gender);
+// Store partner's name (received via MP_PKT_NAME) in gMultiplayerState.partnerName.
+void Multiplayer_HandleRemoteName(const u8 *name);
 
 // Boss readiness protocol (Phase 5).
 // Each gym script calls the matching BossReady special, then polls via

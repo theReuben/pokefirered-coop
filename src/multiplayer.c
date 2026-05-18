@@ -1,6 +1,7 @@
 #include "global.h"
 #include "multiplayer.h"
 #include "constants/multiplayer.h"
+#include "constants/characters.h"
 #include "constants/event_object_movement.h"
 #include "event_object_movement.h"
 #include "event_data.h"
@@ -169,6 +170,25 @@ bool8 Mp_DecodeGender(const u8 *in, u8 len, u8 *gender)
     return TRUE;
 }
 
+u8 Mp_EncodeName(u8 *out, const u8 *name)
+{
+    u32 i;
+    out[0] = MP_PKT_NAME;
+    for (i = 0; i < PLAYER_NAME_LENGTH; i++)
+        out[1 + i] = name[i];
+    return MP_PKT_SIZE_NAME;
+}
+
+bool8 Mp_DecodeName(const u8 *in, u8 len, u8 *name)
+{
+    u32 i;
+    if (len < MP_PKT_SIZE_NAME)
+        return FALSE;
+    for (i = 0; i < PLAYER_NAME_LENGTH; i++)
+        name[i] = in[1 + i];
+    return TRUE;
+}
+
 u16 Mp_EncodeFullSync(u8 *out, const u8 *data, u16 dataLen)
 {
     u16 i;
@@ -233,6 +253,7 @@ static bool8 ProcessOneRecvPacket(void)
     {
         gMultiplayerState.connState = MP_STATE_CONNECTED;
         Multiplayer_SendGender();
+        Multiplayer_SendName();
     }
 
     switch (typeByte)
@@ -307,9 +328,10 @@ static bool8 ProcessOneRecvPacket(void)
 
     case MP_PKT_PARTNER_CONNECTED:
         gMultiplayerState.connState = MP_STATE_CONNECTED;
-        // Announce our gender so the partner can render our ghost correctly.
-        // The partner does the same in response to their own PARTNER_CONNECTED.
+        // Announce our gender and name so the partner can render our ghost
+        // correctly and display our name on interaction.
         Multiplayer_SendGender();
+        Multiplayer_SendName();
         break;
 
     case MP_PKT_PARTNER_DISCONNECTED:
@@ -394,6 +416,18 @@ static bool8 ProcessOneRecvPacket(void)
             u8 gender = 0;
             Mp_Pop(&gMpRecvRing, &gender);
             Multiplayer_HandleRemoteGender(gender);
+        }
+        break;
+
+    case MP_PKT_NAME:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_NAME - 1)
+            return FALSE;
+        {
+            u8 name[PLAYER_NAME_LENGTH];
+            u8 i;
+            for (i = 0; i < PLAYER_NAME_LENGTH; i++)
+                Mp_Pop(&gMpRecvRing, &name[i]);
+            Multiplayer_HandleRemoteName(name);
         }
         break;
 
@@ -512,6 +546,11 @@ void Multiplayer_Init(void)
     gMultiplayerState.posFrameCounter    = 0;
     gMultiplayerState.partnerGender      = MALE;
     gMultiplayerState.gotPartnerGender   = FALSE;
+    // Default shown if the partner hasn't yet sent their name.
+    gMultiplayerState.partnerName[0] = CHAR_QUESTION_MARK;
+    gMultiplayerState.partnerName[1] = CHAR_QUESTION_MARK;
+    gMultiplayerState.partnerName[2] = CHAR_QUESTION_MARK;
+    gMultiplayerState.partnerName[3] = EOS;
     gMultiplayerState.coopBattlePending  = FALSE;
     gCoopSettings.randomizeEncounters    = 1;
 #if MP_DEBUG_TEST_SEED
@@ -620,6 +659,13 @@ void Multiplayer_SendGender(void)
     MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_GENDER);
 }
 
+void Multiplayer_SendName(void)
+{
+    u8 pkt[MP_PKT_SIZE_NAME];
+    Mp_EncodeName(pkt, gSaveBlock2Ptr->playerName);
+    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_NAME);
+}
+
 void Multiplayer_HandleRemoteGender(u8 gender)
 {
     if (gender != MALE && gender != FEMALE)
@@ -631,6 +677,14 @@ void Multiplayer_HandleRemoteGender(u8 gender)
     // Force respawn so the next GhostMapCheck picks the correct sprite.
     if (gMultiplayerState.ghostObjectEventId < OBJECT_EVENTS_COUNT)
         Multiplayer_DespawnGhost();
+}
+
+void Multiplayer_HandleRemoteName(const u8 *name)
+{
+    u32 i;
+    for (i = 0; i < PLAYER_NAME_LENGTH; i++)
+        gMultiplayerState.partnerName[i] = name[i];
+    gMultiplayerState.partnerName[PLAYER_NAME_LENGTH] = EOS;
 }
 
 void Multiplayer_DespawnGhost(void)

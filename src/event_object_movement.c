@@ -20,6 +20,8 @@
 #include "fieldmap.h"
 #include "follower_npc.h"
 #include "follower_helper.h"
+#include "multiplayer.h"
+#include "string_util.h"
 #include "gpu_regs.h"
 #include "graphics.h"
 #include "mauville_old_man.h"
@@ -3683,6 +3685,11 @@ void SetObjectEventDirection(struct ObjectEvent *objectEvent, enum Direction dir
 
 static const u8 *GetObjectEventScriptPointerByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup)
 {
+    if (localId == GHOST_LOCAL_ID) {
+        // Pre-populate STR_VAR_1 with the partner's name before running the script.
+        StringCopy(gStringVar1, gMultiplayerState.partnerName);
+        return EventScript_GhostInteract;
+    }
     if (localId == OBJ_EVENT_ID_FOLLOWER)
         return EventScript_Follower;
     return GetObjectEventTemplateByLocalIdAndMap(localId, mapNum, mapGroup)->script;

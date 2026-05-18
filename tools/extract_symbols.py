@@ -36,6 +36,7 @@ WANTED_PATTERNS = [
     # text-box state symbols (static — only found in ELF, not in map file)
     r"^sFirstTextPrinter$",         # non-NULL while a TextPrinter node is in the linked list
     r"^sGlobalScriptContextStatus$",# script context status byte (0=RUNNING 1=WAITING 2=SHUTDOWN)
+    r"^sLockFieldControls$",        # bool8: TRUE while player is locked in a script/dialogue
     r"^gStringVar4$",               # field messages are expanded here by ShowFieldMessage
     r"^gDisableTextPrinters$",      # flag: text printing suppressed when non-zero
     # task system
