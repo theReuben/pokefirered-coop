@@ -156,15 +156,33 @@ def _parse_memory_map(path: Path) -> dict[str, int]:
 
 # ── Background relay thread ───────────────────────────────────────────────
 
+# True once we've injected MP_PKT_PARTNER_CONNECTED into both instances for
+# the current session. Reset when either instance goes away so a fresh boot
+# gets the handshake again.
+_connected_pair: bool = False
+
+
 def _relay_loop() -> None:
     """Continuously relay multiplayer packets and coop battle blocks between p1 and p2."""
+    global _connected_pair
     while True:
         time.sleep(RELAY_INTERVAL)
         try:
             p1 = _instances.get("p1")
             p2 = _instances.get("p2")
-            if not (p1 and p1.alive() and p2 and p2.alive()):
+            both_alive = bool(p1 and p1.alive() and p2 and p2.alive())
+
+            if not both_alive:
+                _connected_pair = False
                 continue
+
+            # Inject MP_PKT_PARTNER_CONNECTED (0x0B) into both recv rings once
+            # per session so each ROM auto-sets connState = MP_STATE_CONNECTED
+            # without requiring an in-game handshake packet.
+            if not _connected_pair:
+                p1.try_send_locked({"cmd": "inject", "bytes": "0B"})
+                p2.try_send_locked({"cmd": "inject", "bytes": "0B"})
+                _connected_pair = True
 
             # Ring-buffer packet relay (overworld position, flags, etc.)
             # p1 → p2
@@ -434,15 +452,20 @@ def get_text_state(instance_id: str = "p1") -> str:
     if not r.get("ok"):
         return f"get_text failed: {r.get('error', 'unknown')}"
 
-    box_open = r.get("box_open", False)
-    printing = r.get("printing", False)
-    waiting  = r.get("waiting_for_input", False)
-    text     = r.get("text", "").strip()
+    box_open   = r.get("box_open", False)
+    printing   = r.get("printing", False)
+    waiting    = r.get("waiting_for_input", False)
+    in_native  = r.get("in_native_script", False)
+    text       = r.get("text", "").strip()
 
     if printing:
         status = "printing"
     elif waiting:
         status = "waiting for input"
+    elif in_native:
+        status = "in native wait"
+    elif box_open:
+        status = "open"
     else:
         status = "no box"
 
@@ -480,6 +503,29 @@ def load_savestate(path: str, instance_id: str = "p1") -> str:
     if not r.get("ok"):
         return f"loadstate failed: {r.get('error', 'unknown')}"
     return f"Loaded '{p}' into '{instance_id}'. Wait ~300 frames before sending inputs."
+
+
+# ── Tool: save_savestate ──────────────────────────────────────────────────
+
+@mcp.tool()
+def save_savestate(path: str, instance_id: str = "p1") -> str:
+    """Save the current emulator state to a file.
+
+    Typical state paths (relative to repo root):
+      test/lua/states/pewter_gym.ss1
+
+    Args:
+        path: Destination path for .ss1 file (relative to repo root or absolute).
+        instance_id: Which instance to save ('p1' or 'p2').
+    """
+    p = Path(path)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    p.parent.mkdir(parents=True, exist_ok=True)
+    r = _inst(instance_id).send_locked({"cmd": "savestate", "path": str(p)})
+    if not r.get("ok"):
+        return f"savestate failed: {r.get('error', 'unknown')}"
+    return f"Saved state to '{p}' ({r.get('size', '?')} bytes)."
 
 
 # ── Cleanup ───────────────────────────────────────────────────────────────

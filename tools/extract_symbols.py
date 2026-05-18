@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """
-extract_symbols.py — parse the linker .map file and emit test/lua/memory_map.lua
+extract_symbols.py — parse the linker .map file (and ELF via nm) and emit
+test/lua/memory_map.lua
 
 Usage:
-    python3 tools/extract_symbols.py pokefirered.map test/lua/memory_map.lua
+    python3 tools/extract_symbols.py pokefirered.map test/lua/memory_map.lua [pokefirered.elf]
 
 The script extracts any symbol whose name matches the patterns listed in
 WANTED_PATTERNS and writes a Lua table so mGBA Lua test scripts can look
 up symbol addresses without hard-coding them.
+
+The .map file only contains globally-exported symbols.  Pass the ELF as a
+third argument to also pick up file-scope (static) symbols via `nm`.
 
 Symbol line format in the map file:
     <whitespace> 0xHEXADDR <whitespace> SYMBOL_NAME
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -24,10 +29,18 @@ WANTED_PATTERNS = [
     r"^gMpSendRing$",
     r"^gMpRecvRing$",
     r"^gCoopSettings$",
-    r"^gMpAddrTable$",      # discovery table magic + pointers (Tauri scan target)
-    r"^gMpBlockExchange$",  # coop battle block relay staging buffer
-    r"^gSaveBlock1Ptr$",    # pointer to SaveBlock1; dereference to reach flags[]
-    r"^gSaveblock1$",       # the actual SaveBlock1 struct (no game loaded → ptr is NULL)
+    r"^gMpAddrTable$",              # discovery table magic + pointers (Tauri scan target)
+    r"^gMpBlockExchange$",          # coop battle block relay staging buffer
+    r"^gSaveBlock1Ptr$",            # pointer to SaveBlock1; dereference to reach flags[]
+    r"^gSaveblock1$",               # the actual SaveBlock1 struct (no game loaded → ptr is NULL)
+    # text-box state symbols (static — only found in ELF, not in map file)
+    r"^sFirstTextPrinter$",         # non-NULL while a TextPrinter node is in the linked list
+    r"^sGlobalScriptContextStatus$",# script context status byte (0=RUNNING 1=WAITING 2=SHUTDOWN)
+    r"^gStringVar4$",               # field messages are expanded here by ShowFieldMessage
+    r"^gDisableTextPrinters$",      # flag: text printing suppressed when non-zero
+    # task system
+    r"^gTasks$",                    # task array base (IWRAM); stride 0x28, NUM_TASKS=16
+    r"^Task_HandleYesNoInput$",     # script YESNO handler task; stale copy can block YESNO
 ]
 
 _WANTED_RE = [re.compile(p) for p in WANTED_PATTERNS]
@@ -52,6 +65,44 @@ def parse_map(path: Path) -> dict[str, int]:
     return symbols
 
 
+def parse_elf(elf_path: Path) -> dict[str, int]:
+    """Run nm on the ELF to pick up static (file-scope) symbols missing from the map."""
+    symbols: dict[str, int] = {}
+    nm_candidates = ["arm-none-eabi-nm", "nm",
+                     "/opt/devkitpro/devkitARM/bin/arm-none-eabi-nm"]
+    nm_bin = None
+    for candidate in nm_candidates:
+        try:
+            subprocess.run([candidate, "--version"], capture_output=True, check=True)
+            nm_bin = candidate
+            break
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            continue
+    if nm_bin is None:
+        print("Warning: nm not found — skipping ELF static-symbol extraction.",
+              file=sys.stderr)
+        return symbols
+    try:
+        result = subprocess.run(
+            [nm_bin, str(elf_path)],
+            capture_output=True, text=True, check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"Warning: nm failed on {elf_path}: {exc}", file=sys.stderr)
+        return symbols
+    # nm output: ADDRESS TYPE NAME  (e.g. "02037340 b sFirstTextPrinter")
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            addr_str, name = parts[0], parts[2]
+            if wanted(name):
+                try:
+                    symbols[name] = int(addr_str, 16)
+                except ValueError:
+                    pass
+    return symbols
+
+
 def emit_lua(symbols: dict[str, int], out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -68,12 +119,13 @@ def emit_lua(symbols: dict[str, int], out_path: Path) -> None:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <map-file> <output.lua>", file=sys.stderr)
+    if len(sys.argv) not in (3, 4):
+        print(f"Usage: {sys.argv[0]} <map-file> <output.lua> [elf-file]", file=sys.stderr)
         return 1
 
     map_path = Path(sys.argv[1])
     out_path = Path(sys.argv[2])
+    elf_path = Path(sys.argv[3]) if len(sys.argv) == 4 else None
 
     if not map_path.exists():
         print(f"Error: map file not found: {map_path}", file=sys.stderr)
@@ -81,8 +133,19 @@ def main() -> int:
 
     symbols = parse_map(map_path)
 
+    if elf_path:
+        if not elf_path.exists():
+            print(f"Warning: ELF not found: {elf_path} — skipping static symbols.",
+                  file=sys.stderr)
+        else:
+            elf_syms = parse_elf(elf_path)
+            # ELF takes precedence only for symbols absent from the map.
+            for name, addr in elf_syms.items():
+                if name not in symbols:
+                    symbols[name] = addr
+
     if not symbols:
-        print("Warning: no matching symbols found in map file.", file=sys.stderr)
+        print("Warning: no matching symbols found.", file=sys.stderr)
 
     emit_lua(symbols, out_path)
 

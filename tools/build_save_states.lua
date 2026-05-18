@@ -49,8 +49,20 @@ local MAP = {
 }
 
 -- ── Save-block pointer (IWRAM) ────────────────────────────────────────────────
--- gSaveBlock1Ptr is at 0x03005300; location.mapGroup is at SB1+4, mapNum at SB1+5.
-local ADDR_SB1_PTR  = 0x03005300
+-- Load from auto-generated memory map so address stays correct after ROM rebuilds.
+local _mem_path = (debug.getinfo(1, "S").source:match("@(.+/)") or "./") .. "../test/lua/memory_map.lua"
+local _mem = dofile(_mem_path)
+local ADDR_SB1_PTR      = _mem.gSaveBlock1Ptr
+local ADDR_SCRIPT_STATUS = _mem.sGlobalScriptContextStatus  -- 0=RUNNING,1=WAITING,2=SHUTDOWN
+local ADDR_GTASKS        = _mem.gTasks                      -- task array base; stride 0x28
+local YESNO_TASK_FUNC    = _mem.Task_HandleYesNoInput       -- ROM code addr (add 1 for THUMB ptr)
+local ADDR_COOP_SETTINGS = _mem.gCoopSettings               -- struct CoopSettings (randomizeEncounters at +0)
+assert(ADDR_SB1_PTR and ADDR_SB1_PTR ~= 0,
+    "gSaveBlock1Ptr not found in memory_map.lua — run 'make build-states' to regenerate")
+assert(ADDR_SCRIPT_STATUS and ADDR_SCRIPT_STATUS ~= 0,
+    "sGlobalScriptContextStatus not found — regenerate memory_map.lua with pokefirered.elf")
+assert(ADDR_GTASKS and YESNO_TASK_FUNC,
+    "gTasks/Task_HandleYesNoInput missing — regenerate memory_map.lua with pokefirered.elf")
 local SB1_LOC_GROUP = 4
 local SB1_LOC_NUM   = 5
 
@@ -97,9 +109,65 @@ local function waitForMap(m, label, maxFrames, spamA_every)
             emu:setKeys(0)
             emu:runFrame()
         end
+        if i % 3000 == 0 then
+            local g2, n2 = readMap()
+            print(string.format("[states] waitForMap %s: frame=%d map=(%d,%d)", label, i, g2, n2))
+        end
     end
     local g, n = readMap()
     error(string.format("[states] TIMEOUT waiting for %s (%d,%d) – on (%d,%d) after %d frames",
+          label, m.g, m.n, g, n, maxFrames))
+end
+
+local function playerPos()
+    local x = emu:read16(ADDR_OBJ0_X)
+    local y = emu:read16(ADDR_OBJ0_Y)
+    if x >= 0x8000 then x = x - 0x10000 end
+    if y >= 0x8000 then y = y - 0x10000 end
+    return x, y
+end
+
+-- Walk toward a map in 16-frame tile steps, clearing blocking dialogues with A.
+-- Holds dir for 16 frames per step (one tile); only presses A when a script
+-- or field-lock is detected, rather than blindly alternating every 8 frames.
+local function walkToMap(dir, m, label, maxFrames)
+    maxFrames = maxFrames or 36000
+    local frames = 0
+    local lastLogFrames = 0
+    while frames < maxFrames do
+        -- Hold dir for one full tile step (16 frames).
+        emu:setKeys(dir)
+        for _ = 1, 16 do
+            emu:runFrame()
+            frames = frames + 1
+            local g, n = readMap()
+            if g == m.g and n == m.n then
+                emu:setKeys(0)
+                print(string.format("[states] MAP %-24s (%2d,%2d) after %5d frames",
+                      label, g, n, frames))
+                return frames
+            end
+        end
+        emu:setKeys(0)
+        -- Dismiss any blocking script/dialogue (up to 120 frames of A spam).
+        for _ = 1, 120 do
+            local ctx  = emu:read8(ADDR_SCRIPT_STATUS)
+            local lock = emu:read8(ADDR_SCRIPT_STATUS - 1)
+            if ctx ~= 1 and lock == 0 then break end
+            emu:setKeys(KEY_A); emu:runFrame(); emu:setKeys(0); emu:runFrame()
+            frames = frames + 2
+        end
+        -- Periodic diagnostic
+        if frames - lastLogFrames >= 500 then
+            local x, y = playerPos()
+            local g, n = readMap()
+            print(string.format("[states] walkToMap %s: frame=%d map=(%d,%d) pos=(%d,%d)",
+                  label, frames, g, n, x, y))
+            lastLogFrames = frames
+        end
+    end
+    local g, n = readMap()
+    error(string.format("[states] TIMEOUT walking to %s (%d,%d) – on (%d,%d) after %d frames",
           label, m.g, m.n, g, n, maxFrames))
 end
 
@@ -117,6 +185,36 @@ local function idle(n)
     for _ = 1, n do emu:runFrame() end
 end
 
+-- Kill any stale Task_HandleYesNoInput in gTasks.  The task persists across
+-- map transitions and can bypass ScriptMenu_YesNo() if not cleaned up.
+-- Performs a full linked-list removal (prev.next = next, next.prev = prev)
+-- before clearing isActive so CreateTask() can safely reuse the slot.
+local function killYesNoTask()
+    local STRIDE    = 0x28   -- sizeof(struct Task)
+    local NUM_TASKS = 16
+    local THUMB_PTR = YESNO_TASK_FUNC | 1   -- GBA stores THUMB ptrs with bit0 set
+    local killed    = 0
+    for i = 0, NUM_TASKS - 1 do
+        local base   = ADDR_GTASKS + i * STRIDE
+        local active = emu:read8(base + 4)
+        local fptr   = emu:read32(base)
+        if active ~= 0 and fptr == THUMB_PTR then
+            local prev_s = emu:read8(base + 5)
+            local next_s = emu:read8(base + 6)
+            emu:write8(ADDR_GTASKS + prev_s * STRIDE + 6, next_s)  -- prev.next = next
+            emu:write8(ADDR_GTASKS + next_s * STRIDE + 5, prev_s)  -- next.prev = prev
+            emu:write8(base + 4, 0)                                 -- isActive = FALSE
+            print(string.format("[states] killed stale Task_HandleYesNoInput slot=%d prev=%d next=%d",
+                  i, prev_s, next_s))
+            killed = killed + 1
+        end
+    end
+    if killed == 0 then
+        print("[states] Task_HandleYesNoInput: no stale instance found")
+    end
+    return killed
+end
+
 local function spamA(times, gap)
     gap = gap or 6
     for _ = 1, times do press(KEY_A, 2, gap) end
@@ -125,14 +223,6 @@ end
 -- Hold direction for N tiles (~16f hold + 2f release per tile).
 local function walk(dir, tiles)
     for _ = 1, tiles do press(dir, 16, 2) end
-end
-
-local function playerPos()
-    local x = emu:read16(ADDR_OBJ0_X)
-    local y = emu:read16(ADDR_OBJ0_Y)
-    if x >= 0x8000 then x = x - 0x10000 end
-    if y >= 0x8000 then y = y - 0x10000 end
-    return x, y
 end
 
 local function logPos(label)
@@ -208,7 +298,7 @@ press(KEY_A, 5, 30)         -- "So your name is [X]?"
 idle(30)                    -- YES/NO appears
 press(KEY_A, 5, 30)         -- YES
 
-idle(250)                   -- rival pic fades in, text auto-prints, menu slides in
+idle(600)                   -- rival pic fades in, text auto-prints, menu slides in (generous buffer)
 press(KEY_DOWN, 3, 20)      -- cursor 0(NEW NAME) → 1(GREEN)
 press(KEY_A, 5, 30)         -- select GREEN → ConfirmName (no naming screen required)
 
@@ -254,8 +344,11 @@ idle(30)
 -- taken, and waitbossstart/waitstarterpick resolve immediately.
 log("phase 6b: force solo mode + inject VAR_LAB=1, walk to lab entrance")
 
-local OAK_OFF = 0x139C + (0x4050 - 0x4000) * 2   -- SB1 offset for VAR_MAP_SCENE_PALLET_TOWN_OAK
-local LAB_OFF = 0x139C + (0x4055 - 0x4000) * 2   -- SB1 offset for VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB
+-- Offsets verified from GetVarPointer disassembly (0x08119ae8):
+--   address = gSaveBlock1Ptr + (id + 0xFFFFC9C8) * 2  = gSaveBlock1Ptr + (id - 0x3638) * 2
+-- struct comment says vars at 0x139C but compiled code puts vars[0] at ptr+0x1390 (12 bytes earlier)
+local OAK_OFF = (0x4050 - 0x3638) * 2   -- 0x1430; VAR_MAP_SCENE_PALLET_TOWN_OAK
+local LAB_OFF = (0x4055 - 0x3638) * 2   -- 0x143A; VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB
 local function readVar(off)
     local ptr = emu:read32(ADDR_SB1_PTR)
     return ptr ~= 0 and emu:read16(ptr + off) or -1
@@ -308,14 +401,18 @@ do local x, y = playerPos(); local g, n = readMap()
    print(string.format("[states] pallet spawn x=%d y=%d tile(%d,%d) map=(%d,%d)",
          x, y, x-7, y-7, g, n)) end
 
--- Flag 0 fix is inlined into the wait loops below — callbacks:add is not
--- available in mGBA headless context.
-local FLAG_BYTE_OFF = 0x1270   -- gSaveBlock1+0x1270 byte 0; bit 0 = flag 0
+-- Lab NPC hide flags inlined into wait loops — callbacks:add not available headless.
+-- In FRLG mode flags 0x028-0x02D are all in byte 5 of the flag array:
+--   bit0=FLAG_HIDE_BULBASAUR_BALL(0x028) bit1=FLAG_HIDE_SQUIRTLE_BALL(0x029)
+--   bit2=FLAG_HIDE_CHARMANDER_BALL(0x02A) bit3=FLAG_HIDE_OAK_IN_HIS_LAB(0x02B)
+--   bit4=FLAG_HIDE_OAK_IN_PALLET_TOWN(0x02C) bit5=FLAG_HIDE_RIVAL_IN_LAB(0x02D)
+local FLAG_BYTE_OFF = 0x1275   -- gSaveBlock1+0x1275 byte 5; bits 0-5 = lab NPC hide flags
 
 -- Walk to the lab entrance warp at tile(16,13) via the passable corridor.
 -- The escort script (PlayerWalkToLabLeft) reveals: x=11 column is open from y=3
 -- to y=14; then RIGHT to (16,14); then UP onto the warp at (16,13).
 -- VAR_OAK=1 prevents OakTrigger at tile(12,1) from firing during navigation.
+-- Clearing bits 0-5 of FLAG_BYTE_OFF ensures Oak/Rival/Balls are all visible.
 walk(KEY_RIGHT, 5)   -- tile(6,8) → tile(11,8)  [house row, known passable]
 walk(KEY_DOWN,  6)   -- tile(11,8) → tile(11,14) [x=11 corridor, open to y≥14]
 walk(KEY_RIGHT, 5)   -- tile(11,14) → tile(16,14)
@@ -327,11 +424,11 @@ do local x,y=playerPos(); local g,n=readMap()
 -- ── PHASE 7: ChooseStarterScene → approach ball ───────────────────────────────
 -- With VAR_LAB=1 injected, ON_TRANSITION positions Oak at (6,11) and ON_FRAME
 -- fires ChooseStarterScene: Oak UP 6, Player UP 8 → 4 msgboxes → setvar VAR_LAB,2.
--- Player ends at tile(6,4) facing north.  Keep flag 0 cleared so all NPCs visible.
-log("phase 7: choosestarter scene → approach ball")
+-- Player ends at tile(6,4) facing north.  Keep bits 0-5 cleared so all NPCs visible.
+log("phase 7: enter oak's lab → approach ball")
 
 -- Wait for the lab map to load (natural warp fires when UP 1 hits tile 16,13).
--- Clear flag 0 every frame so Oak/Rival/Balls are not hidden on entry.
+-- Clear bits 0-5 every frame so Oak/Rival/Balls are not hidden on entry.
 print("[states] waiting for Oak's Lab...")
 for i = 1, 36000 do
     emu:setKeys(0)
@@ -339,7 +436,7 @@ for i = 1, 36000 do
     local fptr = emu:read32(ADDR_SB1_PTR)
     if fptr ~= 0 then
         local b = emu:read8(fptr + FLAG_BYTE_OFF)
-        if b % 2 ~= 0 then emu:write8(fptr + FLAG_BYTE_OFF, b - 1) end
+        if (b % 64) ~= 0 then emu:write8(fptr + FLAG_BYTE_OFF, b - (b % 64)) end
     end
     local g2, n2 = readMap()
     if g2 == MAP.OAKS_LAB.g and n2 == MAP.OAKS_LAB.n then
@@ -353,55 +450,67 @@ for i = 1, 36000 do
     if i == 36000 then error("[states] TIMEOUT waiting for Oak's Lab") end
 end
 
--- Wait for ChooseStarterScene to complete (VAR_LAB==2).
--- ON_FRAME fires it immediately since VAR_LAB=1 was injected before entry.
--- Spam A every 30f to advance the 4 scene msgboxes.
--- Keep clearing flag 0 so Rival/Oak/Balls remain visible for waitmovement 0.
-print("[states] waiting for ChooseStarterScene (VAR_LAB->2)...")
-local scene_done = false
-for i = 1, 18000 do
+-- ── PHASE 7: Let ChooseStarterScene complete, navigate to Bulbasaur ball ───────
+-- Now that VAR_LAB=1 is written to the correct address (0x143A via GetVarPointer
+-- disassembly), ON_FRAME triggers ChooseStarterScene: lockall → Oak UP 6 →
+-- Player UP 8 to tile(6,4) → 4 msgboxes → setvar VAR_LAB,2 → releaseall; end.
+-- After scene: navigate DOWN 1 + RIGHT 2 + UP 1(blocked by ball) to reach (8,5)N.
+log("phase 7: ChooseStarterScene → approach ball")
+
+idle(20)   -- warp-exit animation + ON_WARP settle
+
+do local x,y=playerPos(); local g,n=readMap()
+   print(string.format("[states] lab entry tile(%d,%d) map=(%d,%d)", x-7,y-7,g,n)) end
+
+-- Set text speed to FAST so the 4 scene dialogs advance quickly
+do
+    local sb2 = emu:read32(0x03005304)
+    if sb2 ~= 0 then
+        local opt = emu:read16(sb2 + 0x14)
+        emu:write16(sb2 + 0x14, (opt & 0xFFF8) | 2)
+        print(string.format("[states] text speed -> FAST (sb2=0x%08x opts16=0x%04x)",
+              sb2, emu:read16(sb2 + 0x14)))
+    end
+end
+
+-- Wait for scene to finish (ctx=SHUTDOWN, lock=0, VAR_LAB=2).
+-- Press A every 30 frames to advance the 4 dialog boxes.  Scene takes ~700-900f.
+for i = 1, 3600 do
     emu:setKeys(0)
     emu:runFrame()
     local fptr = emu:read32(ADDR_SB1_PTR)
     if fptr ~= 0 then
         local b = emu:read8(fptr + FLAG_BYTE_OFF)
-        if b % 2 ~= 0 then emu:write8(fptr + FLAG_BYTE_OFF, b - 1) end
-        if emu:read16(fptr + LAB_OFF) == 2 then
-            print(string.format("[states] ChooseStarterScene complete frame=%d", i))
-            scene_done = true
-            break
-        end
+        if (b % 64) ~= 0 then emu:write8(fptr + FLAG_BYTE_OFF, b - (b % 64)) end
+    end
+    local ctx  = emu:read8(ADDR_SCRIPT_STATUS)
+    local lock = emu:read8(0x03001808)
+    if i > 200 and ctx == 2 and lock == 0 and readVar(LAB_OFF) == 2 then
+        local x, y = playerPos()
+        print(string.format("[states] scene done i=%d tile(%d,%d) VAR_LAB=%d",
+              i, x-7, y-7, readVar(LAB_OFF)))
+        break
     end
     if i % 30 == 0 then
         emu:setKeys(KEY_A); emu:runFrame(); emu:setKeys(0)
     end
-    if i % 3000 == 0 then
-        local fptr2 = emu:read32(ADDR_SB1_PTR)
-        local vlab = fptr2 ~= 0 and emu:read16(fptr2 + LAB_OFF) or -1
-        local fb   = fptr2 ~= 0 and emu:read8(fptr2 + FLAG_BYTE_OFF) or -1
-        local px, py = playerPos(); local gm, nm = readMap()
-        print(string.format("[states] heartbeat frame=%5d VAR_LAB=%d flag0_byte=0x%02x tile(%d,%d) map=(%d,%d)",
-              i, vlab, fb, px-7, py-7, gm, nm))
+    if i == 3600 then error("[states] TIMEOUT waiting for ChooseStarterScene") end
+end
+
+-- Final NPC hide flag clear
+do
+    local fptr = emu:read32(ADDR_SB1_PTR)
+    if fptr ~= 0 then
+        local b = emu:read8(fptr + FLAG_BYTE_OFF)
+        if (b % 64) ~= 0 then emu:write8(fptr + FLAG_BYTE_OFF, b - (b % 64)) end
+        print("[states] NPC hide flags cleared")
     end
 end
-if not scene_done then
-    local fptr2 = emu:read32(ADDR_SB1_PTR)
-    local vlab = fptr2 ~= 0 and emu:read16(fptr2 + LAB_OFF) or -1
-    error(string.format("[states] TIMEOUT: ChooseStarterScene never set VAR_LAB=2 (last=%d)", vlab))
-end
 
-idle(60)    -- settle after releaseall
-
-do local x,y=playerPos(); local g,n=readMap()
-   print(string.format("[states] post-scene tile(%d,%d) map=(%d,%d) VAR_LAB=%d",
-         x-7,y-7,g,n,readVar(LAB_OFF))) end
-
--- Navigate from (6,4) to (8,5) facing north.
--- DOWN 1 clears y=4 (rival+ball row); RIGHT 2 to x=8; UP 1 → blocked by ball
--- at (8,4) leaving player at (8,5) facing north.
-walk(KEY_DOWN,  1)          -- (6,4) → (6,5)
-walk(KEY_RIGHT, 2)          -- (6,5) → (8,5)
-walk(KEY_UP,    1)          -- (8,5) tries (8,4), ball blocks → stays at (8,5) facing N
+-- From tile(6,4): DOWN 1 → (6,5); RIGHT 2 → (8,5); UP 1 blocked by ball → (8,5)N
+walk(KEY_DOWN,  1)
+walk(KEY_RIGHT, 2)
+walk(KEY_UP,    1)   -- (8,4)=ball blocks; player stays at (8,5) facing N
 
 do local x,y=playerPos(); local g,n=readMap()
    print(string.format("[states] at ball tile(%d,%d) VAR_LAB=%d",
@@ -412,78 +521,287 @@ do local x,y=playerPos(); local g,n=readMap()
 log("checkpoint 1: oaks_lab.ss1")
 saveState("oaks_lab.ss1")
 
--- ── PHASE 8: Choose Bulbasaur → rival battle → exit lab ──────────────────────
--- Player at (8,5) facing NORTH.  Ball interaction fires BulbasaurBall script:
---   setvar VAR_STARTER_NUM,0  → ConfirmStarterChoice  → MSGBOX_YESNO
--- Starter pick timing:
---   ~60f  MSGBOX_YESNO "Do you want BULBASAUR?" → A=YES
---   ~30f  "This BULBASAUR is quite energetic!" msgbox → A to advance
---   ~200f received msg + waitfanfare → MSGBOX_YESNO "Give a nickname?" → B=NO
---   waitstarterpick resolves immediately (connState=0) → RivalPicksStarter
---   ~100f rival walks to Squirtle ball (4 tiles right from x=5)
---   ~30f  "I'll take THIS ONE then!" msgbox → A to advance
---   ~200f rival received + waitfanfare → setvar VAR_LAB,3 + release
--- Walk DOWN 3 + LEFT 1: (8,5)→(8,8)→(7,8) → RivalBattleTrigger (VAR_LAB==3).
--- Walk DOWN 4: (7,8)→(7,12) → exit warp → MAP_PALLET_TOWN.
-log("phase 8: pick starter + rival battle + exit lab")
-press(KEY_A, 3, 30)         -- interact with Bulbasaur ball
-idle(60)                    -- MSGBOX_YESNO for starter appears
-press(KEY_A, 3, 30)         -- YES to "Do you want BULBASAUR?"
-idle(30)
-press(KEY_A, 3, 30)         -- advance "This BULBASAUR is quite energetic!" msgbox
-idle(200)                   -- received msg + waitfanfare (~170f)
-press(KEY_B, 3, 30)         -- NO to "Give it a nickname?"
-idle(100)                   -- rival walks to Squirtle ball (~80f)
-press(KEY_A, 3, 30)         -- advance "I'll take THIS ONE then!" msgbox
-idle(200)                   -- rival received msg + waitfanfare
-idle(60)                    -- release settle; VAR_LAB=3
-do local x,y=playerPos(); local g,n=readMap()
-   print(string.format("[states] DBG8a post-starter tile(%d,%d) map=(%d,%d) VAR_LAB=%d",
-         x-7,y-7,g,n,readVar(LAB_OFF))) end
+-- ── PHASE 8: Choose Bulbasaur → exit lab ────────────────────────────────────
+-- OakChoosingBulbasaur text has a \p page break that requires A to advance.
+-- The YESNO box uses `yesnobox` which sets sGlobalScriptContextStatus=WAITING(1).
+-- Strategy: poll ctx each frame; press A periodically to advance page breaks.
+-- ctx=1 reliably means the yesnobox (YESNO menu) is showing.
+-- Task_HandleYesNoInput has a 5-frame guard; we wait 10f after ctx=1 before
+-- pressing YES/NO so the guard is guaranteed to have cleared.
+--
+-- After picking Bulbasaur (VAR_LAB→3) we bump VAR_LAB to 4 to bypass the
+-- rival-battle coord trigger at (7,8) which fires only when VAR_LAB==3.
+log("phase 8: pick starter + exit lab")
 
-walk(KEY_DOWN, 3)           -- (8,5) → (8,8) [x=8: no LeaveStarter trigger here]
-walk(KEY_LEFT, 1)           -- (8,8) → (7,8) → RivalBattleTrigger fires (VAR_LAB==3)
-spamA(100, 15)              -- rival intro + battle turns + exp + post-battle (100×17=1700f)
-idle(300)                   -- releaseall settle
-do local x,y=playerPos(); local g,n=readMap()
-   print(string.format("[states] DBG8b post-battle tile(%d,%d) map=(%d,%d)",x-7,y-7,g,n)) end
+-- Set text speed to FAST (1f/char) so page breaks advance quickly.
+-- gSaveBlock2Ptr @ 0x03005304; optionsTextSpeed:3 is bits[2:0] of u16 at sb2+0x14.
+do
+    local sb2 = emu:read32(0x03005304)
+    if sb2 ~= 0 then
+        local opt = emu:read16(sb2 + 0x14)
+        emu:write16(sb2 + 0x14, (opt & 0xFFF8) | 2)
+        print(string.format("[states] text speed -> FAST (sb2=0x%08x opts16=0x%04x)",
+              sb2, emu:read16(sb2 + 0x14)))
+    end
+end
 
-walk(KEY_DOWN, 4)           -- (7,8) → (7,12) → exit warp fires
+-- Diagnostic dump before interaction.
+do
+    local lock0 = emu:read8(0x03001808)
+    local ctx0  = emu:read8(ADDR_SCRIPT_STATUS)
+    local px, py = playerPos()
+    print(string.format("[states] PRE-P8 lock=%d ctx=%d tile(%d,%d) VAR_LAB=%d",
+          lock0, ctx0, px-7, py-7, readVar(LAB_OFF)))
+    if lock0 == 1 then
+        print("[states] WARNING: stale lock — clearing to 0")
+        emu:write8(0x03001808, 0)
+    end
+end
+
+-- Kill any stale Task_HandleYesNoInput.  If still alive from an earlier phase
+-- the yesnobox command returns immediately without waiting for input, causing
+-- the ball script to hit the bare `end` with VAR_RESULT=0xFF (neither YES/NO).
+killYesNoTask()
+
+-- Trigger ball interaction.  Retry A until sLockFieldControls→1.
+local ball_started = false
+for try = 1, 90 do
+    press(KEY_A, 3, 12)
+    if emu:read8(0x03001808) == 1 then
+        print(string.format("[states] ball lock at try=%d", try))
+        ball_started = true
+        break
+    end
+end
+if not ball_started then
+    error("[states] Bulbasaur ball never triggered after 90 tries")
+end
+
+-- ── Step A: wait for "Do you want BULBASAUR?" YESNO (ctx=1=CONTEXT_WAITING) ──
+-- The text has 2 pages separated by \p (~57f each at FAST).  Press A every 60f
+-- to advance the page break.  ctx=1 signals yesnobox paused the script.
+do
+    -- DIAGNOSTIC: trace ctx for 200 frames to understand timing
+    local prev_ctx = emu:read8(ADDR_SCRIPT_STATUS)
+    local seen = false
+    for i = 1, 600 do
+        emu:setKeys(0); emu:runFrame()
+        local c = emu:read8(ADDR_SCRIPT_STATUS)
+        if c ~= prev_ctx then
+            print(string.format("[states] P8 ctx %d→%d at i=%d lock=%d VAR_LAB=%d",
+                  prev_ctx, c, i, emu:read8(0x03001808), readVar(LAB_OFF)))
+            prev_ctx = c
+        end
+        if c == 1 then
+            print(string.format("[states] P8: 'want Bulbasaur?' YESNO at i=%d", i))
+            seen = true
+            break
+        end
+        if i % 60 == 0 then press(KEY_A, 1, 3) end  -- advance \p page break
+    end
+    if not seen then error("[states] 'want Bulbasaur?' YESNO never appeared") end
+end
+idle(10)            -- let 5-frame guard in Task_HandleYesNoInput expire
+press(KEY_A, 2, 5)  -- YES to "Do you want BULBASAUR?"
+-- ctx → 0 (ChoseStarter running: hidemonpic, removeobject, energetic msgbox...)
+
+-- ── Step B: advance energetic msgbox, then wait for nickname YESNO (ctx=1) ──
+-- "This POKéMON is really quite energetic!" uses MSGBOX_DEFAULT (waitbuttonpress).
+-- After that: givemon + received text (~37f) + fanfare (170f) + nickname yesnobox.
+-- Press A every 20f to advance the energetic waitbuttonpress and any page breaks.
+do
+    local seen = false
+    for i = 1, 500 do
+        emu:setKeys(0); emu:runFrame()
+        if emu:read8(ADDR_SCRIPT_STATUS) == 1 then
+            print(string.format("[states] P8: nickname YESNO at i=%d", i))
+            seen = true
+            break
+        end
+        if i % 20 == 0 then press(KEY_A, 1, 3) end  -- advance energetic waitbuttonpress
+    end
+    if not seen then error("[states] nickname YESNO never appeared") end
+end
+idle(10)            -- 5-frame guard
+press(KEY_B, 2, 5)  -- NO to "Give it a nickname?"
+-- Script: WaitForPartnerStarter → RivalPicksStarter → RivalWalksToSquirtle →
+--         waitmovement (~88f) → RivalTakesStarter → msgbox MSGBOX_DEFAULT →
+--         received waitmessage → fanfare (170f) → setvar VAR_LAB=3 → release → end
+
+-- ── Step C: advance rival dialog, wait for VAR_LAB=3 and lock=0 ──────────────
+-- Press A every 20f to advance the rival's MSGBOX_DEFAULT waitbuttonpress.
+do
+    local done = false
+    for i = 1, 700 do
+        emu:setKeys(0); emu:runFrame()
+        if readVar(LAB_OFF) == 3 and emu:read8(0x03001808) == 0 then
+            print(string.format("[states] P8: VAR_LAB=3 lock=0 at i=%d", i))
+            done = true
+            break
+        end
+        if i % 20 == 0 then press(KEY_A, 1, 3) end  -- advance rival waitbuttonpress
+    end
+    if not done then
+        local lk = emu:read8(0x03001808)
+        local vl = readVar(LAB_OFF)
+        print(string.format("[states] P8 FAIL: lock=%d ctx=%d VAR_LAB=%d",
+              lk, emu:read8(ADDR_SCRIPT_STATUS), vl))
+        error("[states] Phase 8 failed: VAR_LAB never reached 3")
+    end
+end
+print(string.format("[states] P8 done: lock=%d ctx=%d VAR_LAB=%d",
+      emu:read8(0x03001808), emu:read8(ADDR_SCRIPT_STATUS), readVar(LAB_OFF)))
+
+-- Bump VAR_LAB to 4 so the rival-battle coord trigger at (7,8) (fires ==3) is skipped.
+do
+    local fptr = emu:read32(ADDR_SB1_PTR)
+    emu:write16(fptr + LAB_OFF, 4)
+    print("[states] rival battle bypassed: VAR_LAB set to 4")
+end
+
+idle(10)  -- settle after script release
+do local x,y=playerPos(); print(string.format("[states] EXIT pre-walk tile(%d,%d)", x-7, y-7)) end
+-- Move to column 6 then approach warp with continuous DOWN hold so the
+-- warp-tile step detection runs naturally (no mid-step key gaps).
+walk(KEY_LEFT, 2)           -- (8,5) → (6,5)
+do local x,y=playerPos(); print(string.format("[states] EXIT after LEFT 2 tile(%d,%d)", x-7, y-7)) end
+idle(5)
+-- Hold DOWN until the map changes (warp fires) or timeout.
+-- Warps at y=12; from y=5 that is 7 tiles = ~112f. Hold for 300f.
+do
+    local fired = false
+    for i = 1, 300 do
+        emu:setKeys(KEY_DOWN)
+        emu:runFrame()
+        local g, n = readMap()
+        if g == 37 and n == 0 then
+            print(string.format("[states] EXIT warp fired at hold-frame %d", i))
+            emu:setKeys(0)
+            fired = true
+            break
+        end
+        if i % 30 == 0 then
+            local px, py = playerPos()
+            local lk = emu:read8(0x03001808)
+            local ct = emu:read8(ADDR_SCRIPT_STATUS)
+            print(string.format("[states] EXIT hold i=%d tile(%d,%d) lock=%d ctx=%d",
+                  i, px-7, py-7, lk, ct))
+        end
+    end
+    if not fired then
+        emu:setKeys(0)
+        local px, py = playerPos()
+        print(string.format("[states] EXIT: still in lab after hold, tile(%d,%d)", px-7, py-7))
+    end
+end
 waitForMap(MAP.PALLET, "Pallet Town (after lab)", 18000, 15)
 
 -- ── PHASE 9: Pallet Town → Route 1 ───────────────────────────────────────────
--- Lab exit warp arrives at tile(16,14) = stored(23,21); Route 1 is north of Pallet Town y=0.
--- Walk LEFT 4 to x=12 (lab wall blocks UP at x=16-17); UP 15 exits Pallet Town north edge.
+-- Lab exit warp arrives at tile(16,14); Route 1 is north of Pallet Town (height=20).
+-- OakTrigger coord events fire only for VAR_OAK==0 (our VAR_OAK=1) so north is clear.
+-- Use continuous key hold (no per-tile gaps) to ensure seamless map-edge connection fires.
 log("phase 9: pallet town → route 1")
-idle(120)                   -- wait for lab-exit walk-out animation (~30f) + map fade (~60f)
+idle(120)                   -- wait for lab-exit walk-out animation + map fade
 do local x,y=playerPos(); local g,n=readMap()
-   print(string.format("[states] DBG9 pallet post-lab x=%d y=%d tile(%d,%d) map=(%d,%d)",x,y,x-7,y-7,g,n)) end
-walk(KEY_LEFT, 4)           -- tile(16,14) → tile(12,14)
-walk(KEY_UP,   15)          -- tile(12,14) → exits north edge → Route 1
-waitForMap(MAP.ROUTE1, "Route 1", 600)
+   print(string.format("[states] pallet post-lab tile(%d,%d) map=(%d,%d)", x-7,y-7,g,n)) end
+
+-- Path to Route 1:
+--   x=13: lab building wall blocks northward from y=14 (lab west wall at x=13)
+--   x=12: open from y=14 to y=3, then sign lady blocks at y=2
+--   Fix: walk at x=12 to y≈3, step RIGHT to x=13, then UP through (13,2)
+--        SignLadyTrigger (VAR_TEMP_2==1) shows tutorial then releaseall,
+--        and (13,1) OakTrigger only fires for VAR_OAK==0 (ours=1 → clear).
+-- From tile(16,14): LEFT 4 → (12,14).
+walk(KEY_LEFT, 4)           -- (16,14) → (12,14)
+do local x,y=playerPos(); print(string.format("[states] pallet after LEFT 4 tile(%d,%d)", x-7,y-7)) end
+idle(5)
+-- Phase A: hold UP from y=14 until stopped by sign lady at y=2 (~200 frames).
+do
+    for i = 1, 220 do
+        emu:setKeys(KEY_UP)
+        emu:runFrame()
+        local g, n = readMap()
+        if g == 37 and n == 19 then   -- reached Route 1 already?
+            print("[states] Route 1 entered early (unexpected)")
+            emu:setKeys(0)
+            goto done_pallet
+        end
+    end
+    emu:setKeys(0)
+end
+do local x,y=playerPos(); print(string.format("[states] pallet stopped at tile(%d,%d)", x-7,y-7)) end
+-- Phase B: step RIGHT 1 to x=13 (clear of sign lady), then UP to trigger at (13,2).
+walk(KEY_RIGHT, 1)          -- (12,≈3) → (13,≈3)
+do local x,y=playerPos(); print(string.format("[states] pallet after RIGHT 1 tile(%d,%d)", x-7,y-7)) end
+idle(5)
+-- Phase C: hold UP with A spam to fire SignLadyTrigger at (13,2) then exit north.
+do
+    local reached = false
+    for i = 1, 600 do
+        emu:setKeys(KEY_UP)
+        emu:runFrame()
+        local g, n = readMap()
+        if g == 37 and n == 19 then
+            print(string.format("[states] Route 1 entered at phase-C frame %d", i))
+            emu:setKeys(0)
+            reached = true
+            break
+        end
+        if i % 20 == 0 then
+            emu:setKeys(KEY_A); emu:runFrame(); emu:setKeys(0)
+        end
+        if i % 60 == 0 then
+            local px, py = playerPos()
+            local lk = emu:read8(0x03001808)
+            local ct = emu:read8(ADDR_SCRIPT_STATUS)
+            print(string.format("[states] pallet C i=%d tile(%d,%d) lock=%d ctx=%d",
+                  i, px-7, py-7, lk, ct))
+        end
+    end
+    if not reached then
+        emu:setKeys(0)
+        local px, py = playerPos()
+        print(string.format("[states] STILL in Pallet after phase C, tile(%d,%d)", px-7,py-7))
+    end
+end
+::done_pallet::
+waitForMap(MAP.ROUTE1, "Route 1", 3600, 15)
 
 -- ── CHECKPOINT 2: tall_grass_route1.ss1 ──────────────────────────────────────
--- A few tiles into Route 1; tall grass is reachable immediately.
-walk(KEY_UP, 5)
+-- Navigate RIGHT 10 tiles to reach the ledge-free eastern corridor, then a
+-- few tiles north into the tall grass.  The western columns (x≈6 map tile)
+-- are blocked by a horizontal ledge row that prevents continuous northward
+-- movement through to Viridian; the eastern side (x≈16) is clear.
+walk(KEY_RIGHT, 10)   -- x=6 → x=16 (map tile): clear eastern corridor
+walk(KEY_UP, 3)
 idle(30)
 saveState("tall_grass_route1.ss1")
 
 -- ── PHASE 10: Route 1 → Viridian → Forest → Pewter Gym ───────────────────────
--- Each waitForMap uses A-spam to handle wild encounters and trainer battles
--- that may interrupt the preceding walk.  Frame budget is generous (~10 min).
+-- Disable encounter randomizer (gCoopSettings.randomizeEncounters = 0) so the
+-- starter doesn't get wiped by a high-level randomized Pokémon and black out.
+-- Also inject a Super Repel (VAR_REPEL_STEP_COUNT = 250) to minimize encounters.
 log("phase 10: to pewter gym")
+if ADDR_COOP_SETTINGS and ADDR_COOP_SETTINGS ~= 0 then
+    emu:write8(ADDR_COOP_SETTINGS, 0)   -- randomizeEncounters = OFF
+    log("encounter randomizer disabled for navigation")
+end
+-- Set infinite repel via VAR_REPEL_STEP_COUNT (0x4021 → index 0x21).
+-- SaveBlock1.vars is at offset 0x139C from the block pointer (see global.h:1129).
+-- Each var is a u16; VAR_REPEL_STEP_COUNT index = 0x4021 - 0x4000 = 33 = 0x21.
+do
+    local sb1 = emu:read32(ADDR_SB1_PTR)
+    if sb1 ~= 0 then
+        local vars_base = sb1 + 0x139C   -- struct SaveBlock1.vars[] offset
+        emu:write16(vars_base + 0x21 * 2, 9999)   -- VAR_REPEL_STEP_COUNT = 9999 steps
+        log("repel injected: 9999 steps")
+    end
+end
 
-walk(KEY_UP, 40)
-waitForMap(MAP.VIRIDIAN, "Viridian City", 7200, 30)
-
-walk(KEY_UP, 30)
-waitForMap(MAP.ROUTE2, "Route 2", 3600, 30)
-
-walk(KEY_UP, 30)
-waitForMap(MAP.VID_FOREST, "Viridian Forest", 3600, 30)
-
-walk(KEY_UP, 70)            -- straight north through the forest
-waitForMap(MAP.PEWTER, "Pewter City", 36000, 30)
+walkToMap(KEY_UP, MAP.VIRIDIAN,   "Viridian City",    36000)
+walkToMap(KEY_UP, MAP.ROUTE2,     "Route 2",           7200)
+walkToMap(KEY_UP, MAP.VID_FOREST, "Viridian Forest",   7200)
+walkToMap(KEY_UP, MAP.PEWTER,     "Pewter City",       72000)
 
 -- Walk to Pewter Gym (northwest of city centre)
 walk(KEY_UP,   5)

@@ -335,9 +335,131 @@ callbacks:add("frame", function()
             write_resp(ok2 and {ok=true, path=path} or {ok=false, error=tostring(err)})
         end
 
+    -- savestate: save current emulator state to a file.
+    elseif c == "savestate" then
+        local path = cmd.path or ""
+        local buf = emu:saveStateBuffer(31)
+        if buf and #buf > 0 then
+            local f = io.open(path, "wb")
+            if f then
+                f:write(buf); f:close()
+                write_resp({ok=true, path=path, size=#buf})
+            else
+                write_resp({ok=false, error="cannot write: " .. path})
+            end
+        else
+            write_resp({ok=false, error="saveStateBuffer returned empty"})
+        end
+
     -- ping: health check.
     elseif c == "ping" then
         write_resp({ok=true, msg="pong"})
+
+    -- read_u16: read a 16-bit value from an absolute address.
+    -- cmd.addr (hex string or integer) → resp.value (integer)
+    elseif c == "read_u16" then
+        local addr = tonumber(cmd.addr) or tonumber(tostring(cmd.addr), 16) or 0
+        local v = emu:read16(addr)
+        write_resp({ok=true, addr=string.format("0x%08X", addr), value=v})
+
+    -- read_u32: read a 32-bit value from an absolute address.
+    elseif c == "read_u32" then
+        local addr = tonumber(cmd.addr) or tonumber(tostring(cmd.addr), 16) or 0
+        local v = emu:read32(addr)
+        write_resp({ok=true, addr=string.format("0x%08X", addr), value=v})
+
+    -- write_u16: write a 16-bit value to an absolute address.
+    -- cmd.addr (hex string or integer), cmd.value (integer) → resp.ok
+    elseif c == "write_u16" then
+        local addr = tonumber(cmd.addr) or tonumber(tostring(cmd.addr), 16) or 0
+        local v    = tonumber(cmd.value) or 0
+        emu:write16(addr, v)
+        write_resp({ok=true, addr=string.format("0x%08X", addr), value=v})
+
+    -- read_player_pos: read player tile X/Y from gObjectEvents[0].
+    elseif c == "read_player_pos" then
+        local base = 0x020015bc  -- gObjectEvents
+        local x = emu:read16(base + 0x10)
+        local y = emu:read16(base + 0x12)
+        if x >= 0x8000 then x = x - 0x10000 end
+        if y >= 0x8000 then y = y - 0x10000 end
+        write_resp({ok=true, x=x, y=y})
+
+    -- pick_starter: press A on ball, navigate yesno dialogs, press B for no-nickname.
+    -- Waits until VAR_MAP_SCENE==3 (rival took a starter).  ~700 frames max.
+    -- cmd.var_addr (hex): address of VAR_MAP_SCENE (gSaveBlock1Ptr + 0x143A)
+    -- cmd.target_var (int): expected value after rival picks (3)
+    elseif c == "pick_starter" then
+        local var_addr = tonumber(cmd.var_addr) or tonumber(tostring(cmd.var_addr), 16) or 0
+        local target   = tonumber(cmd.target_var) or 3
+        local KEY_A    = 0x001
+        local KEY_B    = 0x002
+        local SCRIPT_STATUS = 0x03001809
+        local FIELD_LOCK    = 0x03001808
+        local err_msg  = nil
+
+        local function rf() emu:runFrame() end
+        local function rp(key, hold, rel)
+            emu:setKeys(key); for _=1,hold do rf() end
+            emu:setKeys(0);   for _=1,rel  do rf() end
+        end
+
+        -- Step 1: trigger ball (retry A until field lock=1)
+        local started = false
+        for _=1,90 do
+            rp(KEY_A, 3, 12)
+            if emu:read8(FIELD_LOCK) == 1 then started=true; break end
+        end
+        if not started then err_msg = "ball never triggered" end
+
+        -- Step 2: wait for "Do you want X?" yesno (ctx=1)
+        if not err_msg then
+            local seen = false
+            for i=1,600 do
+                rf()
+                if emu:read8(SCRIPT_STATUS) == 1 then seen=true; break end
+                if i%60==0 then rp(KEY_A,1,3) end
+            end
+            if not seen then err_msg = "want-pokemon yesno never appeared" end
+        end
+        if not err_msg then
+            for _=1,10 do rf() end  -- 5-frame guard
+            rp(KEY_A, 2, 5)  -- YES
+        end
+
+        -- Step 3: wait for nickname yesno (ctx=1)
+        if not err_msg then
+            local seen = false
+            for i=1,500 do
+                rf()
+                if emu:read8(SCRIPT_STATUS) == 1 then seen=true; break end
+                if i%20==0 then rp(KEY_A,1,3) end
+            end
+            if not seen then err_msg = "nickname yesno never appeared" end
+        end
+        if not err_msg then
+            for _=1,10 do rf() end  -- guard
+            rp(KEY_B, 2, 5)  -- NO to nickname
+        end
+
+        -- Step 4: wait for VAR==target (rival takes starter, sets VAR_MAP_SCENE=3)
+        local done_ok = false
+        if not err_msg then
+            for i=1,700 do
+                rf()
+                if emu:read16(var_addr)==target and emu:read8(FIELD_LOCK)==0 then
+                    done_ok=true; break
+                end
+                if i%20==0 then rp(KEY_A,1,3) end
+            end
+            if not done_ok then err_msg = "VAR never reached " .. target end
+        end
+
+        if err_msg then
+            write_resp({ok=false, error=err_msg, var=emu:read16(var_addr)})
+        else
+            write_resp({ok=true, var=emu:read16(var_addr)})
+        end
 
     -- quit: exit cleanly.
     elseif c == "quit" then

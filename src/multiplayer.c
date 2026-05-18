@@ -8,6 +8,8 @@
 #include "random.h"
 #include "link.h"
 #include "task.h"
+#include "pokemon.h"
+#include "battle_main.h"
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -222,6 +224,16 @@ static bool8 ProcessOneRecvPacket(void)
 
     if (!Mp_Pop(&gMpRecvRing, &typeByte))
         return FALSE; // nothing to read
+
+    // Any packet from the partner proves they are present.
+    // Auto-establish the connection without requiring an explicit handshake packet,
+    // so save-state reloads reconnect as soon as the first position update arrives.
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED
+        && typeByte != MP_PKT_PARTNER_DISCONNECTED)
+    {
+        gMultiplayerState.connState = MP_STATE_CONNECTED;
+        Multiplayer_SendGender();
+    }
 
     switch (typeByte)
     {
@@ -557,14 +569,13 @@ void Multiplayer_Update(void)
     GhostMapCheck();
     GhostTick();
 
-    if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+    // Always broadcast position so the partner can auto-detect our presence
+    // and establish connState without requiring an explicit handshake packet.
+    gMultiplayerState.posFrameCounter++;
+    if (gMultiplayerState.posFrameCounter >= 4)
     {
-        gMultiplayerState.posFrameCounter++;
-        if (gMultiplayerState.posFrameCounter >= 4)
-        {
-            gMultiplayerState.posFrameCounter = 0;
-            Multiplayer_SendPosition();
-        }
+        gMultiplayerState.posFrameCounter = 0;
+        Multiplayer_SendPosition();
     }
 }
 
@@ -1113,6 +1124,25 @@ void Multiplayer_SetupCoopBattle(void)
     for (i = 0; i < MAX_RFU_PLAYERS; i++)
         gLinkPlayers[i].version = VERSION_EMERALD;
     gReceivedRemoteLinkPlayers = TRUE;
+
+    // Stub the ingame-partner slot with the player's own first Pokemon so
+    // battler 2 (BATTLE_TYPE_INGAME_PARTNER) has valid data to fight with.
+    // Real coop will replace this with P2's synced party.
+    for (i = 0; i < MULTI_PARTY_SIZE && i < gPlayerPartyCount; i++)
+    {
+        gMultiPartnerParty[i].species     = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES);
+        gMultiPartnerParty[i].heldItem    = GetMonData(&gPlayerParty[i], MON_DATA_HELD_ITEM);
+        GetMonData(&gPlayerParty[i], MON_DATA_NICKNAME, gMultiPartnerParty[i].nickname);
+        gMultiPartnerParty[i].level       = GetMonData(&gPlayerParty[i], MON_DATA_LEVEL);
+        gMultiPartnerParty[i].hp          = GetMonData(&gPlayerParty[i], MON_DATA_HP);
+        gMultiPartnerParty[i].maxhp       = GetMonData(&gPlayerParty[i], MON_DATA_MAX_HP);
+        gMultiPartnerParty[i].status      = GetMonData(&gPlayerParty[i], MON_DATA_STATUS);
+        gMultiPartnerParty[i].personality = GetMonData(&gPlayerParty[i], MON_DATA_PERSONALITY);
+    }
+    // Also copy full Pokemon structs into gPlayerParty[MULTI_PARTY_SIZE..] so the
+    // battle engine can read HP/moves for the partner battler.
+    for (i = 0; i < MULTI_PARTY_SIZE && i < gPlayerPartyCount; i++)
+        gPlayerParty[MULTI_PARTY_SIZE + i] = gPlayerParty[i];
 
     CreateTask(Task_CoopBattleBlockRelay, 0);
 }

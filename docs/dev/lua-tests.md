@@ -41,6 +41,7 @@ automatically.
 brew link --force lua
 
 git clone --depth=1 https://github.com/mgba-emu/mgba /tmp/mgba-src
+git -C /tmp/mgba-src checkout b19b557a78930ede7ee7f5dcbc880f9ff2533ffe
 
 cmake --fresh -B /tmp/mgba-build \
   -DBUILD_QT=OFF \
@@ -80,6 +81,7 @@ If you're on an older release and mgba-qt lacks `-S`, build from source:
 ```bash
 sudo apt-get install cmake libsdl2-dev liblua5.4-dev
 git clone --depth=1 https://github.com/mgba-emu/mgba /tmp/mgba-src
+git -C /tmp/mgba-src checkout b19b557a78930ede7ee7f5dcbc880f9ff2533ffe
 cmake -B /tmp/mgba-build -DBUILD_QT=OFF -DBUILD_SDL=ON -DUSE_LUA=ON \
   -DCMAKE_BUILD_TYPE=Release /tmp/mgba-src
 cmake --build /tmp/mgba-build -j$(nproc)

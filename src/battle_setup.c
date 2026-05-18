@@ -1403,8 +1403,8 @@ void BattleSetup_StartTrainerBattle(void)
 // TRAINER_BATTLE_PARAM.opponentA must already be set by a preceding trainerbattle command.
 void BattleSetup_StartCoopBattle(void)
 {
-    gBattleTypeFlags = BATTLE_TYPE_COOP | BATTLE_TYPE_MULTI | BATTLE_TYPE_LINK
-                     | BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE;
+    gBattleTypeFlags = BATTLE_TYPE_COOP | BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER
+                     | BATTLE_TYPE_TWO_OPPONENTS | BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE;
     // Use opponentA for both sides so GetFrontierTrainerName(opponentB) is safe.
     TRAINER_BATTLE_PARAM.opponentB = TRAINER_BATTLE_PARAM.opponentA;
     gMain.savedCallback = CB2_EndTrainerBattle;
