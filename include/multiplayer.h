@@ -194,6 +194,10 @@ struct MultiplayerState {
     u8  followerGhostObjId;     // object event slot for partner's follower ghost; GHOST_INVALID_SLOT = none
     u16 partnerFollowerGfxId;   // OBJ_EVENT_GFX_* for partner's lead follower; 0 = no follower
     u16 lastSentFollowerGfxId;  // last gfx ID we sent; used to detect local follower changes
+    u8  battleTurnReceived;     // TRUE when MP_PKT_BATTLE_TURN arrived (partner's move selection)
+    u8  battleTurnMoveSlot;     // move slot index from partner (0-3)
+    u8  battleTurnTarget;       // target battler from partner
+    u8  battleTurnFlags;        // reserved flags (gimmick etc.) for future use
 };
 
 extern struct MultiplayerState gMultiplayerState;
@@ -270,6 +274,15 @@ bool8 Multiplayer_NativePollBossStart(void);
 // Co-op boss battle setup — call before DoTrainerBattle() when starting a coop gym fight.
 // Sets the link player table, block-exchange state, and creates the relay task.
 void Multiplayer_SetupCoopBattle(void);
+
+// Co-op battle turn sync.
+// Call Multiplayer_SendBattleTurn from the player controller when the local player
+// confirms their move selection; the partner controller polls Multiplayer_PollPackets
+// each frame and calls Multiplayer_HandleBattleTurn when the packet arrives.
+void Multiplayer_SendBattleTurn(u8 moveSlot, u8 target, u8 flags);
+void Multiplayer_HandleBattleTurn(u8 moveSlot, u8 target, u8 flags);
+// Returns TRUE when running a BATTLE_TYPE_COOP battle.
+bool32 Multiplayer_IsCoopBattle(void);
 
 // Follower ghost: partner's lead follower Pokémon displayed 1 tile behind the partner ghost.
 void Multiplayer_SendFollowerGfx(u16 gfxId);

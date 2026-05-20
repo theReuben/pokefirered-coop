@@ -1,5 +1,6 @@
 #include "global.h"
 #include "battle.h"
+#include "multiplayer.h"
 #include "battle_ai_main.h"
 #include "battle_ai_switch.h"
 #include "battle_ai_util.h"
@@ -269,6 +270,14 @@ static void PlayerPartnerHandleTrainerSlideBack(enum BattlerId battler)
 
 static void PlayerPartnerHandleChooseAction(enum BattlerId battler)
 {
+    if (Multiplayer_IsCoopBattle())
+    {
+        // In co-op, battler 1 always fights — move selection is synced via network.
+        // Switching on KO is handled by PlayerPartnerHandleChoosePokemon (AI fallback).
+        BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, 0);
+        BtlController_Complete(battler);
+        return;
+    }
     AI_TrySwitchOrUseItem(battler);
     BtlController_Complete(battler);
 }
@@ -276,36 +285,55 @@ static void PlayerPartnerHandleChooseAction(enum BattlerId battler)
 static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
 {
     u32 chosenMoveIndex;
-    struct ChooseMoveStruct *moveInfo = (struct ChooseMoveStruct *)(&gBattleResources->bufferA[battler][4]);
 
-    chosenMoveIndex = gAiBattleData->chosenMoveIndex[battler];
-    gBattlerTarget = gAiBattleData->chosenTarget[battler];
-    enum MoveTarget moveTarget = GetBattlerMoveTargetType(battler, moveInfo->moves[chosenMoveIndex]);
+    if (Multiplayer_IsCoopBattle())
+    {
+        // Poll for the partner's (player 2's) move selection sent via MP_PKT_BATTLE_TURN.
+        Multiplayer_PollPackets();
+        if (!gMultiplayerState.battleTurnReceived)
+            return; // re-run next frame; do NOT call BtlController_Complete yet
 
-    if (moveTarget == TARGET_USER || moveTarget == TARGET_USER_OR_ALLY)
-    {
-        gBattlerTarget = battler;
-    }
-    else if (moveTarget == TARGET_BOTH)
-    {
-        gBattlerTarget = GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT);
-        if (gAbsentBattlerFlags & (1u << gBattlerTarget))
-            gBattlerTarget = GetBattlerAtPosition(B_POSITION_OPPONENT_RIGHT);
-    }
-    // If partner can and should use a gimmick (considering trainer data), do it
-    enum Gimmick usableGimmick = gBattleStruct->gimmick.usableGimmick[battler];
-    if (usableGimmick != GIMMICK_NONE && IsAIUsingGimmick(battler) && !HasTrainerUsedGimmick(battler, usableGimmick))
-    {
-        gBattleStruct->gimmick.toActivate |= 1u << battler;
-        BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, (chosenMoveIndex) | (RET_GIMMICK) | (gBattlerTarget << 8));
-    }
-    else
-    {
-        SetAIUsingGimmick(battler, NO_GIMMICK);
-        BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, (chosenMoveIndex) | (gBattlerTarget << 8));
+        gMultiplayerState.battleTurnReceived = FALSE;
+        chosenMoveIndex = gMultiplayerState.battleTurnMoveSlot;
+        gBattlerTarget  = gMultiplayerState.battleTurnTarget;
+        BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT,
+                                          chosenMoveIndex | (gBattlerTarget << 8));
+        BtlController_Complete(battler);
+        return;
     }
 
-    BtlController_Complete(battler);
+    // AI path (solo or non-coop): unchanged from original.
+    {
+        struct ChooseMoveStruct *moveInfo = (struct ChooseMoveStruct *)(&gBattleResources->bufferA[battler][4]);
+
+        chosenMoveIndex = gAiBattleData->chosenMoveIndex[battler];
+        gBattlerTarget = gAiBattleData->chosenTarget[battler];
+        enum MoveTarget moveTarget = GetBattlerMoveTargetType(battler, moveInfo->moves[chosenMoveIndex]);
+
+        if (moveTarget == TARGET_USER || moveTarget == TARGET_USER_OR_ALLY)
+        {
+            gBattlerTarget = battler;
+        }
+        else if (moveTarget == TARGET_BOTH)
+        {
+            gBattlerTarget = GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT);
+            if (gAbsentBattlerFlags & (1u << gBattlerTarget))
+                gBattlerTarget = GetBattlerAtPosition(B_POSITION_OPPONENT_RIGHT);
+        }
+        enum Gimmick usableGimmick = gBattleStruct->gimmick.usableGimmick[battler];
+        if (usableGimmick != GIMMICK_NONE && IsAIUsingGimmick(battler) && !HasTrainerUsedGimmick(battler, usableGimmick))
+        {
+            gBattleStruct->gimmick.toActivate |= 1u << battler;
+            BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, (chosenMoveIndex) | (RET_GIMMICK) | (gBattlerTarget << 8));
+        }
+        else
+        {
+            SetAIUsingGimmick(battler, NO_GIMMICK);
+            BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, (chosenMoveIndex) | (gBattlerTarget << 8));
+        }
+
+        BtlController_Complete(battler);
+    }
 }
 
 static void PlayerPartnerHandleChoosePokemon(enum BattlerId battler)

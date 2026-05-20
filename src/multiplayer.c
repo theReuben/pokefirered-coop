@@ -15,7 +15,9 @@
 #include "overworld.h"
 #include "follower_npc.h"
 #include "constants/vars.h"
+#include "constants/battle.h"
 #include "constants/battle_frontier.h"
+#include "battle.h"
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -438,6 +440,18 @@ static bool8 ProcessOneRecvPacket(void)
             for (i = 0; i < PLAYER_NAME_LENGTH; i++)
                 Mp_Pop(&gMpRecvRing, &name[i]);
             Multiplayer_HandleRemoteName(name);
+        }
+        break;
+
+    case MP_PKT_BATTLE_TURN:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_BATTLE_TURN - 1)
+            return FALSE;
+        {
+            u8 moveSlot = 0, target = 0, flags = 0;
+            Mp_Pop(&gMpRecvRing, &moveSlot);
+            Mp_Pop(&gMpRecvRing, &target);
+            Mp_Pop(&gMpRecvRing, &flags);
+            Multiplayer_HandleBattleTurn(moveSlot, target, flags);
         }
         break;
 
@@ -1269,6 +1283,33 @@ u16 Multiplayer_ScriptCheckBossStart(void)
     if (gMultiplayerState.connState == MP_STATE_CONNECTED)
         gMultiplayerState.coopBattlePending = TRUE;
     return 1;
+}
+
+// ---------------------------------------------------------------------------
+// Co-op battle turn sync
+// ---------------------------------------------------------------------------
+
+bool32 Multiplayer_IsCoopBattle(void)
+{
+    return (bool32)((gBattleTypeFlags & BATTLE_TYPE_COOP) != 0);
+}
+
+void Multiplayer_SendBattleTurn(u8 moveSlot, u8 target, u8 flags)
+{
+    u8 pkt[MP_PKT_SIZE_BATTLE_TURN];
+    pkt[0] = MP_PKT_BATTLE_TURN;
+    pkt[1] = moveSlot;
+    pkt[2] = target;
+    pkt[3] = flags;
+    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_BATTLE_TURN);
+}
+
+void Multiplayer_HandleBattleTurn(u8 moveSlot, u8 target, u8 flags)
+{
+    gMultiplayerState.battleTurnMoveSlot = moveSlot;
+    gMultiplayerState.battleTurnTarget   = target;
+    gMultiplayerState.battleTurnFlags    = flags;
+    gMultiplayerState.battleTurnReceived = TRUE;
 }
 
 // Returns 1 if a partner is connected; 0 otherwise.

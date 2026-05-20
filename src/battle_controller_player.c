@@ -28,6 +28,7 @@
 #include "string_util.h"
 #include "task.h"
 #include "test_runner.h"
+#include "multiplayer.h"
 #include "text.h"
 #include "util.h"
 #include "window.h"
@@ -441,6 +442,8 @@ void HandleInputChooseTarget(enum BattlerId battler)
             BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, gMoveSelectionCursor[battler] | RET_GIMMICK | (gMultiUsePlayerCursor << 8));
         else
             BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, gMoveSelectionCursor[battler] | (gMultiUsePlayerCursor << 8));
+        if (Multiplayer_IsCoopBattle())
+            Multiplayer_SendBattleTurn(gMoveSelectionCursor[battler], gMultiUsePlayerCursor, gBattleStruct->gimmick.playerSelect ? 1 : 0);
         EndBounceEffect(gMultiUsePlayerCursor, BOUNCE_HEALTHBOX);
         TryHideLastUsedBall();
         HideGimmickTriggerSprite();
@@ -615,6 +618,8 @@ void HandleInputShowEntireFieldTargets(enum BattlerId battler)
             BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, gMoveSelectionCursor[battler] | RET_GIMMICK | (gMultiUsePlayerCursor << 8));
         else
             BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, gMoveSelectionCursor[battler] | (gMultiUsePlayerCursor << 8));
+        if (Multiplayer_IsCoopBattle())
+            Multiplayer_SendBattleTurn(gMoveSelectionCursor[battler], gMultiUsePlayerCursor, gBattleStruct->gimmick.playerSelect ? 1 : 0);
         HideGimmickTriggerSprite();
         BtlController_Complete(battler);
     }
@@ -643,6 +648,8 @@ void HandleInputShowTargets(enum BattlerId battler)
             BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, gMoveSelectionCursor[battler] | RET_GIMMICK | (gMultiUsePlayerCursor << 8));
         else
             BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, gMoveSelectionCursor[battler] | (gMultiUsePlayerCursor << 8));
+        if (Multiplayer_IsCoopBattle())
+            Multiplayer_SendBattleTurn(gMoveSelectionCursor[battler], gMultiUsePlayerCursor, gBattleStruct->gimmick.playerSelect ? 1 : 0);
         HideGimmickTriggerSprite();
         TryHideLastUsedBall();
         BtlController_Complete(battler);
@@ -769,6 +776,8 @@ void HandleInputChooseMove(enum BattlerId battler)
                 BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, gMoveSelectionCursor[battler] | RET_GIMMICK | (gMultiUsePlayerCursor << 8));
             else
                 BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, gMoveSelectionCursor[battler] | (gMultiUsePlayerCursor << 8));
+            if (Multiplayer_IsCoopBattle())
+                Multiplayer_SendBattleTurn(gMoveSelectionCursor[battler], gMultiUsePlayerCursor, gBattleStruct->gimmick.playerSelect ? 1 : 0);
             HideGimmickTriggerSprite();
             TryHideLastUsedBall();
             BtlController_Complete(battler);

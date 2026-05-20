@@ -21,6 +21,7 @@
 #define MP_PKT_NAME                 0x11   // 1+PLAYER_NAME_LENGTH bytes — partner's player name
 #define MP_PKT_PARTY_SYNC           0x12   // 2+n*30 bytes — partner's selected party (MultiPartnerMenuPokemon * n)
 #define MP_PKT_FOLLOWER_GFX         0x13   // 3 bytes — partner's follower OBJ_EVENT_GFX id (0 = no follower)
+#define MP_PKT_BATTLE_TURN          0x14   // 4 bytes — co-op turn: move slot + target + flags
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -74,6 +75,7 @@
 #define MP_PKT_SIZE_GENDER                  2  // type + gender
 #define MP_PKT_SIZE_NAME                    (1 + PLAYER_NAME_LENGTH)  // type + 7 name bytes
 #define MP_PKT_SIZE_FOLLOWER_GFX            3  // type + gfx_hi + gfx_lo
+#define MP_PKT_SIZE_BATTLE_TURN             4  // type + move_slot + target + flags
 // PARTY_SYNC: type(1) + n_mons(1) + n * sizeof(MultiPartnerMenuPokemon)(30); max n=3 → 92 bytes
 #define MP_PKT_PARTY_SYNC_HDR               2   // type + n_mons
 #define MP_PKT_PARTY_SYNC_MON_SIZE          30  // sizeof(struct MultiPartnerMenuPokemon)
