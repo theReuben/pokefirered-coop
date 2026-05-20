@@ -13,6 +13,7 @@
 #include "battle_main.h"
 #include "party_menu.h"
 #include "overworld.h"
+#include "follower_npc.h"
 #include "constants/vars.h"
 #include "constants/battle_frontier.h"
 
@@ -231,6 +232,11 @@ static void MpRing_Write(struct MpRingBuf *ring, const u8 *data, u8 len)
         Mp_Push(ring, data[i]);
 }
 
+// Forward declarations for follower ghost helpers (defined later in the file).
+static void Multiplayer_SpawnFollowerGhost(void);
+static void Multiplayer_DespawnFollowerGhost(void);
+static void Multiplayer_UpdateFollowerGhostPosition(void);
+
 // ---------------------------------------------------------------------------
 // Read one complete packet from gMpRecvRing and dispatch it.
 // Returns TRUE if a packet was processed.
@@ -435,6 +441,17 @@ static bool8 ProcessOneRecvPacket(void)
         }
         break;
 
+    case MP_PKT_FOLLOWER_GFX:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_FOLLOWER_GFX - 1)
+            return FALSE;
+        {
+            u8 hi = 0, lo = 0;
+            Mp_Pop(&gMpRecvRing, &hi);
+            Mp_Pop(&gMpRecvRing, &lo);
+            Multiplayer_HandleRemoteFollowerGfx(((u16)hi << 8) | lo);
+        }
+        break;
+
     case MP_PKT_PARTY_SYNC:
         {
             u8 n_mons = 0;
@@ -512,6 +529,8 @@ static void GhostTick(void)
     }
 
     ObjectEventSetHeldMovement(ghost, action);
+    // Keep follower ghost 1 tile behind.
+    Multiplayer_UpdateFollowerGhostPosition();
 }
 
 // Spawns or despawns the ghost based on whether the partner's map matches.
@@ -561,7 +580,10 @@ void Multiplayer_Init(void)
     gMultiplayerState.targetX            = 0;
     gMultiplayerState.targetY            = 0;
     gMultiplayerState.targetFacing       = DIR_SOUTH;
-    gMultiplayerState.ghostObjectEventId = GHOST_INVALID_SLOT;
+    gMultiplayerState.ghostObjectEventId    = GHOST_INVALID_SLOT;
+    gMultiplayerState.followerGhostObjId    = GHOST_INVALID_SLOT;
+    gMultiplayerState.partnerFollowerGfxId  = 0;
+    gMultiplayerState.lastSentFollowerGfxId = 0;
     gMultiplayerState.bossReadyBossId    = 0;
     gMultiplayerState.partnerBossId      = 0;
     gMultiplayerState.isInScript         = FALSE;
@@ -638,6 +660,17 @@ void Multiplayer_Update(void)
     {
         gMultiplayerState.posFrameCounter = 0;
         Multiplayer_SendPosition();
+
+        // Broadcast follower graphics ID when it changes so partner can show
+        // our follower Pokémon ghost.
+        if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+        {
+            u16 curGfx = 0;
+            if (PlayerHasFollowerNPC())
+                curGfx = (u16)GetFollowerNPCData(FNPC_DATA_GFX_ID);
+            if (curGfx != gMultiplayerState.lastSentFollowerGfxId)
+                Multiplayer_SendFollowerGfx(curGfx);
+        }
     }
 }
 
@@ -662,6 +695,7 @@ void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing)
     gObjectEvents[objId].mapNum   = (u8)mapNum;
     SetObjectEventDirection(&gObjectEvents[objId], facing);
     gMultiplayerState.ghostObjectEventId = objId;
+    Multiplayer_SpawnFollowerGhost();
 }
 
 u16 Multiplayer_GhostGraphicsId(void)
@@ -710,9 +744,94 @@ void Multiplayer_HandleRemoteName(const u8 *name)
     gMultiplayerState.partnerName[PLAYER_NAME_LENGTH] = EOS;
 }
 
+// ---------------------------------------------------------------------------
+// Follower ghost helpers
+// ---------------------------------------------------------------------------
+
+// Compute the tile 1 step behind a given position+facing (where a follower walks).
+static void FollowerBehindPos(u8 x, u8 y, u8 facing, u8 *fx, u8 *fy)
+{
+    *fx = x;
+    *fy = y;
+    switch (facing)
+    {
+    case DIR_SOUTH: (*fy)--; break;  // facing south → follower is 1 tile north
+    case DIR_NORTH: (*fy)++; break;  // facing north → follower is 1 tile south
+    case DIR_WEST:  (*fx)++; break;  // facing west  → follower is 1 tile east
+    case DIR_EAST:  (*fx)--; break;  // facing east  → follower is 1 tile west
+    }
+}
+
+static void Multiplayer_SpawnFollowerGhost(void)
+{
+    u8 fx, fy, objId;
+    if (gMultiplayerState.partnerFollowerGfxId == 0) return;
+    FollowerBehindPos(gMultiplayerState.targetX, gMultiplayerState.targetY,
+                      gMultiplayerState.targetFacing, &fx, &fy);
+    objId = SpawnSpecialObjectEventParameterized(
+        (u16)gMultiplayerState.partnerFollowerGfxId,
+        MOVEMENT_TYPE_NONE,
+        GHOST_FOLLOWER_LOCAL_ID,
+        fx, fy,
+        GHOST_ELEVATION);
+    if (objId >= OBJECT_EVENTS_COUNT)
+        return;
+    SetObjectEventDirection(&gObjectEvents[objId], gMultiplayerState.targetFacing);
+    gMultiplayerState.followerGhostObjId = objId;
+}
+
+static void Multiplayer_DespawnFollowerGhost(void)
+{
+    u8 objId = gMultiplayerState.followerGhostObjId;
+    if (objId < OBJECT_EVENTS_COUNT && gObjectEvents[objId].active)
+        RemoveObjectEvent(&gObjectEvents[objId]);
+    gMultiplayerState.followerGhostObjId = GHOST_INVALID_SLOT;
+}
+
+static void Multiplayer_UpdateFollowerGhostPosition(void)
+{
+    u8 fx, fy;
+    u8 objId = gMultiplayerState.followerGhostObjId;
+    if (gMultiplayerState.partnerFollowerGfxId == 0)
+    {
+        if (objId < OBJECT_EVENTS_COUNT)
+            Multiplayer_DespawnFollowerGhost();
+        return;
+    }
+    if (objId >= OBJECT_EVENTS_COUNT)
+    {
+        Multiplayer_SpawnFollowerGhost();
+        return;
+    }
+    FollowerBehindPos(gMultiplayerState.targetX, gMultiplayerState.targetY,
+                      gMultiplayerState.targetFacing, &fx, &fy);
+    MoveObjectEventToMapCoords(&gObjectEvents[objId], fx, fy);
+    SetObjectEventDirection(&gObjectEvents[objId], gMultiplayerState.targetFacing);
+}
+
+void Multiplayer_SendFollowerGfx(u16 gfxId)
+{
+    u8 pkt[MP_PKT_SIZE_FOLLOWER_GFX];
+    pkt[0] = MP_PKT_FOLLOWER_GFX;
+    pkt[1] = (u8)(gfxId >> 8);
+    pkt[2] = (u8)(gfxId & 0xFF);
+    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_FOLLOWER_GFX);
+    gMultiplayerState.lastSentFollowerGfxId = gfxId;
+}
+
+void Multiplayer_HandleRemoteFollowerGfx(u16 gfxId)
+{
+    gMultiplayerState.partnerFollowerGfxId = gfxId;
+    // If ghost is spawned on our map, immediately update the follower ghost.
+    if (gMultiplayerState.ghostObjectEventId < OBJECT_EVENTS_COUNT)
+        Multiplayer_UpdateFollowerGhostPosition();
+}
+
 void Multiplayer_DespawnGhost(void)
 {
     u8 objId = gMultiplayerState.ghostObjectEventId;
+
+    Multiplayer_DespawnFollowerGhost();
 
     if (objId < OBJECT_EVENTS_COUNT && gObjectEvents[objId].active)
         RemoveObjectEvent(&gObjectEvents[objId]);

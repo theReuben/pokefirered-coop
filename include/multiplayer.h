@@ -13,6 +13,7 @@
 // Must NOT be OBJ_EVENT_ID_FOLLOWER (0xFE) or the engine routes interaction
 // to EventScript_Follower instead of our ghost script.
 #define GHOST_LOCAL_ID             0xFD
+#define GHOST_FOLLOWER_LOCAL_ID    0xFC  // object event local ID for partner's follower Pokémon ghost
 // Default elevation for overworld spawns.
 #define GHOST_ELEVATION            3
 // Sentinel value for ghostObjectEventId when no ghost is spawned.
@@ -190,6 +191,9 @@ struct MultiplayerState {
                                // to route the NEXT trainerbattle through the coop path
                                // regardless of mode.  Auto-clears once routed.
     u8  partnerPartySelectDone; // TRUE once partner's MP_PKT_PARTY_SYNC has been received and applied
+    u8  followerGhostObjId;     // object event slot for partner's follower ghost; GHOST_INVALID_SLOT = none
+    u16 partnerFollowerGfxId;   // OBJ_EVENT_GFX_* for partner's lead follower; 0 = no follower
+    u16 lastSentFollowerGfxId;  // last gfx ID we sent; used to detect local follower changes
 };
 
 extern struct MultiplayerState gMultiplayerState;
@@ -266,6 +270,10 @@ bool8 Multiplayer_NativePollBossStart(void);
 // Co-op boss battle setup — call before DoTrainerBattle() when starting a coop gym fight.
 // Sets the link player table, block-exchange state, and creates the relay task.
 void Multiplayer_SetupCoopBattle(void);
+
+// Follower ghost: partner's lead follower Pokémon displayed 1 tile behind the partner ghost.
+void Multiplayer_SendFollowerGfx(u16 gfxId);
+void Multiplayer_HandleRemoteFollowerGfx(u16 gfxId);
 
 // Party selection for co-op boss battles.
 // CB2_CoopPartySelected: savedCallback called by the party menu when player confirms picks.
