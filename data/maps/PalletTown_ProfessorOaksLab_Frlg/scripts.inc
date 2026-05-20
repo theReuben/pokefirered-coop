@@ -338,8 +338,17 @@ PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtleRight::
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleSquirtle::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, PalletTown_ProfessorOaksLab_EventScript_RivalCoopBattleSquirtle
 	trainerbattle_earlyrival TRAINER_RIVAL_OAKS_LAB_SQUIRTLE, RIVAL_BATTLE_TUTORIAL, PalletTown_ProfessorOaksLab_Text_RivalDefeat, Text_RivalVictory
 	goto PalletTown_ProfessorOaksLab_EventScript_EndRivalBattle
+	end
+
+PalletTown_ProfessorOaksLab_EventScript_RivalCoopBattleSquirtle::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_OAKS_LAB_SQUIRTLE
+	gotopostbattlescript
 	end
 
 PalletTown_ProfessorOaksLab_Movement_RivalApproachForBattleSquirtleLeft::
@@ -391,8 +400,17 @@ PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmanderRight::
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleCharmander::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, PalletTown_ProfessorOaksLab_EventScript_RivalCoopBattleCharmander
 	trainerbattle_earlyrival TRAINER_RIVAL_OAKS_LAB_CHARMANDER, RIVAL_BATTLE_TUTORIAL, PalletTown_ProfessorOaksLab_Text_RivalDefeat, Text_RivalVictory
 	goto PalletTown_ProfessorOaksLab_EventScript_EndRivalBattle
+	end
+
+PalletTown_ProfessorOaksLab_EventScript_RivalCoopBattleCharmander::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_OAKS_LAB_CHARMANDER
+	gotopostbattlescript
 	end
 
 PalletTown_ProfessorOaksLab_Movement_ApproachForBattleCharmanderLeft::
@@ -447,8 +465,17 @@ PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaurRight::
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleBulbasaur::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, PalletTown_ProfessorOaksLab_EventScript_RivalCoopBattleBulbasaur
 	trainerbattle_earlyrival TRAINER_RIVAL_OAKS_LAB_BULBASAUR, RIVAL_BATTLE_TUTORIAL, PalletTown_ProfessorOaksLab_Text_RivalDefeat, Text_RivalVictory
 	goto PalletTown_ProfessorOaksLab_EventScript_EndRivalBattle
+	end
+
+PalletTown_ProfessorOaksLab_EventScript_RivalCoopBattleBulbasaur::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_OAKS_LAB_BULBASAUR
+	gotopostbattlescript
 	end
 
 PalletTown_ProfessorOaksLab_Movement_RivalApproachForBattleBulbasaurLeft::
