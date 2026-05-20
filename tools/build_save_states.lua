@@ -53,7 +53,9 @@ local MAP = {
 local _mem_path = (debug.getinfo(1, "S").source:match("@(.+/)") or "./") .. "../test/lua/memory_map.lua"
 local _mem = dofile(_mem_path)
 local ADDR_SB1_PTR      = _mem.gSaveBlock1Ptr
+local ADDR_SB2_PTR      = _mem.gSaveBlock2Ptr
 local ADDR_SCRIPT_STATUS = _mem.sGlobalScriptContextStatus  -- 0=RUNNING,1=WAITING,2=SHUTDOWN
+local ADDR_FIELD_LOCK   = _mem.sLockFieldControls           -- bool8: 1 while in script/dialogue
 local ADDR_GTASKS        = _mem.gTasks                      -- task array base; stride 0x28
 local YESNO_TASK_FUNC    = _mem.Task_HandleYesNoInput       -- ROM code addr (add 1 for THUMB ptr)
 local ADDR_COOP_SETTINGS = _mem.gCoopSettings               -- struct CoopSettings (randomizeEncounters at +0)
@@ -61,6 +63,8 @@ assert(ADDR_SB1_PTR and ADDR_SB1_PTR ~= 0,
     "gSaveBlock1Ptr not found in memory_map.lua — run 'make build-states' to regenerate")
 assert(ADDR_SCRIPT_STATUS and ADDR_SCRIPT_STATUS ~= 0,
     "sGlobalScriptContextStatus not found — regenerate memory_map.lua with pokefirered.elf")
+assert(ADDR_FIELD_LOCK and ADDR_FIELD_LOCK ~= 0,
+    "sLockFieldControls not found — regenerate memory_map.lua with pokefirered.elf")
 assert(ADDR_GTASKS and YESNO_TASK_FUNC,
     "gTasks/Task_HandleYesNoInput missing — regenerate memory_map.lua with pokefirered.elf")
 local SB1_LOC_GROUP = 4
@@ -152,7 +156,7 @@ local function walkToMap(dir, m, label, maxFrames)
         -- Dismiss any blocking script/dialogue (up to 120 frames of A spam).
         for _ = 1, 120 do
             local ctx  = emu:read8(ADDR_SCRIPT_STATUS)
-            local lock = emu:read8(ADDR_SCRIPT_STATUS - 1)
+            local lock = emu:read8(ADDR_FIELD_LOCK)
             if ctx ~= 1 and lock == 0 then break end
             emu:setKeys(KEY_A); emu:runFrame(); emu:setKeys(0); emu:runFrame()
             frames = frames + 2
@@ -464,7 +468,7 @@ do local x,y=playerPos(); local g,n=readMap()
 
 -- Set text speed to FAST so the 4 scene dialogs advance quickly
 do
-    local sb2 = emu:read32(0x03005304)
+    local sb2 = emu:read32(ADDR_SB2_PTR)
     if sb2 ~= 0 then
         local opt = emu:read16(sb2 + 0x14)
         emu:write16(sb2 + 0x14, (opt & 0xFFF8) | 2)
@@ -484,7 +488,7 @@ for i = 1, 3600 do
         if (b % 64) ~= 0 then emu:write8(fptr + FLAG_BYTE_OFF, b - (b % 64)) end
     end
     local ctx  = emu:read8(ADDR_SCRIPT_STATUS)
-    local lock = emu:read8(0x03001808)
+    local lock = emu:read8(ADDR_FIELD_LOCK)
     if i > 200 and ctx == 2 and lock == 0 and readVar(LAB_OFF) == 2 then
         local x, y = playerPos()
         print(string.format("[states] scene done i=%d tile(%d,%d) VAR_LAB=%d",
@@ -534,9 +538,9 @@ saveState("oaks_lab.ss1")
 log("phase 8: pick starter + exit lab")
 
 -- Set text speed to FAST (1f/char) so page breaks advance quickly.
--- gSaveBlock2Ptr @ 0x03005304; optionsTextSpeed:3 is bits[2:0] of u16 at sb2+0x14.
+-- gSaveBlock2Ptr @ ADDR_SB2_PTR; optionsTextSpeed:3 is bits[2:0] of u16 at sb2+0x14.
 do
-    local sb2 = emu:read32(0x03005304)
+    local sb2 = emu:read32(ADDR_SB2_PTR)
     if sb2 ~= 0 then
         local opt = emu:read16(sb2 + 0x14)
         emu:write16(sb2 + 0x14, (opt & 0xFFF8) | 2)
@@ -547,14 +551,14 @@ end
 
 -- Diagnostic dump before interaction.
 do
-    local lock0 = emu:read8(0x03001808)
+    local lock0 = emu:read8(ADDR_FIELD_LOCK)
     local ctx0  = emu:read8(ADDR_SCRIPT_STATUS)
     local px, py = playerPos()
     print(string.format("[states] PRE-P8 lock=%d ctx=%d tile(%d,%d) VAR_LAB=%d",
           lock0, ctx0, px-7, py-7, readVar(LAB_OFF)))
     if lock0 == 1 then
         print("[states] WARNING: stale lock — clearing to 0")
-        emu:write8(0x03001808, 0)
+        emu:write8(ADDR_FIELD_LOCK, 0)
     end
 end
 
@@ -567,7 +571,7 @@ killYesNoTask()
 local ball_started = false
 for try = 1, 90 do
     press(KEY_A, 3, 12)
-    if emu:read8(0x03001808) == 1 then
+    if emu:read8(ADDR_FIELD_LOCK) == 1 then
         print(string.format("[states] ball lock at try=%d", try))
         ball_started = true
         break
@@ -589,7 +593,7 @@ do
         local c = emu:read8(ADDR_SCRIPT_STATUS)
         if c ~= prev_ctx then
             print(string.format("[states] P8 ctx %d→%d at i=%d lock=%d VAR_LAB=%d",
-                  prev_ctx, c, i, emu:read8(0x03001808), readVar(LAB_OFF)))
+                  prev_ctx, c, i, emu:read8(ADDR_FIELD_LOCK), readVar(LAB_OFF)))
             prev_ctx = c
         end
         if c == 1 then
@@ -634,7 +638,7 @@ do
     local done = false
     for i = 1, 700 do
         emu:setKeys(0); emu:runFrame()
-        if readVar(LAB_OFF) == 3 and emu:read8(0x03001808) == 0 then
+        if readVar(LAB_OFF) == 3 and emu:read8(ADDR_FIELD_LOCK) == 0 then
             print(string.format("[states] P8: VAR_LAB=3 lock=0 at i=%d", i))
             done = true
             break
@@ -642,7 +646,7 @@ do
         if i % 20 == 0 then press(KEY_A, 1, 3) end  -- advance rival waitbuttonpress
     end
     if not done then
-        local lk = emu:read8(0x03001808)
+        local lk = emu:read8(ADDR_FIELD_LOCK)
         local vl = readVar(LAB_OFF)
         print(string.format("[states] P8 FAIL: lock=%d ctx=%d VAR_LAB=%d",
               lk, emu:read8(ADDR_SCRIPT_STATUS), vl))
@@ -650,7 +654,7 @@ do
     end
 end
 print(string.format("[states] P8 done: lock=%d ctx=%d VAR_LAB=%d",
-      emu:read8(0x03001808), emu:read8(ADDR_SCRIPT_STATUS), readVar(LAB_OFF)))
+      emu:read8(ADDR_FIELD_LOCK), emu:read8(ADDR_SCRIPT_STATUS), readVar(LAB_OFF)))
 
 -- Bump VAR_LAB to 4 so the rival-battle coord trigger at (7,8) (fires ==3) is skipped.
 do
@@ -682,7 +686,7 @@ do
         end
         if i % 30 == 0 then
             local px, py = playerPos()
-            local lk = emu:read8(0x03001808)
+            local lk = emu:read8(ADDR_FIELD_LOCK)
             local ct = emu:read8(ADDR_SCRIPT_STATUS)
             print(string.format("[states] EXIT hold i=%d tile(%d,%d) lock=%d ctx=%d",
                   i, px-7, py-7, lk, ct))
@@ -752,7 +756,7 @@ do
         end
         if i % 60 == 0 then
             local px, py = playerPos()
-            local lk = emu:read8(0x03001808)
+            local lk = emu:read8(ADDR_FIELD_LOCK)
             local ct = emu:read8(ADDR_SCRIPT_STATUS)
             print(string.format("[states] pallet C i=%d tile(%d,%d) lock=%d ctx=%d",
                   i, px-7, py-7, lk, ct))
@@ -768,12 +772,27 @@ end
 waitForMap(MAP.ROUTE1, "Route 1", 3600, 15)
 
 -- ── CHECKPOINT 2: tall_grass_route1.ss1 ──────────────────────────────────────
--- Navigate RIGHT 10 tiles to reach the ledge-free eastern corridor, then a
--- few tiles north into the tall grass.  The western columns (x≈6 map tile)
--- are blocked by a horizontal ledge row that prevents continuous northward
--- movement through to Viridian; the eastern side (x≈16) is clear.
-walk(KEY_RIGHT, 10)   -- x=6 → x=16 (map tile): clear eastern corridor
+-- After the warp transition the player has a walk-out animation (~90 frames).
+-- Player enters at tile(13, 39). The Route 1 aide NPC is at ~(13, 31) and
+-- blocks northward movement.  Walk east 5 tiles (to x=18, eastern corridor)
+-- then north into tall grass. The eastern side has no blockers.
+idle(90)
+do
+    for i = 1, 300 do
+        local lock = emu:read8(ADDR_FIELD_LOCK)
+        local ctx  = emu:read8(ADDR_SCRIPT_STATUS)
+        if lock == 0 and ctx ~= 1 then break end
+        press(KEY_A, 2, 5)
+        if i % 30 == 0 then
+            local px, py = playerPos()
+            print(string.format("[states] route1 dismiss i=%d lock=%d ctx=%d tile(%d,%d)", i, lock, ctx, px-7, py-7))
+        end
+    end
+end
+do local x,y = playerPos(); print(string.format("[states] route1 entry tile(%d,%d)", x-7, y-7)) end
+walk(KEY_RIGHT, 5)   -- (13,39) → (18,39): eastern corridor, clear of aide/ledges
 walk(KEY_UP, 3)
+do local x,y = playerPos(); print(string.format("[states] route1 pre-save tile(%d,%d)", x-7, y-7)) end
 idle(30)
 saveState("tall_grass_route1.ss1")
 

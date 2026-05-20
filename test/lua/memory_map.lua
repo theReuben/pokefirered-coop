@@ -3,20 +3,21 @@
 
 local M = {}
 
-M.Task_HandleYesNoInput = 0x081F8254
-M.gCoopSettings = 0x03001498
-M.gDisableTextPrinters = 0x02037334
-M.gMpAddrTable = 0x030014A4
-M.gMpBlockExchange = 0x02031240
-M.gMpRecvRing = 0x02031344
-M.gMpSendRing = 0x02031448
-M.gMultiplayerState = 0x0300147C
-M.gSaveBlock1Ptr = 0x03005210
-M.gSaveblock1 = 0x0200FF3C
-M.gStringVar4 = 0x02036C44
-M.gTasks = 0x03006C74
-M.sFirstTextPrinter = 0x0203732C
-M.sGlobalScriptContextStatus = 0x03001711
-M.sLockFieldControls = 0x03001710
+M.Task_HandleYesNoInput = 0x081FB7F4
+M.gCoopSettings = 0x03001598
+M.gDisableTextPrinters = 0x0203744C
+M.gMpAddrTable = 0x030015A4
+M.gMpBlockExchange = 0x02031350
+M.gMpRecvRing = 0x02031454
+M.gMpSendRing = 0x02031558
+M.gMultiplayerState = 0x0300157C
+M.gSaveBlock1Ptr = 0x03005310
+M.gSaveBlock2Ptr = 0x0300530C
+M.gSaveblock1 = 0x0200FF94
+M.gStringVar4 = 0x02036D5C
+M.gTasks = 0x03006D74
+M.sFirstTextPrinter = 0x02037444
+M.sGlobalScriptContextStatus = 0x03001811
+M.sLockFieldControls = 0x03001810
 
 return M
