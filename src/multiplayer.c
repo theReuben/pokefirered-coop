@@ -11,6 +11,10 @@
 #include "task.h"
 #include "pokemon.h"
 #include "battle_main.h"
+#include "party_menu.h"
+#include "overworld.h"
+#include "constants/vars.h"
+#include "constants/battle_frontier.h"
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -428,6 +432,25 @@ static bool8 ProcessOneRecvPacket(void)
             for (i = 0; i < PLAYER_NAME_LENGTH; i++)
                 Mp_Pop(&gMpRecvRing, &name[i]);
             Multiplayer_HandleRemoteName(name);
+        }
+        break;
+
+    case MP_PKT_PARTY_SYNC:
+        {
+            u8 n_mons = 0;
+            u8 needed;
+            Mp_Pop(&gMpRecvRing, &n_mons);
+            if (n_mons > MULTI_PARTY_SIZE) n_mons = MULTI_PARTY_SIZE;
+            needed = n_mons * MP_PKT_PARTY_SYNC_MON_SIZE;
+            if (Mp_Available(&gMpRecvRing) < needed)
+                return FALSE;
+            {
+                u8 data[MULTI_PARTY_SIZE * MP_PKT_PARTY_SYNC_MON_SIZE];
+                u8 j;
+                for (j = 0; j < needed; j++)
+                    Mp_Pop(&gMpRecvRing, &data[j]);
+                Multiplayer_HandleRemotePartySync(data, n_mons);
+            }
         }
         break;
 
@@ -1146,6 +1169,108 @@ bool8 Multiplayer_NativePollBossStart(void)
 }
 
 // ---------------------------------------------------------------------------
+// Party selection for co-op boss battles
+// ---------------------------------------------------------------------------
+
+// Encode gPlayerParty[0..n-1] as MultiPartnerMenuPokemon and write into dst.
+// Returns number of bytes written.
+static u8 EncodePartySync(u8 *dst, u8 n_mons)
+{
+    u8 i;
+    u8 *p = dst;
+    *p++ = MP_PKT_PARTY_SYNC;
+    *p++ = n_mons;
+    for (i = 0; i < n_mons; i++)
+    {
+        struct Pokemon *mon = &gPlayerParty[i];
+        struct MultiPartnerMenuPokemon tmp;
+        tmp.species     = GetMonData(mon, MON_DATA_SPECIES);
+        tmp.heldItem    = GetMonData(mon, MON_DATA_HELD_ITEM);
+        GetMonData(mon, MON_DATA_NICKNAME, tmp.nickname);
+        tmp.level       = GetMonData(mon, MON_DATA_LEVEL);
+        tmp.hp          = GetMonData(mon, MON_DATA_HP);
+        tmp.maxhp       = GetMonData(mon, MON_DATA_MAX_HP);
+        tmp.status      = GetMonData(mon, MON_DATA_STATUS);
+        tmp.personality = GetMonData(mon, MON_DATA_PERSONALITY);
+        tmp.gender      = GetMonGender(mon);
+        tmp.language    = GetMonData(mon, MON_DATA_LANGUAGE);
+        memcpy(p, &tmp, MP_PKT_PARTY_SYNC_MON_SIZE);
+        p += MP_PKT_PARTY_SYNC_MON_SIZE;
+    }
+    return (u8)(p - dst);
+}
+
+void Multiplayer_SendPartySync(void)
+{
+    u8 pkt[MP_PKT_SIZE_PARTY_SYNC_MAX];
+    u8 n = (u8)gPlayerPartyCount;
+    u8 len;
+    if (n > MULTI_PARTY_SIZE) n = MULTI_PARTY_SIZE;
+    len = EncodePartySync(pkt, n);
+    MpRing_Write(&gMpSendRing, pkt, len);
+}
+
+void Multiplayer_HandleRemotePartySync(const u8 *data, u8 n_mons)
+{
+    u8 i;
+    if (n_mons > MULTI_PARTY_SIZE) n_mons = MULTI_PARTY_SIZE;
+    for (i = 0; i < n_mons; i++)
+    {
+        const struct MultiPartnerMenuPokemon *src =
+            (const struct MultiPartnerMenuPokemon *)(data + i * MP_PKT_PARTY_SYNC_MON_SIZE);
+        gMultiPartnerParty[i] = *src;
+        // Mirror into the upper gPlayerParty slots so the battle engine can read
+        // HP, moves, and stats for battler 1.
+        CreateMon(&gPlayerParty[MULTI_PARTY_SIZE + i], src->species, src->level,
+                  src->personality, OTID_STRUCT_PRESET(0));
+        SetMonData(&gPlayerParty[MULTI_PARTY_SIZE + i], MON_DATA_NICKNAME, src->nickname);
+        SetMonData(&gPlayerParty[MULTI_PARTY_SIZE + i], MON_DATA_HELD_ITEM, &src->heldItem);
+    }
+    gMultiplayerState.partnerPartySelectDone = TRUE;
+}
+
+bool8 Multiplayer_NativePollPartySync(void)
+{
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED
+        || gMultiplayerState.partnerPartySelectDone)
+    {
+        gMultiplayerState.partnerPartySelectDone = FALSE;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// savedCallback set before opening the party menu.  Called when player confirms picks.
+void CB2_CoopPartySelected(void)
+{
+    struct Pokemon scratch[MULTI_PARTY_SIZE];
+    u8 i, n;
+
+    // Count and reorder the selected mons to positions 0..n-1 in gPlayerParty.
+    n = 0;
+    for (i = 0; i < MAX_FRONTIER_PARTY_SIZE; i++)
+    {
+        u8 slot = gSelectedOrderFromParty[i];
+        if (slot == 0) break;
+        scratch[n++] = gPlayerParty[slot - 1];
+    }
+    // Write selected mons back to front of party; leave the rest unchanged
+    // (battle engine only reads up to MULTI_PARTY_SIZE from gPlayerParty[0..]).
+    for (i = 0; i < n; i++)
+        gPlayerParty[i] = scratch[i];
+
+    // Restore VAR_FRONTIER_FACILITY so it doesn't leak into other menus.
+    VarSet(VAR_FRONTIER_FACILITY, 0);
+
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+        Multiplayer_SendPartySync();
+    else
+        gMultiplayerState.partnerPartySelectDone = TRUE; // solo: skip partner wait
+
+    SetMainCallback2(CB2_ReturnToFieldContinueScript);
+}
+
+// ---------------------------------------------------------------------------
 // Co-op boss battle block relay
 // ---------------------------------------------------------------------------
 
@@ -1179,24 +1304,24 @@ void Multiplayer_SetupCoopBattle(void)
         gLinkPlayers[i].version = VERSION_EMERALD;
     gReceivedRemoteLinkPlayers = TRUE;
 
-    // Stub the ingame-partner slot with the player's own first Pokemon so
-    // battler 2 (BATTLE_TYPE_INGAME_PARTNER) has valid data to fight with.
-    // Real coop will replace this with P2's synced party.
-    for (i = 0; i < MULTI_PARTY_SIZE && i < gPlayerPartyCount; i++)
+    // If the party sync exchange happened (waitpartysync completed), gMultiPartnerParty
+    // and gPlayerParty[MULTI_PARTY_SIZE..] were already populated by Multiplayer_HandleRemotePartySync.
+    // Fall back to cloning the local player's party only when playing solo (no sync).
+    if (!gMultiplayerState.partnerPartySelectDone && gMultiplayerState.connState != MP_STATE_CONNECTED)
     {
-        gMultiPartnerParty[i].species     = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES);
-        gMultiPartnerParty[i].heldItem    = GetMonData(&gPlayerParty[i], MON_DATA_HELD_ITEM);
-        GetMonData(&gPlayerParty[i], MON_DATA_NICKNAME, gMultiPartnerParty[i].nickname);
-        gMultiPartnerParty[i].level       = GetMonData(&gPlayerParty[i], MON_DATA_LEVEL);
-        gMultiPartnerParty[i].hp          = GetMonData(&gPlayerParty[i], MON_DATA_HP);
-        gMultiPartnerParty[i].maxhp       = GetMonData(&gPlayerParty[i], MON_DATA_MAX_HP);
-        gMultiPartnerParty[i].status      = GetMonData(&gPlayerParty[i], MON_DATA_STATUS);
-        gMultiPartnerParty[i].personality = GetMonData(&gPlayerParty[i], MON_DATA_PERSONALITY);
+        for (i = 0; i < MULTI_PARTY_SIZE && i < gPlayerPartyCount; i++)
+        {
+            gMultiPartnerParty[i].species     = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES);
+            gMultiPartnerParty[i].heldItem    = GetMonData(&gPlayerParty[i], MON_DATA_HELD_ITEM);
+            GetMonData(&gPlayerParty[i], MON_DATA_NICKNAME, gMultiPartnerParty[i].nickname);
+            gMultiPartnerParty[i].level       = GetMonData(&gPlayerParty[i], MON_DATA_LEVEL);
+            gMultiPartnerParty[i].hp          = GetMonData(&gPlayerParty[i], MON_DATA_HP);
+            gMultiPartnerParty[i].maxhp       = GetMonData(&gPlayerParty[i], MON_DATA_MAX_HP);
+            gMultiPartnerParty[i].status      = GetMonData(&gPlayerParty[i], MON_DATA_STATUS);
+            gMultiPartnerParty[i].personality = GetMonData(&gPlayerParty[i], MON_DATA_PERSONALITY);
+            gPlayerParty[MULTI_PARTY_SIZE + i] = gPlayerParty[i];
+        }
     }
-    // Also copy full Pokemon structs into gPlayerParty[MULTI_PARTY_SIZE..] so the
-    // battle engine can read HP/moves for the partner battler.
-    for (i = 0; i < MULTI_PARTY_SIZE && i < gPlayerPartyCount; i++)
-        gPlayerParty[MULTI_PARTY_SIZE + i] = gPlayerParty[i];
 
     CreateTask(Task_CoopBattleBlockRelay, 0);
 }

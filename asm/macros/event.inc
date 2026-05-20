@@ -314,6 +314,18 @@
 	.byte SCR_OP_WAITSTARTERPICK
 	.endm
 
+	@ Opens the party selection menu (CHOOSE_HALF, max 3 mons) for a co-op boss battle.
+	@ Stops the script; resumes via CB2_CoopPartySelected after player confirms.
+	.macro waitcoopparty
+	.byte SCR_OP_WAITCOOPPARTY
+	.endm
+
+	@ Native poll: blocks script until partner sends their MP_PKT_PARTY_SYNC (or solo).
+	@ Must follow waitcoopparty.
+	.macro waitpartysync
+	.byte SCR_OP_WAITPARTYSYNC
+	.endm
+
 	@ Blocks script execution for frames. (Pokemon Emerald runs at just shy of 60 frames per second.)
 	.macro delay frames:req
 	.byte SCR_OP_DELAY

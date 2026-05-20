@@ -62,6 +62,7 @@
 #include "list_menu.h"
 #include "malloc.h"
 #include "battle.h"
+#include "constants/battle_frontier.h"
 #include "constants/event_objects.h"
 #include "constants/map_types.h"
 #include "multiplayer.h"
@@ -3388,5 +3389,26 @@ bool8 ScrCmd_waitstarterpick(struct ScriptContext *ctx)
 {
     Script_RequestEffects(SCREFF_V1);
     SetupNativeScript(ctx, Multiplayer_NativePollPartnerStarterPick);
+    return TRUE;
+}
+
+// Opens the party-selection menu so the player chooses up to 3 mons for the co-op
+// boss battle.  Sets savedCallback to CB2_CoopPartySelected (which sends the sync
+// packet and resumes the script via CB2_ReturnToFieldContinueScript).
+bool8 ScrCmd_waitcoopparty(struct ScriptContext *ctx)
+{
+    Script_RequestEffects(SCREFF_V1);
+    VarSet(VAR_FRONTIER_FACILITY, FACILITY_MULTI_OR_EREADER);
+    gMain.savedCallback = CB2_CoopPartySelected;
+    InitChooseHalfPartyForBattle(0);
+    ScriptContext_Stop();
+    return TRUE;
+}
+
+// Native poll: stays in NATIVE mode until partner's party sync arrives (or solo).
+bool8 ScrCmd_waitpartysync(struct ScriptContext *ctx)
+{
+    Script_RequestEffects(SCREFF_V1);
+    SetupNativeScript(ctx, Multiplayer_NativePollPartySync);
     return TRUE;
 }

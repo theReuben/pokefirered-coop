@@ -275,21 +275,46 @@ void RandomizeEncounters(u32 seed) {
 
 ### Boss Double Battles
 
-Gym leaders and key story battles become co-op double battles:
+Gym leaders and key story battles become **true co-op double battles** where both players control their own Pokémon simultaneously. This is a core feature, not a stretch goal.
 
-1. Modify gym leader scripts: instead of immediately starting battle, show a "Waiting for partner..." message
-2. Send `boss_ready` with the gym leader's ID through the link
-3. Wait for `boss_start` from the server (meaning both players are ready)
-4. On `boss_start`, both ROMs initiate a double battle:
-   - Battle type: `BATTLE_TYPE_DOUBLE | BATTLE_TYPE_MULTI`
-   - Player 1 uses their own party (first 3 Pokémon)
-   - Player 2's party data is synced via `party_sync` message before battle starts
-   - The partner's Pokémon are loaded into the partner trainer slots
-5. During battle, turn selections are synced via `battle_turn` messages each round
-6. Both ROMs step through the battle in lockstep
+**Battle flow:**
 
-**Phase 4 simplification (ship without synced battles first):**
-Boss battles can initially work as "both players must defeat the gym leader independently to progress." Both see the same gym leader; both must beat them. The flag sync ensures the gate/story check only passes when the flag is set (which happens for both on first clear). This avoids the entire battle sync problem for v1.
+1. Both players approach the gym leader trigger → gym script sends `boss_ready` and waits for `boss_start`
+2. After `boss_start`, a `waitcoopparty` script command opens the party selection menu on each player's screen — each player picks up to 3 Pokémon
+3. Each ROM sends `MP_PKT_PARTY_SYNC` with the selected party; both wait until both parties are received
+4. Both ROMs initiate a double battle simultaneously:
+   - `BATTLE_TYPE_DOUBLE | BATTLE_TYPE_MULTI | BATTLE_TYPE_LINK`
+   - Battler 0 = local player (controlled normally)
+   - Battler 1 = partner (driven by network — replaces `battle_controller_player_partner.c` AI)
+   - Battlers 2 & 3 = gym leader's two Pokémon
+5. **Turn sync**: before each turn resolves, both instances exchange `MP_PKT_BATTLE_TURN` (move + target selection). Neither ROM advances the battle engine until both selections are received.
+6. **RNG sync**: at battle start, one player (host) generates a 32-bit battle RNG seed and sends it as part of `MP_PKT_PARTY_SYNC`. Both ROMs seed their battle RNG identically so damage rolls and crit checks are in lockstep.
+
+**Partner controller replacement (`src/battle_controller_player_partner.c`):**
+
+- Replace the AI-driven controller with a network-driven one
+- On `HandleInputChooseMove`: send local selection via `MP_PKT_BATTLE_TURN`, block until partner's packet arrives, then proceed
+- The network poll loop must be non-blocking frame by frame (return early if no packet; the task re-runs next frame)
+
+**Packet definitions:**
+
+- `MP_PKT_PARTY_SYNC = 0x12` — 2-byte header + n×30 bytes (`struct MultiPartnerMenuPokemon`); includes RNG seed (4 bytes) at end
+- `MP_PKT_BATTLE_TURN = 0x13` — 4 bytes: move index (1), target (1), flags (1), padding (1)
+- `MP_PKT_FOLLOWER_SPECIES = 0x14` — 3 bytes: type (1) + species (2)
+
+**Script changes:**
+
+- All 15 gym leader scripts: insert `waitcoopparty` between `waitbossstart`/`closemessage` and `trainerbattle_single`
+- `trainerbattle_single` remains the battle entry point but battle type flags are overridden in `Multiplayer_SetupCoopBattle()`
+- Set `VAR_FRONTIER_FACILITY = FACILITY_MULTI_OR_EREADER` before party menu opens; restore after
+
+**`waitcoopparty` script command (`SCR_OP_WAITCOOPPARTY = 0xE9`):**
+
+- State 0: open party selection menu (`InitChooseHalfPartyForBattle`), set savedCallback → `CB2_CoopPartySelected`, advance to state 1
+- State 1: `SetupNativeScript(ctx, Multiplayer_NativePollPartySync)` — blocks until `partnerPartySelectDone`
+- `CB2_CoopPartySelected`: reorder `gPlayerParty[0..2]` from `gSelectedOrderFromParty[]`, call `Multiplayer_SendPartySync()`, set state→1, return to field
+
+**RNG lockstep requirement:** Both ROMs MUST produce identical RNG outputs. Send the host's `gBattleRngSeed` in `MP_PKT_PARTY_SYNC`. Receiving end overwrites its own seed before the battle engine starts.
 
 ### Link Cable Hook Point
 
@@ -347,4 +372,5 @@ Then point two Tauri app instances at `localhost:1999`.
 - [ ] Phase 5: Boss readiness — gym leader scripts wait for both players, then start battle
 - [ ] Phase 6: Tauri app — bundle ROM + libmgba + WebSocket net adapter, host/join UI with randomizer toggle (on by default)
 - [ ] Phase 7: PartyKit deployment — deploy relay server, hardcode URL in app
-- [ ] Phase 8: Synced double battles (stretch goal) — real-time battle sync for boss fights
+- [ ] Phase 5.5: Party selection — `waitcoopparty` command, party sync packet, partner party loaded for double battle
+- [ ] Phase 8: True co-op double battles — partner controller driven by network, turn sync via `MP_PKT_BATTLE_TURN`, RNG seed lockstep

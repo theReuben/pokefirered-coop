@@ -19,6 +19,7 @@
 #define MP_PKT_STARTER_PICK         0x0F   // 3 bytes — player chose a starter (species hi + lo)
 #define MP_PKT_GENDER               0x10   // 2 bytes — partner's player gender (MALE/FEMALE)
 #define MP_PKT_NAME                 0x11   // 1+PLAYER_NAME_LENGTH bytes — partner's player name
+#define MP_PKT_PARTY_SYNC           0x12   // 2+n*30 bytes — partner's selected party (MultiPartnerMenuPokemon * n)
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -71,6 +72,10 @@
 #define MP_PKT_SIZE_STARTER_PICK            3  // type + species_hi + species_lo
 #define MP_PKT_SIZE_GENDER                  2  // type + gender
 #define MP_PKT_SIZE_NAME                    (1 + PLAYER_NAME_LENGTH)  // type + 7 name bytes
+// PARTY_SYNC: type(1) + n_mons(1) + n * sizeof(MultiPartnerMenuPokemon)(30); max n=3 → 92 bytes
+#define MP_PKT_PARTY_SYNC_HDR               2   // type + n_mons
+#define MP_PKT_PARTY_SYNC_MON_SIZE          30  // sizeof(struct MultiPartnerMenuPokemon)
+#define MP_PKT_SIZE_PARTY_SYNC_MAX          (MP_PKT_PARTY_SYNC_HDR + MULTI_PARTY_SIZE * MP_PKT_PARTY_SYNC_MON_SIZE)
 
 // Player roles assigned by relay server
 #define MP_ROLE_NONE        0

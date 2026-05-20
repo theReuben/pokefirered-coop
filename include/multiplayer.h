@@ -189,6 +189,7 @@ struct MultiplayerState {
                                // handshake completes; consumed by BattleSetup_ConfigureTrainerBattle
                                // to route the NEXT trainerbattle through the coop path
                                // regardless of mode.  Auto-clears once routed.
+    u8  partnerPartySelectDone; // TRUE once partner's MP_PKT_PARTY_SYNC has been received and applied
 };
 
 extern struct MultiplayerState gMultiplayerState;
@@ -265,6 +266,17 @@ bool8 Multiplayer_NativePollBossStart(void);
 // Co-op boss battle setup — call before DoTrainerBattle() when starting a coop gym fight.
 // Sets the link player table, block-exchange state, and creates the relay task.
 void Multiplayer_SetupCoopBattle(void);
+
+// Party selection for co-op boss battles.
+// CB2_CoopPartySelected: savedCallback called by the party menu when player confirms picks.
+//   Reorders gPlayerParty[0..n-1], sends MP_PKT_PARTY_SYNC, returns to field via script.
+void CB2_CoopPartySelected(void);
+// Send local party selection to partner.  Reads gSelectedOrderFromParty[] and gPlayerParty.
+void Multiplayer_SendPartySync(void);
+// Apply partner party sync from received packet bytes.  Fills gMultiPartnerParty and gPlayerParty[3..5].
+void Multiplayer_HandleRemotePartySync(const u8 *data, u8 n_mons);
+// Native callback for SCR_OP_WAITPARTYSYNC: returns TRUE when partner sync received (or solo).
+bool8 Multiplayer_NativePollPartySync(void);
 
 // Full sync (Phase 3) — called by host on connect to bring guest up to date.
 // Builds a FULL_SYNC packet from the current flag state and enqueues it.

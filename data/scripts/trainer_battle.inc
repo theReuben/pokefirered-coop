@@ -60,6 +60,8 @@ EventScript_DoNoIntroCoopTrainerBattle::
 	waitmovement 0
 	clearflag FLAG_SAFE_FOLLOWER_MOVEMENT
 	special PlayTrainerEncounterMusic
+	waitcoopparty
+	waitpartysync
 	docooptrainerbattle
 	gotopostbattlescript
 
