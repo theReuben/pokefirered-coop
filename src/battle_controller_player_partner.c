@@ -286,15 +286,18 @@ static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
 {
     u32 chosenMoveIndex;
 
-    if (Multiplayer_IsCoopBattle() && gMultiplayerState.connState == MP_STATE_CONNECTED)
+    if (Multiplayer_IsCoopBattle())
     {
         // Poll for the partner's move selection sent via MP_PKT_BATTLE_TURN.
-        // If partner disconnected (connState != CONNECTED), fall through to AI below.
+        // If partner is disconnected we pause here every frame until they reconnect;
+        // on reconnect the MP_PKT_PARTNER_CONNECTED handler will resend our cached
+        // turn to the partner so both sides can proceed.
         Multiplayer_PollPackets();
         if (!gMultiplayerState.battleTurnReceived)
             return; // re-run next frame; do NOT call BtlController_Complete yet
 
         gMultiplayerState.battleTurnReceived = FALSE;
+        gMultiplayerState.battleTurnSent     = FALSE; // turn exchange complete
         chosenMoveIndex = gMultiplayerState.battleTurnMoveSlot;
         gBattlerTarget  = gMultiplayerState.battleTurnTarget;
         BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT,

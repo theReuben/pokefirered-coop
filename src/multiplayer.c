@@ -344,6 +344,13 @@ static bool8 ProcessOneRecvPacket(void)
         // correctly and display our name on interaction.
         Multiplayer_SendGender();
         Multiplayer_SendName();
+        // If we're mid-battle and already sent our turn, resend it — partner
+        // missed it while disconnected and is now waiting for it.
+        if (Multiplayer_IsCoopBattle() && gMultiplayerState.battleTurnSent)
+            Multiplayer_SendBattleTurn(
+                gMultiplayerState.battleTurnSentMoveSlot,
+                gMultiplayerState.battleTurnSentTarget,
+                gMultiplayerState.battleTurnSentFlags);
         break;
 
     case MP_PKT_PARTNER_DISCONNECTED:
@@ -1303,6 +1310,10 @@ void Multiplayer_SendBattleTurn(u8 moveSlot, u8 target, u8 flags)
     pkt[2] = target;
     pkt[3] = flags;
     MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_BATTLE_TURN);
+    gMultiplayerState.battleTurnSent         = TRUE;
+    gMultiplayerState.battleTurnSentMoveSlot = moveSlot;
+    gMultiplayerState.battleTurnSentTarget   = target;
+    gMultiplayerState.battleTurnSentFlags    = flags;
 }
 
 void Multiplayer_HandleBattleTurn(u8 moveSlot, u8 target, u8 flags)

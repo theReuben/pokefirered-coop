@@ -198,6 +198,11 @@ struct MultiplayerState {
     u8  battleTurnMoveSlot;     // move slot index from partner (0-3)
     u8  battleTurnTarget;       // target battler from partner
     u8  battleTurnFlags;        // reserved flags (gimmick etc.) for future use
+    // Reconnect support: cache our last-sent turn so we can resend after partner reconnects
+    u8  battleTurnSent;         // TRUE while we've sent a turn and partner hasn't acked it yet
+    u8  battleTurnSentMoveSlot;
+    u8  battleTurnSentTarget;
+    u8  battleTurnSentFlags;
 };
 
 extern struct MultiplayerState gMultiplayerState;
