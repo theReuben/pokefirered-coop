@@ -659,6 +659,7 @@ gSpecials::
 	def_special Multiplayer_BossReady_RivalSilph
 	def_special Multiplayer_BossReady_RivalRoute22_2
 	def_special Multiplayer_BossReady_RivalChampion
+	def_special Multiplayer_BossReady_RivalPokemonTower
 	def_special Multiplayer_BossReady_Escort
 	def_special Multiplayer_BossCancel
 	def_special Multiplayer_ScriptCheckBossStart
