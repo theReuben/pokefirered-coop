@@ -34,6 +34,14 @@ SSAnne_2F_Corridor_EventScript_RivalTrigger::
 	call_if_eq VAR_TEMP_1, 2, SSAnne_2F_Corridor_EventScript_RivalApproachRight
 	msgbox SSAnne_2F_Corridor_Text_RivalIntro
 	setvar VAR_LAST_TALKED, LOCALID_SS_ANNE_RIVAL
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, SSAnne_2F_Corridor_EventScript_RivalBattleDispatch
+	special Multiplayer_BossReady_RivalSsAnne
+	message SSAnne_2F_Corridor_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+SSAnne_2F_Corridor_EventScript_RivalBattleDispatch::
 	call_if_eq VAR_STARTER_MON, 2, SSAnne_2F_Corridor_EventScript_RivalSquirtle
 	call_if_eq VAR_STARTER_MON, 1, SSAnne_2F_Corridor_EventScript_RivalBulbasaur
 	call_if_eq VAR_STARTER_MON, 0, SSAnne_2F_Corridor_EventScript_RivalCharmander
@@ -68,15 +76,36 @@ SSAnne_2F_Corridor_EventScript_RivalApproachRight::
 	return
 
 SSAnne_2F_Corridor_EventScript_RivalSquirtle::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, SSAnne_2F_Corridor_EventScript_RivalCoopSquirtle
 	trainerbattle_no_intro TRAINER_RIVAL_SS_ANNE_SQUIRTLE, SSAnne_2F_Corridor_Text_RivalDefeat
+	return
+SSAnne_2F_Corridor_EventScript_RivalCoopSquirtle::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_SS_ANNE_SQUIRTLE
 	return
 
 SSAnne_2F_Corridor_EventScript_RivalBulbasaur::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, SSAnne_2F_Corridor_EventScript_RivalCoopBulbasaur
 	trainerbattle_no_intro TRAINER_RIVAL_SS_ANNE_BULBASAUR, SSAnne_2F_Corridor_Text_RivalDefeat
+	return
+SSAnne_2F_Corridor_EventScript_RivalCoopBulbasaur::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_SS_ANNE_BULBASAUR
 	return
 
 SSAnne_2F_Corridor_EventScript_RivalCharmander::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, SSAnne_2F_Corridor_EventScript_RivalCoopCharmander
 	trainerbattle_no_intro TRAINER_RIVAL_SS_ANNE_CHARMANDER, SSAnne_2F_Corridor_Text_RivalDefeat
+	return
+SSAnne_2F_Corridor_EventScript_RivalCoopCharmander::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_SS_ANNE_CHARMANDER
 	return
 
 SSAnne_2F_Corridor_EventScript_RivalExitLeft::
@@ -173,6 +202,10 @@ SSAnne_2F_Corridor_Text_ThisShipIsLuxuryLiner::
 	.string "TRAINERS of the world!\p"
 	.string "At every port, we hold parties with\n"
 	.string "invited TRAINERS.$"
+
+SSAnne_2F_Corridor_Text_WaitingForPartner::
+	.string "Waiting for\n"
+	.string "partner...$"
 
 SSAnne_2F_Corridor_Text_RivalIntro::
 	.string "{RIVAL}: Bonjour!\n"

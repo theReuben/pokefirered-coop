@@ -30,6 +30,14 @@ Route22_EventScript_EarlyRival::
 	call_if_eq VAR_TEMP_1, 2, Route22_EventScript_EarlyRivalApproachBottom
 	delay 6
 	msgbox Route22_Text_EarlyRivalIntro
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, Route22_EventScript_EarlyRivalBattleDispatch
+	special Multiplayer_BossReady_RivalRoute22_1
+	message Route22_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+Route22_EventScript_EarlyRivalBattleDispatch::
 	call_if_eq VAR_STARTER_MON, 2, Route22_EventScript_EarlyRivalSquirtle
 	call_if_eq VAR_STARTER_MON, 1, Route22_EventScript_EarlyRivalBulbasaur
 	call_if_eq VAR_STARTER_MON, 0, Route22_EventScript_EarlyRivalCharmander
@@ -58,15 +66,36 @@ Route22_EventScript_EarlyRivalApproachBottom::
 	return
 
 Route22_EventScript_EarlyRivalSquirtle::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, Route22_EventScript_EarlyRivalCoopSquirtle
 	trainerbattle_earlyrival TRAINER_RIVAL_ROUTE22_EARLY_SQUIRTLE, 0, Route22_Text_EarlyRivalDefeat, Text_RivalVictory
+	return
+Route22_EventScript_EarlyRivalCoopSquirtle::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_ROUTE22_EARLY_SQUIRTLE
 	return
 
 Route22_EventScript_EarlyRivalBulbasaur::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, Route22_EventScript_EarlyRivalCoopBulbasaur
 	trainerbattle_earlyrival TRAINER_RIVAL_ROUTE22_EARLY_BULBASAUR, 0, Route22_Text_EarlyRivalDefeat, Text_RivalVictory
+	return
+Route22_EventScript_EarlyRivalCoopBulbasaur::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_ROUTE22_EARLY_BULBASAUR
 	return
 
 Route22_EventScript_EarlyRivalCharmander::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, Route22_EventScript_EarlyRivalCoopCharmander
 	trainerbattle_earlyrival TRAINER_RIVAL_ROUTE22_EARLY_CHARMANDER, 0, Route22_Text_EarlyRivalDefeat, Text_RivalVictory
+	return
+Route22_EventScript_EarlyRivalCoopCharmander::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_ROUTE22_EARLY_CHARMANDER
 	return
 
 Route22_EventScript_EarlyRivalExit::
@@ -181,6 +210,14 @@ Route22_EventScript_LateRival::
 	call_if_eq VAR_TEMP_1, 2, Route22_EventScript_LateRivalApproachBottom
 	msgbox Route22_Text_LateRivalIntro
 	setvar VAR_LAST_TALKED, LOCALID_ROUTE22_RIVAL
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, Route22_EventScript_LateRivalBattleDispatch
+	special Multiplayer_BossReady_RivalRoute22_2
+	message Route22_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+Route22_EventScript_LateRivalBattleDispatch::
 	call_if_eq VAR_STARTER_MON, 2, Route22_EventScript_LateRivalSquirtle
 	call_if_eq VAR_STARTER_MON, 1, Route22_EventScript_LateRivalBulbasaur
 	call_if_eq VAR_STARTER_MON, 0, Route22_EventScript_LateRivalCharmander
@@ -208,15 +245,36 @@ Route22_EventScript_LateRivalApproachBottom::
 	return
 
 Route22_EventScript_LateRivalSquirtle::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, Route22_EventScript_LateRivalCoopSquirtle
 	trainerbattle_no_intro TRAINER_RIVAL_ROUTE22_LATE_SQUIRTLE, Route22_Text_LateRivalDefeat
+	return
+Route22_EventScript_LateRivalCoopSquirtle::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_ROUTE22_LATE_SQUIRTLE
 	return
 
 Route22_EventScript_LateRivalBulbasaur::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, Route22_EventScript_LateRivalCoopBulbasaur
 	trainerbattle_no_intro TRAINER_RIVAL_ROUTE22_LATE_BULBASAUR, Route22_Text_LateRivalDefeat
+	return
+Route22_EventScript_LateRivalCoopBulbasaur::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_ROUTE22_LATE_BULBASAUR
 	return
 
 Route22_EventScript_LateRivalCharmander::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, Route22_EventScript_LateRivalCoopCharmander
 	trainerbattle_no_intro TRAINER_RIVAL_ROUTE22_LATE_CHARMANDER, Route22_Text_LateRivalDefeat
+	return
+Route22_EventScript_LateRivalCoopCharmander::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_ROUTE22_LATE_CHARMANDER
 	return
 
 Route22_Movement_LateRivalExit::
@@ -294,6 +352,10 @@ Route22_Text_LateRivalVictory::
 	.string "{PLAYER}は　まだまだ　だな！\p"
 	.string "もっと　れんしゅう　こいよ！\n"
 	.string "あははーッ！$"
+
+Route22_Text_WaitingForPartner::
+	.string "Waiting for\n"
+	.string "partner...$"
 
 Route22_Text_LeagueGateSign::
 	.string "POKéMON LEAGUE\n"

@@ -42,6 +42,14 @@ CeruleanCity_EventScript_Rival::
 	waitmovement 0
 	msgbox CeruleanCity_Text_RivalIntro
 	setvar VAR_LAST_TALKED, LOCALID_CERULEAN_RIVAL
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, CeruleanCity_EventScript_RivalBattleDispatch
+	special Multiplayer_BossReady_RivalCerulean
+	message CeruleanCity_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+CeruleanCity_EventScript_RivalBattleDispatch::
 	call_if_eq VAR_STARTER_MON, 2, CeruleanCity_EventScript_RivalSquirtle
 	call_if_eq VAR_STARTER_MON, 1, CeruleanCity_EventScript_RivalBulbasaur
 	call_if_eq VAR_STARTER_MON, 0, CeruleanCity_EventScript_RivalCharmander
@@ -66,15 +74,36 @@ CeruleanCity_EventScript_Rival::
 	end
 
 CeruleanCity_EventScript_RivalSquirtle::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, CeruleanCity_EventScript_RivalCoopSquirtle
 	trainerbattle_no_intro TRAINER_RIVAL_CERULEAN_SQUIRTLE, CeruleanCity_Text_RivalDefeat
+	return
+CeruleanCity_EventScript_RivalCoopSquirtle::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_CERULEAN_SQUIRTLE
 	return
 
 CeruleanCity_EventScript_RivalBulbasaur::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, CeruleanCity_EventScript_RivalCoopBulbasaur
 	trainerbattle_no_intro TRAINER_RIVAL_CERULEAN_BULBASAUR, CeruleanCity_Text_RivalDefeat
+	return
+CeruleanCity_EventScript_RivalCoopBulbasaur::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_CERULEAN_BULBASAUR
 	return
 
 CeruleanCity_EventScript_RivalCharmander::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, CeruleanCity_EventScript_RivalCoopCharmander
 	trainerbattle_no_intro TRAINER_RIVAL_CERULEAN_CHARMANDER, CeruleanCity_Text_RivalDefeat
+	return
+CeruleanCity_EventScript_RivalCoopCharmander::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_CERULEAN_CHARMANDER
 	return
 
 CeruleanCity_EventScript_RivalStartExit::
@@ -356,6 +385,10 @@ CeruleanCity_EventScript_GymSign::
 	msgbox CeruleanCity_Text_GymSign
 	releaseall
 	end
+
+CeruleanCity_Text_WaitingForPartner::
+	.string "Waiting for\n"
+	.string "partner...$"
 
 CeruleanCity_Text_RivalIntro::
 	.string "{RIVAL}: Yo! {PLAYER}!\p"

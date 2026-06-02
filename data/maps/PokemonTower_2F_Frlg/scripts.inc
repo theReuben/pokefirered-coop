@@ -28,6 +28,14 @@ PokemonTower_2F_EventScript_Rival::
 	waitmovement 0
 	msgbox PokemonTower_2F_Text_RivalIntro
 	setvar VAR_LAST_TALKED, LOCALID_POKEMON_TOWER_RIVAL
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, PokemonTower_2F_EventScript_RivalBattleDispatch
+	special Multiplayer_BossReady_RivalPokemonTower
+	message PokemonTower_2F_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+PokemonTower_2F_EventScript_RivalBattleDispatch::
 	call_if_eq VAR_STARTER_MON, 2, PokemonTower_2F_EventScript_RivalSquirtle
 	call_if_eq VAR_STARTER_MON, 1, PokemonTower_2F_EventScript_RivalBulbasaur
 	call_if_eq VAR_STARTER_MON, 0, PokemonTower_2F_EventScript_RivalCharmander
@@ -57,15 +65,36 @@ PokemonTower_2F_EventScript_RivalFacePlayerDown::
 	return
 
 PokemonTower_2F_EventScript_RivalSquirtle::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, PokemonTower_2F_EventScript_RivalCoopSquirtle
 	trainerbattle_no_intro TRAINER_RIVAL_POKEMON_TOWER_SQUIRTLE, PokemonTower_2F_Text_RivalDefeat
+	return
+PokemonTower_2F_EventScript_RivalCoopSquirtle::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_POKEMON_TOWER_SQUIRTLE
 	return
 
 PokemonTower_2F_EventScript_RivalBulbasaur::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, PokemonTower_2F_EventScript_RivalCoopBulbasaur
 	trainerbattle_no_intro TRAINER_RIVAL_POKEMON_TOWER_BULBASAUR, PokemonTower_2F_Text_RivalDefeat
+	return
+PokemonTower_2F_EventScript_RivalCoopBulbasaur::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_POKEMON_TOWER_BULBASAUR
 	return
 
 PokemonTower_2F_EventScript_RivalCharmander::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, PokemonTower_2F_EventScript_RivalCoopCharmander
 	trainerbattle_no_intro TRAINER_RIVAL_POKEMON_TOWER_CHARMANDER, PokemonTower_2F_Text_RivalDefeat
+	return
+PokemonTower_2F_EventScript_RivalCoopCharmander::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_POKEMON_TOWER_CHARMANDER
 	return
 
 PokemonTower_2F_EventScript_RivalExitRight::
@@ -99,6 +128,10 @@ PokemonTower_2F_Movement_RivalExitDown::
 	walk_down
 	walk_in_place_faster_right
 	step_end
+
+PokemonTower_2F_Text_WaitingForPartner::
+	.string "Waiting for\n"
+	.string "partner...$"
 
 PokemonTower_2F_Text_RivalIntro::
 	.string "{RIVAL}: Hey, {PLAYER}!\n"

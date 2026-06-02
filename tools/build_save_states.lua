@@ -74,6 +74,7 @@ local SB1_LOC_NUM   = 5
 -- ObjectEvent size=0x24; currentCoords at +0x10 (x:s16, y:s16).
 local ADDR_OBJ0_X = 0x020015bc + 0x10
 local ADDR_OBJ0_Y = 0x020015bc + 0x12
+local TASK_STRIDE = 0x28  -- sizeof(struct Task)
 
 -- ── Paths ─────────────────────────────────────────────────────────────────────
 local SCRIPT_DIR = debug.getinfo(1, "S").source:match("@(.+/)") or "./"
@@ -115,7 +116,18 @@ local function waitForMap(m, label, maxFrames, spamA_every)
         end
         if i % 3000 == 0 then
             local g2, n2 = readMap()
-            print(string.format("[states] waitForMap %s: frame=%d map=(%d,%d)", label, i, g2, n2))
+            local ctx2 = emu:read8(ADDR_SCRIPT_STATUS)
+            local lk2  = emu:read8(ADDR_FIELD_LOCK)
+            local sb1  = emu:read32(ADDR_SB1_PTR)
+            local yn = false
+            for slot = 0, 15 do
+                local base = ADDR_GTASKS + slot * TASK_STRIDE
+                if emu:read8(base + 4) ~= 0 and emu:read32(base) == (YESNO_TASK_FUNC | 1) then
+                    yn = true; break
+                end
+            end
+            print(string.format("[states] waitForMap %s: frame=%d map=(%d,%d) ctx=%d lock=%d sb1=0x%08x yesno=%s",
+                  label, i, g2, n2, ctx2, lk2, sb1, tostring(yn)))
         end
     end
     local g, n = readMap()
@@ -219,6 +231,40 @@ local function killYesNoTask()
     return killed
 end
 
+-- Wait up to maxWait frames for a Task_HandleYesNoInput to appear in gTasks,
+-- pressing A every 20 frames to advance any preceding text box.  When found:
+-- press UP (ensures cursor on YES), wait for the 5-frame guard, confirm with A.
+-- Returns true if found and confirmed; false on timeout (non-fatal).
+local function confirmYesNo(label, maxWait)
+    maxWait = maxWait or 600
+    local THUMB_PTR = YESNO_TASK_FUNC | 1
+    local function yesNoActive()
+        for slot = 0, 15 do
+            local base = ADDR_GTASKS + slot * TASK_STRIDE
+            if emu:read8(base + 4) ~= 0 and emu:read32(base) == THUMB_PTR then
+                return true
+            end
+        end
+        return false
+    end
+    local found = 0
+    for i = 1, maxWait do
+        emu:setKeys(0); emu:runFrame()
+        if yesNoActive() then found = i; break end
+        if i % 20 == 0 then press(KEY_A, 1, 3) end
+    end
+    if found == 0 then
+        print(string.format("[states] confirmYesNo(%s): no YES/NO in %d frames (OK)", label, maxWait))
+        return false
+    end
+    print(string.format("[states] confirmYesNo(%s): YES/NO at frame %d", label, found))
+    press(KEY_UP, 1, 5)   -- ensure cursor on YES (safe no-op if already there)
+    idle(12)              -- let Task_HandleYesNoInput 5-frame guard expire
+    press(KEY_A, 2, 10)   -- confirm YES
+    print(string.format("[states] confirmYesNo(%s): confirmed", label))
+    return true
+end
+
 local function spamA(times, gap)
     gap = gap or 6
     for _ = 1, times do press(KEY_A, 2, gap) end
@@ -297,17 +343,45 @@ press(KEY_A, 5, 60)         -- confirm preset player name
 -- regardless of exact timing, then confirms the bedroom map is active.
 log("phase 5: rival name + wait for bedroom")
 
-idle(200)                   -- CB2_ReturnFromNamingScreen completes + ConfirmName appears
-press(KEY_A, 5, 30)         -- "So your name is [X]?"
-idle(30)                    -- YES/NO appears
-press(KEY_A, 5, 30)         -- YES
+-- Step 1: Player name confirmation.
+-- Oak's confirmname: "So your name is [X]? Is that right?" → YES/NO.
+-- confirmYesNo() advances text with A every 20f until YES/NO task appears,
+-- then moves cursor to YES and confirms.  350-frame window ends well before
+-- the rival name menu appears (~700+ frames from phase 5 start).
+idle(60)
+confirmYesNo("player name", 350)
 
-idle(600)                   -- rival pic fades in, text auto-prints, menu slides in (generous buffer)
+-- Step 2: Wait for rival name menu to slide in.
+-- After player YES/NO, rival pic fades in (~150f) and preset-name menu slides
+-- in (~100f).  No A presses here — pressing A while menu is at position 0
+-- (NEW NAME) would open the naming screen and loop forever.
+idle(900)
+
+-- Step 3: Select GREEN (position 1 in the preset list).
+do
+    local ctx3 = emu:read8(ADDR_SCRIPT_STATUS)
+    local lk3  = emu:read8(ADDR_FIELD_LOCK)
+    local yn3  = false
+    for slot = 0, 15 do
+        local base = ADDR_GTASKS + slot * TASK_STRIDE
+        if emu:read8(base + 4) ~= 0 and emu:read32(base) == (YESNO_TASK_FUNC | 1) then
+            yn3 = true; break
+        end
+    end
+    local px3, py3 = playerPos()
+    print(string.format("[states] pre-rival-menu: ctx=%d lock=%d yesno=%s tile(%d,%d)",
+          ctx3, lk3, tostring(yn3), px3-7, py3-7))
+end
 press(KEY_DOWN, 3, 20)      -- cursor 0(NEW NAME) → 1(GREEN)
-press(KEY_A, 5, 30)         -- select GREEN → ConfirmName (no naming screen required)
+press(KEY_A, 5, 20)         -- select GREEN (skips naming screen)
 
--- From here all remaining inputs are A presses; waitForMap handles timing.
-waitForMap(MAP.HOUSE_2F, "bedroom 2F", 36000, 30)
+-- Step 4: Rival name YES/NO.
+-- "So his name is GREEN? Is that right?" → confirm YES.
+confirmYesNo("rival name", 400)
+
+-- Step 5: "Of course! Remember, his name is GREEN!" → "Let's go [name]!" →
+-- CB2_NewGame → bedroom 2F.  spamA=20 advances MSGBOX_DEFAULT boxes quickly.
+waitForMap(MAP.HOUSE_2F, "bedroom 2F", 36000, 20)
 
 -- ── PHASE 6: Bedroom → 1F → Pallet Town ──────────────────────────────────────
 -- Player spawns at stored (13,13) = tile (6,6) facing north.  Staircase to 1F at (10,2).
@@ -772,10 +846,11 @@ end
 waitForMap(MAP.ROUTE1, "Route 1", 3600, 15)
 
 -- ── CHECKPOINT 2: tall_grass_route1.ss1 ──────────────────────────────────────
--- After the warp transition the player has a walk-out animation (~90 frames).
--- Player enters at tile(13, 39). The Route 1 aide NPC is at ~(13, 31) and
--- blocks northward movement.  Walk east 5 tiles (to x=18, eastern corridor)
--- then north into tall grass. The eastern side has no blockers.
+-- Player enters Route 1 at tile(13, 39).  The route's navigable corridor runs
+-- along x≈6–12 (map connection to Viridian uses offset -12, so Route 1 col 12
+-- aligns with Viridian col 0).  Column x=13 is blocked by trees around y=31.
+-- The player enters directly from Pallet Town at x=13 (offset 0 connection), so
+-- just walk north from the entry; the checkpoint is near tall grass at y≈36.
 idle(90)
 do
     for i = 1, 300 do
@@ -790,8 +865,7 @@ do
     end
 end
 do local x,y = playerPos(); print(string.format("[states] route1 entry tile(%d,%d)", x-7, y-7)) end
-walk(KEY_RIGHT, 5)   -- (13,39) → (18,39): eastern corridor, clear of aide/ledges
-walk(KEY_UP, 3)
+walk(KEY_UP, 3)   -- (13,39) → (13,36): into tall grass band
 do local x,y = playerPos(); print(string.format("[states] route1 pre-save tile(%d,%d)", x-7, y-7)) end
 idle(30)
 saveState("tall_grass_route1.ss1")
@@ -805,18 +879,26 @@ if ADDR_COOP_SETTINGS and ADDR_COOP_SETTINGS ~= 0 then
     emu:write8(ADDR_COOP_SETTINGS, 0)   -- randomizeEncounters = OFF
     log("encounter randomizer disabled for navigation")
 end
--- Set infinite repel via VAR_REPEL_STEP_COUNT (0x4021 → index 0x21).
--- SaveBlock1.vars is at offset 0x139C from the block pointer (see global.h:1129).
--- Each var is a u16; VAR_REPEL_STEP_COUNT index = 0x4021 - 0x4000 = 33 = 0x21.
+-- Set infinite repel via VAR_REPEL_STEP_COUNT (0x4021).
+-- Use the same GetVarPointer formula verified from disassembly for OAK_OFF/LAB_OFF:
+--   address = gSaveBlock1Ptr + (id - 0x3638) * 2
+-- For VAR_REPEL_STEP_COUNT (0x4021): (0x4021 - 0x3638) * 2 = 0x13D2.
+local REPEL_OFF = (0x4021 - 0x3638) * 2   -- 0x13D2
 do
     local sb1 = emu:read32(ADDR_SB1_PTR)
     if sb1 ~= 0 then
-        local vars_base = sb1 + 0x139C   -- struct SaveBlock1.vars[] offset
-        emu:write16(vars_base + 0x21 * 2, 9999)   -- VAR_REPEL_STEP_COUNT = 9999 steps
+        emu:write16(sb1 + REPEL_OFF, 9999)   -- VAR_REPEL_STEP_COUNT = 9999 steps
         log("repel injected: 9999 steps")
     end
 end
 
+-- Navigate around ledge at y=31 which blocks x=10-14 with cliff-face tiles.
+-- At y=36 a ledge-edge tile at x=11 prevents going left past x=12 from this row.
+-- Go UP 4 to y=32 where the corridor widens (x=4-13 all passable), then LEFT 5
+-- to x=8.  Tile(8,31)=0x3008 (passable path north); MartClerk wanders x=5-7.
+walk(KEY_UP,   4)   -- (13,36) → (13,32): ledge edge only blocks at y=31, y=32 is open
+walk(KEY_LEFT, 5)   -- (13,32) → (8,32): all passable at this row
+print(string.format("[states] phase10 start tile(%d,%d)", ({playerPos()})[1]-7, ({playerPos()})[2]-7))
 walkToMap(KEY_UP, MAP.VIRIDIAN,   "Viridian City",    36000)
 walkToMap(KEY_UP, MAP.ROUTE2,     "Route 2",           7200)
 walkToMap(KEY_UP, MAP.VID_FOREST, "Viridian Forest",   7200)

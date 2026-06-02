@@ -42,6 +42,14 @@ SilphCo_7F_EventScript_RivalScene::
 	call_if_eq VAR_TEMP_1, 1, SilphCo_7F_EventScript_RivalApproachBottom
 	msgbox SilphCo_7F_Text_RivalIntro
 	setvar VAR_LAST_TALKED, LOCALID_SILPH_CO_RIVAL
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, SilphCo_7F_EventScript_RivalBattleDispatch
+	special Multiplayer_BossReady_RivalSilph
+	message SilphCo_7F_Text_WaitingForPartner
+	waitmessage
+	waitbossstart
+	closemessage
+SilphCo_7F_EventScript_RivalBattleDispatch::
 	call_if_eq VAR_STARTER_MON, 2, SilphCo_7F_EventScript_RivalSquirtle
 	call_if_eq VAR_STARTER_MON, 1, SilphCo_7F_EventScript_RivalBulbasaur
 	call_if_eq VAR_STARTER_MON, 0, SilphCo_7F_EventScript_RivalCharmander
@@ -68,15 +76,36 @@ SilphCo_7F_EventScript_RivalApproachBottom::
 	return
 
 SilphCo_7F_EventScript_RivalSquirtle::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, SilphCo_7F_EventScript_RivalCoopSquirtle
 	trainerbattle_no_intro TRAINER_RIVAL_SILPH_SQUIRTLE, SilphCo_7F_Text_RivalDefeat
+	return
+SilphCo_7F_EventScript_RivalCoopSquirtle::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_SILPH_SQUIRTLE
 	return
 
 SilphCo_7F_EventScript_RivalBulbasaur::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, SilphCo_7F_EventScript_RivalCoopBulbasaur
 	trainerbattle_no_intro TRAINER_RIVAL_SILPH_BULBASAUR, SilphCo_7F_Text_RivalDefeat
+	return
+SilphCo_7F_EventScript_RivalCoopBulbasaur::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_SILPH_BULBASAUR
 	return
 
 SilphCo_7F_EventScript_RivalCharmander::
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 1, SilphCo_7F_EventScript_RivalCoopCharmander
 	trainerbattle_no_intro TRAINER_RIVAL_SILPH_CHARMANDER, SilphCo_7F_Text_RivalDefeat
+	return
+SilphCo_7F_EventScript_RivalCoopCharmander::
+	waitcoopparty
+	waitpartysync
+	docooptrainerbattle TRAINER_RIVAL_SILPH_CHARMANDER
 	return
 
 SilphCo_7F_EventScript_RivalExitTop::
@@ -330,6 +359,10 @@ SilphCo_7F_Text_Grunt2Defeat::
 SilphCo_7F_Text_Grunt2PostBattle::
 	.string "Go on home before my BOSS gets\n"
 	.string "ticked off!$"
+
+SilphCo_7F_Text_WaitingForPartner::
+	.string "Waiting for\n"
+	.string "partner...$"
 
 SilphCo_7F_Text_RivalWhatKeptYou::
 	.string "{RIVAL}: What kept you, {PLAYER}?$"

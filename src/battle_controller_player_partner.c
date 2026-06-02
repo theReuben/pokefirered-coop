@@ -286,9 +286,10 @@ static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
 {
     u32 chosenMoveIndex;
 
-    if (Multiplayer_IsCoopBattle())
+    if (Multiplayer_IsCoopBattle() && gMultiplayerState.connState == MP_STATE_CONNECTED)
     {
-        // Poll for the partner's (player 2's) move selection sent via MP_PKT_BATTLE_TURN.
+        // Poll for the partner's move selection sent via MP_PKT_BATTLE_TURN.
+        // If partner disconnected (connState != CONNECTED), fall through to AI below.
         Multiplayer_PollPackets();
         if (!gMultiplayerState.battleTurnReceived)
             return; // re-run next frame; do NOT call BtlController_Complete yet

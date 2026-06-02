@@ -260,6 +260,7 @@ void Multiplayer_BossReady_RivalSsAnne(void);
 void Multiplayer_BossReady_RivalSilph(void);
 void Multiplayer_BossReady_RivalRoute22_2(void);
 void Multiplayer_BossReady_RivalChampion(void);
+void Multiplayer_BossReady_RivalPokemonTower(void);
 void Multiplayer_BossReady_Escort(void);
 void Multiplayer_BossCancel(void);
 // Returns 1 when both players (or solo) are ready to start the boss battle,
