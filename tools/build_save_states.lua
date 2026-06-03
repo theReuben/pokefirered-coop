@@ -873,16 +873,14 @@ saveState("tall_grass_route1.ss1")
 -- ── PHASE 10: Route 1 → Viridian → Forest → Pewter Gym ───────────────────────
 -- Disable encounter randomizer (gCoopSettings.randomizeEncounters = 0) so the
 -- starter doesn't get wiped by a high-level randomized Pokémon and black out.
--- Also inject a Super Repel (VAR_REPEL_STEP_COUNT = 250) to minimize encounters.
+-- Also inject a Super Repel (VAR_REPEL_STEP_COUNT = 9999) to suppress encounters.
 log("phase 10: to pewter gym")
 if ADDR_COOP_SETTINGS and ADDR_COOP_SETTINGS ~= 0 then
     emu:write8(ADDR_COOP_SETTINGS, 0)   -- randomizeEncounters = OFF
     log("encounter randomizer disabled for navigation")
 end
 -- Set infinite repel via VAR_REPEL_STEP_COUNT (0x4021).
--- Use the same GetVarPointer formula verified from disassembly for OAK_OFF/LAB_OFF:
---   address = gSaveBlock1Ptr + (id - 0x3638) * 2
--- For VAR_REPEL_STEP_COUNT (0x4021): (0x4021 - 0x3638) * 2 = 0x13D2.
+-- Formula verified from GetVarPointer disassembly: address = gSaveBlock1Ptr + (id - 0x3638) * 2
 local REPEL_OFF = (0x4021 - 0x3638) * 2   -- 0x13D2
 do
     local sb1 = emu:read32(ADDR_SB1_PTR)
@@ -892,23 +890,86 @@ do
     end
 end
 
--- Navigate around ledge at y=31 which blocks x=10-14 with cliff-face tiles.
--- At y=36 a ledge-edge tile at x=11 prevents going left past x=12 from this row.
--- Go UP 4 to y=32 where the corridor widens (x=4-13 all passable), then LEFT 5
--- to x=8.  Tile(8,31)=0x3008 (passable path north); MartClerk wanders x=5-7.
-walk(KEY_UP,   4)   -- (13,36) → (13,32): ledge edge only blocks at y=31, y=32 is open
-walk(KEY_LEFT, 5)   -- (13,32) → (8,32): all passable at this row
+-- Player is at tile(13,36) from tall_grass_route1.ss1.
+-- The eastern corridor at x=13 (tile) is unobstructed all the way north through
+-- Route 1 and Viridian City to Route 2.  The previous approach (walk LEFT 5 to
+-- x=8) caused a stall at tile(8,27) due to a blocking tile on Route 1.
 print(string.format("[states] phase10 start tile(%d,%d)", ({playerPos()})[1]-7, ({playerPos()})[2]-7))
-walkToMap(KEY_UP, MAP.VIRIDIAN,   "Viridian City",    36000)
-walkToMap(KEY_UP, MAP.ROUTE2,     "Route 2",           7200)
-walkToMap(KEY_UP, MAP.VID_FOREST, "Viridian Forest",   7200)
-walkToMap(KEY_UP, MAP.PEWTER,     "Pewter City",       72000)
+walkToMap(KEY_UP, MAP.VIRIDIAN, "Viridian City", 36000)
+walkToMap(KEY_UP, MAP.ROUTE2,   "Route 2",        7200)
 
--- Walk to Pewter Gym (northwest of city centre)
-walk(KEY_UP,   5)
-walk(KEY_LEFT, 8)
-walk(KEY_UP,   10)
-waitForMap(MAP.PEWTER_GYM, "Pewter City Gym", 3600, 30)
+-- Align to forest entrance at tile x=5 (raw x=12).
+-- playerPos() returns raw stored coordinates; forest south-entrance warp on
+-- Route 2 is at raw x=12.  Walk LEFT (raw_x - 12) tiles to align.
+do
+    local rx = ({playerPos()})[1]
+    local left_count = math.max(1, rx - 12)
+    print(string.format("[states] Route2 entry raw_x=%d, walking LEFT %d tiles", rx, left_count))
+    walk(KEY_LEFT, left_count)
+end
+
+walkToMap(KEY_UP, MAP.VID_FOREST, "Viridian Forest", 7200)
+
+-- BFS-computed path through Viridian Forest from south entrance (raw 29,62)
+-- to the north-exit warp (raw 5,9).  Verified against the forest tile map.
+do
+    local FOREST_SEQ = {
+        {KEY_UP,    4}, {KEY_RIGHT, 2}, {KEY_UP,    3}, {KEY_RIGHT, 8},
+        {KEY_UP,   36}, {KEY_LEFT,  7}, {KEY_DOWN,  4}, {KEY_LEFT,  9},
+        {KEY_UP,   13}, {KEY_LEFT,  8}, {KEY_DOWN, 17}, {KEY_LEFT,  8},
+        {KEY_UP,   14}, {KEY_LEFT,  2}, {KEY_UP,    4},
+    }
+    local rx, ry = playerPos()
+    print(string.format("[states] forest entry raw(%d,%d)", rx, ry))
+    for _, move in ipairs(FOREST_SEQ) do
+        walk(move[1], move[2])
+        -- Reinject repel mid-forest to prevent wild encounters.
+        local sb1 = emu:read32(ADDR_SB1_PTR)
+        if sb1 ~= 0 then emu:write16(sb1 + REPEL_OFF, 9999) end
+    end
+    rx, ry = playerPos()
+    print(string.format("[states] forest exit  raw(%d,%d)", rx, ry))
+end
+
+-- After forest exit warp, walk north through the north-entrance building and
+-- Route 2 north to Pewter City.
+walkToMap(KEY_UP, MAP.PEWTER, "Pewter City", 72000)
+
+-- Coordinate-based gym approach.  Gym warp tile is at Pewter raw (22,23) = tile(15,16).
+-- Walk north while raw_y > 24, then left while raw_x > 22, then north onto warp.
+do
+    local entered = false
+    for i = 1, 7200 do
+        local g, n = readMap()
+        if g == MAP.PEWTER_GYM.g and n == MAP.PEWTER_GYM.n then
+            print(string.format("[states] entered Pewter Gym at step %d", i))
+            entered = true
+            break
+        end
+        local ctx  = emu:read8(ADDR_SCRIPT_STATUS)
+        local lock = emu:read8(ADDR_FIELD_LOCK)
+        if ctx == 1 or lock ~= 0 then
+            emu:setKeys(KEY_A); emu:runFrame(); emu:setKeys(0); emu:runFrame()
+        else
+            local x, y = playerPos()
+            if     y > 24 then emu:setKeys(KEY_UP)
+            elseif x > 22 then emu:setKeys(KEY_LEFT)
+            else               emu:setKeys(KEY_UP)
+            end
+            emu:runFrame()
+            emu:setKeys(0)
+        end
+        if i % 500 == 0 then
+            local x, y = playerPos()
+            print(string.format("[states] approach_gym step=%d tile(%d,%d)", i, x-7, y-7))
+        end
+    end
+    if not entered then
+        local x, y = playerPos()
+        error(string.format("[states] TIMEOUT approaching gym: tile(%d,%d)", x-7, y-7))
+    end
+end
+waitForMap(MAP.PEWTER_GYM, "Pewter City Gym", 600, 15)
 
 -- ── CHECKPOINT 3: pewter_gym.ss1 ──────────────────────────────────────────────
 idle(60)
