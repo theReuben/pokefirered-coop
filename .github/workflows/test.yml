@@ -208,13 +208,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/mgba-build
-          key: mgba-b19b557-lua-${{ runner.os }}
+          key: mgba-b19b557-lua-v2-${{ runner.os }}
 
       - name: Build mGBA headless with Lua support
         if: steps.mgba-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 https://github.com/mgba-emu/mgba.git /tmp/mgba-src
-          git -C /tmp/mgba-src checkout b19b557a78930ede7ee7f5dcbc880f9ff2533ffe
+          mkdir -p /tmp/mgba-src
+          wget -q --retry-connrefused --tries=3 -O /tmp/mgba.tar.gz \
+            https://github.com/mgba-emu/mgba/archive/b19b557a78930ede7ee7f5dcbc880f9ff2533ffe.tar.gz
+          tar -xzf /tmp/mgba.tar.gz --strip-components=1 -C /tmp/mgba-src
           cmake -B /tmp/mgba-build -S /tmp/mgba-src -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SDL=OFF -DBUILD_QT=OFF \
@@ -279,13 +281,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/mgba-build
-          key: mgba-b19b557-lua-${{ runner.os }}
+          key: mgba-b19b557-lua-v2-${{ runner.os }}
 
       - name: Build mGBA headless with Lua support
         if: steps.mgba-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 https://github.com/mgba-emu/mgba.git /tmp/mgba-src
-          git -C /tmp/mgba-src checkout b19b557a78930ede7ee7f5dcbc880f9ff2533ffe
+          mkdir -p /tmp/mgba-src
+          wget -q --retry-connrefused --tries=3 -O /tmp/mgba.tar.gz \
+            https://github.com/mgba-emu/mgba/archive/b19b557a78930ede7ee7f5dcbc880f9ff2533ffe.tar.gz
+          tar -xzf /tmp/mgba.tar.gz --strip-components=1 -C /tmp/mgba-src
           cmake -B /tmp/mgba-build -S /tmp/mgba-src -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SDL=OFF -DBUILD_QT=OFF \
