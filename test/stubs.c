@@ -5,6 +5,13 @@
 #include "event_object_movement.h"
 #include "item.h"
 #include "random.h"
+#include "pokemon.h"
+#include "battle_main.h"
+#include "battle.h"
+#include "party_menu.h"
+#include "overworld.h"
+#include "follower_npc.h"
+#include <stdarg.h>
 
 // Controllable Random32 return value — set in tests before calling
 // Multiplayer_GenerateSeed().  Default is non-zero so stub never generates
@@ -146,3 +153,45 @@ u8 CreateTask(void (*func)(u8), u8 priority)
     (void)func; (void)priority;
     return 0;
 }
+
+// ---------------------------------------------------------------------------
+// Pokemon / battle stubs — native build only; not exercised by current tests.
+// ---------------------------------------------------------------------------
+struct Pokemon gPlayerParty[PARTY_SIZE * 2];
+u8 gPlayerPartyCount;
+struct MultiPartnerMenuPokemon gMultiPartnerParty[MULTI_PARTY_SIZE];
+u32 gBattleTypeFlags;
+
+u32 GetMonData_stub(struct Pokemon *mon, s32 field, ...)
+{
+    (void)mon; (void)field;
+    va_list ap; va_start(ap, field); va_end(ap);
+    return 0;
+}
+
+u8 GetMonGender(struct Pokemon *mon) { (void)mon; return 0; }
+
+void SetMonData(struct Pokemon *mon, s32 field, const void *data)
+{
+    (void)mon; (void)field; (void)data;
+}
+
+void CreateMon(struct Pokemon *mon, u16 species, u8 level, u32 personality,
+               struct OriginalTrainerId otId)
+{
+    (void)mon; (void)species; (void)level; (void)personality; (void)otId;
+}
+
+// ---------------------------------------------------------------------------
+// Party menu / overworld / follower stubs.
+// ---------------------------------------------------------------------------
+u8 gSelectedOrderFromParty[MAX_FRONTIER_PARTY_SIZE];
+
+void InitChooseHalfPartyForBattle(u8 unused) { (void)unused; }
+void SetMainCallback2(MainCallback callback) { (void)callback; }
+void CB2_ReturnToFieldContinueScript(void) {}
+
+const struct UCoords32 gDirectionToVectors[4]; // zeroed; tests don't call movement code
+
+bool8 PlayerHasFollowerNPC(void) { return FALSE; }
+u32   GetFollowerNPCData(enum FollowerNpcData data) { (void)data; return 0; }

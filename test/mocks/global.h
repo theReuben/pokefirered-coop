@@ -38,6 +38,14 @@ typedef u32 bool32;
 // irrelevant on the host so make it a no-op.
 #define ALIGNED(n)
 
+// max/min are used by constants/global.h (MAX_FRONTIER_PARTY_SIZE).
+#ifndef max
+#define max(a, b) ((a) > (b) ? (a) : (b))
+#endif
+#ifndef min
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
 // Pull in OBJECT_EVENTS_COUNT, IS_FRLG, Direction enum, etc.
 // This is a pure-defines/enums file with no GBA hardware dependencies.
 #include "constants/global.h"
@@ -106,7 +114,8 @@ extern struct SaveBlock1 *gSaveBlock1Ptr;
 
 // Minimal SaveBlock2 — only the fields multiplayer.c reads.
 struct SaveBlock2 {
-    u8 playerGender; // MALE=0, FEMALE=1
+    u8 playerGender;                         // MALE=0, FEMALE=1
+    u8 playerName[PLAYER_NAME_LENGTH + 1];   // player's name string
 };
 extern struct SaveBlock2 *gSaveBlock2Ptr;
 
@@ -116,7 +125,9 @@ extern struct SaveBlock2 *gSaveBlock2Ptr;
 #define SPECIES_SQUIRTLE    7
 
 // Minimal VarGet/VarSet interface (backed by a small array in stubs.c).
-#define TEMP_VARS_START     0x8000
+// Use the real TEMP_VARS_START value (0x4000) so constants/vars.h doesn't
+// redefine it to a different value and cause macro-redefinition warnings.
+#define TEMP_VARS_START     0x4000
 #define VAR_TEMP_0          (TEMP_VARS_START + 0x0)
 #define VAR_TEMP_1          (TEMP_VARS_START + 0x1)
 #define VAR_TEMP_2          (TEMP_VARS_START + 0x2)

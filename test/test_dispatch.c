@@ -34,6 +34,10 @@ static struct SaveBlock1 sTestSave;
 static void ResetAll(void)
 {
     Multiplayer_Init();
+    // Pre-set CONNECTED so ProcessOneRecvPacket's auto-connect block does not
+    // fire and write gender+name packets to the send ring. Tests that need
+    // DISCONNECTED override this immediately after calling ResetAll().
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
     memset(gObjectEvents, 0, sizeof(gObjectEvents));
     memset(&sTestSave, 0, sizeof(sTestSave));
     sTestSave.location.mapGroup = 0;

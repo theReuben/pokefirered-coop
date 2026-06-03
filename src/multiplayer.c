@@ -674,12 +674,15 @@ void Multiplayer_Update(void)
     GhostMapCheck();
     GhostTick();
 
-    // Always broadcast position so the partner can auto-detect our presence
-    // and establish connState without requiring an explicit handshake packet.
-    gMultiplayerState.posFrameCounter++;
-    if (gMultiplayerState.posFrameCounter >= 4)
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED)
     {
-        gMultiplayerState.posFrameCounter = 0;
+        gMultiplayerState.posFrameCounter++;
+        if (gMultiplayerState.posFrameCounter >= 4)
+            gMultiplayerState.posFrameCounter = 0;
+    }
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED &&
+        gMultiplayerState.posFrameCounter == 0)
+    {
         Multiplayer_SendPosition();
 
         // Broadcast follower graphics ID when it changes so partner can show

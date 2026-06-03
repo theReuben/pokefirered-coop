@@ -29,6 +29,10 @@ static struct SaveBlock1 sTestSave;
 static void ResetForStarterTest(void)
 {
     Multiplayer_Init();                    // resets ring buffers and state
+    // Pre-set CONNECTED so ProcessOneRecvPacket's auto-connect block does not
+    // fire and write gender+name packets to the send ring when tests push
+    // inbound packets while simulating the already-connected state.
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
     // Multiplayer_Init does not zero partnerStarterSpecies (BSS-zero on real
     // hardware where Init runs once at boot). Reset it manually so test
     // ordering can't leak state between cases.

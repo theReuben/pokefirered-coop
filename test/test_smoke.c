@@ -312,7 +312,9 @@ static void TestRemoteFlagSetRouting(void)
 
     Multiplayer_Init();
     ResetDispatch();
-    // connState stays DISCONNECTED — no position packet will pollute send ring.
+    // Pre-set CONNECTED so the auto-connect block in ProcessOneRecvPacket
+    // does not fire and write gender+name packets to the send ring.
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
 
     Mp_EncodeFlagSet(pkt, SYNC_FLAG_TRAINERS_START + 5);
     for (i = 0; i < MP_PKT_SIZE_FLAG_SET; i++)
@@ -333,6 +335,7 @@ static void TestRemoteVarSetRouting(void)
 
     Multiplayer_Init();
     ResetDispatch();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
 
     Mp_EncodeVarSet(pkt, 0x4001, 0x0007);
     for (i = 0; i < MP_PKT_SIZE_VAR_SET; i++)
@@ -354,6 +357,7 @@ static void TestMultipleFlagSetsRouted(void)
 
     Multiplayer_Init();
     ResetDispatch();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
 
     Mp_EncodeFlagSet(pkt, SYNC_FLAG_BOSSES_START);
     for (i = 0; i < MP_PKT_SIZE_FLAG_SET; i++) Mp_Push(&gMpRecvRing, pkt[i]);
@@ -494,6 +498,8 @@ static void TestFullSyncRoundTrip(void)
     // Switch gSaveBlock1Ptr to a clean block to simulate the receiver.
     memset(&applyBlock, 0, sizeof(applyBlock));
     gSaveBlock1Ptr = &applyBlock;
+    // Pre-set CONNECTED so auto-connect doesn't send gender+name to send ring.
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
 
     Multiplayer_Update(); // dispatches FULL_SYNC via ProcessOneRecvPacket
 
@@ -738,6 +744,9 @@ static void TestSeedSyncRoundTrip(void)
         Mp_Pop(&gMpSendRing, &b);
         Mp_Push(&gMpRecvRing, b);
     }
+
+    // Pre-set CONNECTED so auto-connect doesn't send gender+name to send ring.
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
 
     Multiplayer_Update();
     ASSERT_EQ(gCoopSettings.encounterSeed, 0x12345678u);
