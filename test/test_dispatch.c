@@ -300,6 +300,25 @@ static void TestUnknownPacketTypeDrainsRing(void)
     ASSERT_EQ(Mp_Available(&gMpRecvRing), 0);
 }
 
+// ---- GENDER dispatch -------------------------------------------------------
+
+static void TestGenderPacketDispatch(void)
+{
+    u8 pkt[MP_PKT_SIZE_GENDER];
+    u8 i;
+
+    ResetAll();
+    Mp_EncodeGender(pkt, FEMALE);
+    for (i = 0; i < MP_PKT_SIZE_GENDER; i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.gotPartnerGender, TRUE);
+    ASSERT_EQ(gMultiplayerState.partnerGender,    FEMALE);
+    ASSERT_EQ(Mp_Available(&gMpRecvRing), 0);
+}
+
 // ---- remoteUpdateThisFrame frame flag --------------------------------------
 
 static void TestRemoteUpdateClearedNextFrame(void)
@@ -338,6 +357,7 @@ int main(void)
     TestPartnerDisconnectedDespawnsGhost();
     TestTruncatedPositionDoesNotCorruptState();
     TestUnknownPacketTypeDrainsRing();
+    TestGenderPacketDispatch();
     TestRemoteUpdateClearedNextFrame();
     TEST_SUMMARY();
 }

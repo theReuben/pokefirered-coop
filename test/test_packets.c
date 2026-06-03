@@ -227,6 +227,45 @@ static void TestEncodeBossCancel(void)
     ASSERT_EQ(buf[0], MP_PKT_BOSS_CANCEL);
 }
 
+// ---- GENDER encode/decode ------------------------------------------------
+
+static void TestEncodeDecodeGenderMale(void)
+{
+    u8 buf[MP_PKT_SIZE_GENDER];
+    u8 gender;
+
+    u8 n = Mp_EncodeGender(buf, MALE);
+    ASSERT_EQ(n, MP_PKT_SIZE_GENDER);
+    ASSERT_EQ(buf[0], MP_PKT_GENDER);
+    ASSERT_EQ(buf[1], MALE);
+
+    ASSERT_EQ(Mp_DecodeGender(buf, MP_PKT_SIZE_GENDER, &gender), TRUE);
+    ASSERT_EQ(gender, MALE);
+}
+
+static void TestEncodeDecodeGenderFemale(void)
+{
+    u8 buf[MP_PKT_SIZE_GENDER];
+    u8 gender;
+
+    u8 n = Mp_EncodeGender(buf, FEMALE);
+    ASSERT_EQ(n, MP_PKT_SIZE_GENDER);
+    ASSERT_EQ(buf[0], MP_PKT_GENDER);
+    ASSERT_EQ(buf[1], FEMALE);
+
+    ASSERT_EQ(Mp_DecodeGender(buf, MP_PKT_SIZE_GENDER, &gender), TRUE);
+    ASSERT_EQ(gender, FEMALE);
+}
+
+static void TestDecodeGenderTruncated(void)
+{
+    u8 buf[MP_PKT_SIZE_GENDER];
+    u8 gender;
+    Mp_EncodeGender(buf, MALE);
+    ASSERT_EQ(Mp_DecodeGender(buf, 1, &gender), FALSE);
+    ASSERT_EQ(Mp_DecodeGender(buf, 0, &gender), FALSE);
+}
+
 // ---- SEED_SYNC encode/decode ----------------------------------------------
 
 static void TestEncodeDecodeSeedSync(void)
@@ -459,6 +498,11 @@ int main(void)
 
     // BOSS_CANCEL
     TestEncodeBossCancel();
+
+    // GENDER
+    TestEncodeDecodeGenderMale();
+    TestEncodeDecodeGenderFemale();
+    TestDecodeGenderTruncated();
 
     // SEED_SYNC
     TestEncodeDecodeSeedSync();
