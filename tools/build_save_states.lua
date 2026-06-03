@@ -890,87 +890,239 @@ do
     end
 end
 
--- Player is at tile(13,36) from tall_grass_route1.ss1.
--- Cliff face at tile(13,31) blocks northward movement at x=10-14.  Walk UP 4
--- to reach y=32 (last row before the cliff), then LEFT 5 to x=8 where the
--- ledge has a gap and the path is clear north to Viridian City.
+-- Route 1 zigzag path physically verified by probe through all ledge/cliff barriers.
+-- Key terrain: y=20 cliff has a gap at x=9; eastern corridor is x=10-21 from y=17;
+-- the only Viridian exit is x=10-13 at y=0 (metatile strip), reached via x=13,y=2.
+local function reinjRepel()
+    local sb1 = emu:read32(ADDR_SB1_PTR)
+    if sb1 ~= 0 then emu:write16(sb1 + REPEL_OFF, 9999) end
+    if ADDR_COOP_SETTINGS and ADDR_COOP_SETTINGS ~= 0 then
+        emu:write8(ADDR_COOP_SETTINGS, 0)
+    end
+end
 print(string.format("[states] phase10 start tile(%d,%d)", ({playerPos()})[1]-7, ({playerPos()})[2]-7))
-walk(KEY_UP,   4)   -- tile(13,36) → tile(13,32): last clear row before cliff at y=31
-walk(KEY_LEFT, 5)   -- tile(13,32) → tile(8,32): gap in cliff runs at x ≤ 9
-print(string.format("[states] phase10 at cliff gap tile(%d,%d)", ({playerPos()})[1]-7, ({playerPos()})[2]-7))
-walkToMap(KEY_UP, MAP.VIRIDIAN, "Viridian City", 36000)
-walkToMap(KEY_UP, MAP.ROUTE2,   "Route 2",        7200)
-
--- Align to forest entrance at tile x=5 (raw x=12).
--- playerPos() returns raw stored coordinates; forest south-entrance warp on
--- Route 2 is at raw x=12.  Walk LEFT (raw_x - 12) tiles to align.
+walk(KEY_UP,    4);  reinjRepel()  -- tile(13,36) → tile(13,32)
+walk(KEY_LEFT,  5);  reinjRepel()  -- tile(13,32) → tile(8,32)
+walk(KEY_UP,    5);  reinjRepel()  -- tile(8,32)  → tile(8,27)
+walk(KEY_RIGHT, 4);  reinjRepel()  -- tile(8,27)  → tile(12,27)
+walk(KEY_UP,    6);  reinjRepel()  -- tile(12,27) → tile(12,21)
+walk(KEY_LEFT,  3);  reinjRepel()  -- tile(12,21) → tile(9,21)
+walk(KEY_UP,    1);  reinjRepel()  -- tile(9,21)  → tile(9,20)  [gap in y=20 cliff]
+walk(KEY_RIGHT, 1);  reinjRepel()  -- tile(9,20)  → tile(10,20)
+walk(KEY_UP,    3);  reinjRepel()  -- tile(10,20) → tile(10,17)
+walk(KEY_RIGHT, 11); reinjRepel()  -- tile(10,17) → tile(21,17)
+walk(KEY_UP,    15); reinjRepel()  -- tile(21,17) → tile(21,2)
+walk(KEY_LEFT,  8);  reinjRepel()  -- tile(21,2)  → tile(13,2)  [Viridian exit strip x=10-13]
+print(string.format("[states] phase10 at Viridian exit tile(%d,%d)", ({playerPos()})[1]-7, ({playerPos()})[2]-7))
+walkToMap(KEY_UP, MAP.VIRIDIAN, "Viridian City", 7200)
+-- Skip the Viridian old-man tutorial (coord trigger at tile 22,11 fires when
+-- VAR_MAP_SCENE_VIRIDIAN_CITY_OLD_MAN == 0).  Set it to 2 so the old man
+-- stands aside and both triggers are inactive.
 do
-    local rx = ({playerPos()})[1]
-    local left_count = math.max(1, rx - 12)
-    print(string.format("[states] Route2 entry raw_x=%d, walking LEFT %d tiles", rx, left_count))
-    walk(KEY_LEFT, left_count)
+    local sb1 = emu:read32(ADDR_SB1_PTR)
+    if sb1 ~= 0 then
+        local OLD_MAN_OFF = (0x4051 - 0x3638) * 2   -- VAR_MAP_SCENE_VIRIDIAN_CITY_OLD_MAN
+        emu:write16(sb1 + OLD_MAN_OFF, 2)
+        log("VAR_MAP_SCENE_VIRIDIAN_CITY_OLD_MAN set to 2 (tutorial done)")
+    end
+end
+-- Player enters Viridian at tile(26,39); x=22 is the only fully unobstructed
+-- north-south corridor (no walls y=0-39). Walk left 4 to x=22 then go north.
+walk(KEY_LEFT, 4); reinjRepel()
+walkToMap(KEY_UP, MAP.ROUTE2,   "Route 2",        7200)
+-- Let any in-progress tile animation complete so playerPos() returns the settled
+-- entry tile.  Without this pause the first walk() call after a map transition
+-- consumes the tail of the animation and moves 1 fewer tile than expected.
+idle(60)
+-- Boost lead Pokémon's unencrypted level field so the Super Repel suppresses all
+-- Route 2 wild encounters.  The repel only blocks wild Pokémon with level STRICTLY
+-- LOWER than the lead.  The starter is level 5 and Route 2 wilds can also be level
+-- 5, so without this the repel misses them.  gPlayerParty[0].level (unencrypted,
+-- used by the repel check) is at struct Pokemon offset 0x54.
+do
+    local party_addr = (_mem.gPlayerParty or 0x02032320)
+    emu:write8(party_addr + 0x54, 100)
+    log("lead pokemon level set to 100 for repel coverage on Route 2")
+end
+reinjRepel()
+
+-- Navigate Route 2 south section to the Viridian Forest south entrance building.
+-- Entry tile: (10,79) stable after idle(60). Three collision obstacles:
+--   y=70 ledge (MB_JUMP_SOUTH): only x=9-10 passable northward
+--   y=63-66 east wall:          only x=2-5 passable
+--   y=55 ledge (MB_JUMP_SOUTH): only x=11-13 passable northward
+-- x=6-12 at y=56-62 is tall grass (MB_TALL_GRASS, col=0); with lead level=100
+-- the repel suppresses all encounters in that zone.
+-- After crossing y=55 at x=11, shift to x=5 and walk north to the warp tile at
+-- y=51 (MB_NON_ANIMATED_DOOR, col=0). Stepping onto it fires the warp to
+-- MAP_ROUTE2_VIRIDIAN_FOREST_SOUTH_ENTRANCE automatically.
+do
+    local rx, ry = playerPos()
+    local tx, ty = rx - 7, ry - 7
+    print(string.format("[states] Route2 stable: tile(%d,%d)", tx, ty))
+    -- Align x to 10 (passable at y=70 ledge)
+    if tx > 10 then walk(KEY_LEFT, tx - 10); reinjRepel() end
+    if tx < 9  then walk(KEY_RIGHT, 9 - tx); reinjRepel() end
+    walk(KEY_UP,    9); reinjRepel()  -- tile(10,79) → tile(10,70) cross y=70 ledge
+    walk(KEY_UP,    3); reinjRepel()  -- tile(10,70) → tile(10,67)
+    walk(KEY_LEFT,  6); reinjRepel()  -- tile(10,67) → tile(4,67) west of east wall
+    walk(KEY_UP,   11); reinjRepel()  -- tile(4,67)  → tile(4,56)  past east wall (x=2-5 corridor)
+    walk(KEY_RIGHT, 7); reinjRepel()  -- tile(4,56)  → tile(11,56) crosses grass; repel level=100
+    walk(KEY_UP,    1); reinjRepel()  -- tile(11,56) → tile(11,55) cross y=55 ledge
+    walk(KEY_UP,    1); reinjRepel()  -- tile(11,55) → tile(11,54)
+    walk(KEY_LEFT,  6); reinjRepel()  -- tile(11,54) → tile(5,54)
+    walk(KEY_UP,    3); reinjRepel()  -- tile(5,54)  → tile(5,51)  step onto warp
+end
+-- walkToMap handles the south entrance building (player lands at y=10, exit to
+-- forest is north warp at y=1) and detects when Viridian Forest map loads.
+walkToMap(KEY_UP, MAP.VID_FOREST, "Viridian Forest", 7200)
+-- The building→forest warp triggers a full fade-in animation (~90 frames).
+-- Wait 120 frames for it to complete and for the player to settle at forest
+-- entry tile (29,62) before counting path steps.
+idle(120)
+
+-- Pre-set all Viridian Forest trainer defeat flags so trainer sight cones are
+-- inactive during navigation.  TRAINER_FLAGS_START = 0x500 (flags.h).
+-- flags[] is at SaveBlock1 offset 0x1270 (confirmed by lab NPC hide byte at 0x1275).
+-- Trainers: Rick=14 (flag 0x50E), Doug=15 (0x50F), Sammy=16 (0x510),
+--           Anthony=412 (0x69C), Charlie=413 (0x69D).
+-- Sammy at (7,22) FACE_LEFT sight=4 sees tiles (3-6,22); the only terrain path
+-- to the north exit crosses (6,22) — his defeat flag must be set or he engages.
+do
+    local sb1 = emu:read32(ADDR_SB1_PTR)
+    if sb1 ~= 0 then
+        local FLAGS_OFF           = 0x1270
+        local TRAINER_FLAGS_START = 0x500
+        local function setFlag(flag_id)
+            local byte_idx = math.floor(flag_id / 8)
+            local bit_pos  = flag_id % 8
+            local addr     = sb1 + FLAGS_OFF + byte_idx
+            local mask     = math.floor(2 ^ bit_pos + 0.5)
+            local v        = emu:read8(addr)
+            if v % (mask * 2) < mask then
+                emu:write8(addr, v + mask)
+            end
+        end
+        for _, tid in ipairs({14, 15, 16, 412, 413}) do
+            setFlag(TRAINER_FLAGS_START + tid)
+        end
+        print("[states] forest trainer defeat flags set (Rick/Doug/Sammy/Anthony/Charlie)")
+    end
 end
 
-walkToMap(KEY_UP, MAP.VID_FOREST, "Viridian Forest", 7200)
-
--- BFS-computed path through Viridian Forest from south entrance (raw 29,62)
--- to the north-exit warp (raw 5,9).  Verified against the forest tile map.
+-- NPC-aware BFS path from forest south entry (29,62) to north exit (5,9).
+-- Detours around Youngster NPC at (29,58): go RIGHT before crossing y=58.
+-- Crosses (6,22) which is in Sammy's sight cone — safe with defeat flag set above.
 do
-    local FOREST_SEQ = {
-        {KEY_UP,    4}, {KEY_RIGHT, 2}, {KEY_UP,    3}, {KEY_RIGHT, 8},
-        {KEY_UP,   36}, {KEY_LEFT,  7}, {KEY_DOWN,  4}, {KEY_LEFT,  9},
-        {KEY_UP,   13}, {KEY_LEFT,  8}, {KEY_DOWN, 17}, {KEY_LEFT,  8},
-        {KEY_UP,   14}, {KEY_LEFT,  2}, {KEY_UP,    4},
-    }
     local rx, ry = playerPos()
-    print(string.format("[states] forest entry raw(%d,%d)", rx, ry))
+    print(string.format("[states] forest entry tile(%d,%d)", rx-7, ry-7))
+    local FOREST_SEQ = {
+        {KEY_UP,    3}, {KEY_RIGHT, 1}, {KEY_UP,    1}, {KEY_RIGHT, 1},
+        {KEY_UP,    3}, {KEY_RIGHT, 8}, {KEY_UP,   36}, {KEY_LEFT,  7},
+        {KEY_DOWN,  4}, {KEY_LEFT,  9}, {KEY_UP,   13}, {KEY_LEFT,  8},
+        {KEY_DOWN, 17}, {KEY_LEFT,  8}, {KEY_UP,    4}, {KEY_LEFT,  1},
+        {KEY_UP,   10}, {KEY_LEFT,  1}, {KEY_UP,    4},
+    }
     for _, move in ipairs(FOREST_SEQ) do
         walk(move[1], move[2])
-        -- Reinject repel mid-forest to prevent wild encounters.
         local sb1 = emu:read32(ADDR_SB1_PTR)
         if sb1 ~= 0 then emu:write16(sb1 + REPEL_OFF, 9999) end
     end
     rx, ry = playerPos()
-    print(string.format("[states] forest exit  raw(%d,%d)", rx, ry))
+    print(string.format("[states] forest exit tile(%d,%d)", rx-7, ry-7))
 end
 
--- After forest exit warp, walk north through the north-entrance building and
--- Route 2 north to Pewter City.
-walkToMap(KEY_UP, MAP.PEWTER, "Pewter City", 72000)
-
--- Coordinate-based gym approach.  Gym warp tile is at Pewter raw (22,23) = tile(15,16).
--- Walk north while raw_y > 24, then left while raw_x > 22, then north onto warp.
+-- Navigate from forest north exit through the entrance building and Route 2 north
+-- to Pewter City.
+--
+-- Route 2 terrain constraint (from map.bin analysis):
+--   The passable north corridor is only x=8-11 (tile).  At the building exit the
+--   player lands at tile(5,13) = raw(12,20).  Pressing UP alone works until
+--   tile y=2, but y=0-1 are blocked at x=5 (only x=8-11 open there).
+--   Fix: once on Route 2 (37,20), walk UP one row to y<=12, then RIGHT to x>=9
+--   (raw 16), then UP the rest of the way.
 do
-    local entered = false
-    for i = 1, 7200 do
-        local g, n = readMap()
-        if g == MAP.PEWTER_GYM.g and n == MAP.PEWTER_GYM.n then
-            print(string.format("[states] entered Pewter Gym at step %d", i))
-            entered = true
-            break
-        end
+    local frames = 0
+    local maxFrames = 72000
+    local function atPewter()
+        local g, n = readMap(); return g == MAP.PEWTER.g and n == MAP.PEWTER.n
+    end
+    while frames < maxFrames and not atPewter() do
         local ctx  = emu:read8(ADDR_SCRIPT_STATUS)
         local lock = emu:read8(ADDR_FIELD_LOCK)
         if ctx == 1 or lock ~= 0 then
             emu:setKeys(KEY_A); emu:runFrame(); emu:setKeys(0); emu:runFrame()
+            frames = frames + 2
         else
             local x, y = playerPos()
-            if     y > 24 then emu:setKeys(KEY_UP)
-            elseif x > 22 then emu:setKeys(KEY_LEFT)
-            else               emu:setKeys(KEY_UP)
+            local gm, nm = readMap()
+            local key
+            if gm == MAP.ROUTE2.g and nm == MAP.ROUTE2.n then
+                -- Route 2 north: must reach raw x>=16 (tile x>=9) before exiting north.
+                -- At raw y>19 (tile y>12) the row at x=8-10 is blocked; go UP first.
+                if y > 19 then         -- tile y>12: go UP to clear the blocked row
+                    key = KEY_UP
+                elseif x < 16 then     -- tile x<9: shift right into the open corridor
+                    key = KEY_RIGHT
+                else
+                    key = KEY_UP       -- x OK, head north into Pewter
+                end
+            else
+                key = KEY_UP           -- inside building or other map: just go north
             end
-            emu:runFrame()
-            emu:setKeys(0)
+            emu:setKeys(key); emu:runFrame(); emu:setKeys(0)
+            frames = frames + 1
         end
-        if i % 500 == 0 then
-            local x, y = playerPos()
-            print(string.format("[states] approach_gym step=%d tile(%d,%d)", i, x-7, y-7))
+        if frames % 2000 == 0 then
+            local x, y = playerPos(); local gm, nm = readMap()
+            print(string.format("[states] →Pewter frame=%d map=(%d,%d) tile(%d,%d)",
+                  frames, gm, nm, x-7, y-7))
         end
     end
-    if not entered then
-        local x, y = playerPos()
-        error(string.format("[states] TIMEOUT approaching gym: tile(%d,%d)", x-7, y-7))
+    if not atPewter() then
+        local x, y = playerPos(); local gm, nm = readMap()
+        error(string.format("[states] TIMEOUT →Pewter map(%d,%d) tile(%d,%d)",
+              gm, nm, x-7, y-7))
     end
+    local x, y = playerPos()
+    print(string.format("[states] MAP Pewter City            (%2d,%2d) after %5d frames  tile(%d,%d)",
+          MAP.PEWTER.g, MAP.PEWTER.n, frames, x-7, y-7))
+end
+
+-- NPC-aware gym approach (BFS on map.bin with fat man NPC at (21,28) blocked).
+-- x=22 is the clear east corridor: passable y=39..12, through y=20 wall (blocks x≤21)
+-- and beside the PC building (blocks x=13-21 at y=22-25).
+-- Path from any entry x (20-23): shift to x=22 → UP to y=12 → LEFT to x=8 → DOWN
+-- to y=17 → RIGHT to x=15 → UP 1 step onto gym warp tile (15,16).
+idle(60)   -- let warp-exit animation settle so playerPos() reads the stable tile
+do
+    local function pewterTilePos()
+        local rx, ry = playerPos(); return rx-7, ry-7
+    end
+    local tx, ty = pewterTilePos()
+    print(string.format("[states] Pewter settled: tile(%d,%d)", tx, ty))
+
+    -- 1. Shift to x=22 (east corridor; fat man at (21,28) makes x=21 unsafe heading north)
+    if tx < 22 then walk(KEY_RIGHT, 22-tx); reinjRepel() end
+    if tx > 22 then walk(KEY_LEFT,  tx-22); reinjRepel() end
+
+    -- 2. Walk north to y=12 (y=20 wall only blocks x≤21; x=22 passes through freely)
+    tx, ty = pewterTilePos()
+    walk(KEY_UP, ty-12); reinjRepel()
+
+    -- 3. Walk west to x=8 along the open y=12 corridor
+    walk(KEY_LEFT, 14); reinjRepel()
+
+    -- 4. Walk south to y=17 (gym-approach row)
+    walk(KEY_DOWN, 5); reinjRepel()
+
+    -- 5. Walk east to x=15 (one tile south of gym entrance warp at (15,16))
+    walk(KEY_RIGHT, 7); reinjRepel()
+
+    -- 6. Step north onto gym warp → triggers transition to MAP_PEWTER_CITY_GYM
+    walk(KEY_UP, 1)
+    local x, y = pewterTilePos()
+    print(string.format("[states] gym approach done: tile(%d,%d)", x, y))
 end
 waitForMap(MAP.PEWTER_GYM, "Pewter City Gym", 600, 15)
 

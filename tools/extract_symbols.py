@@ -40,6 +40,8 @@ WANTED_PATTERNS = [
     r"^sLockFieldControls$",        # bool8: TRUE while player is locked in a script/dialogue
     r"^gStringVar4$",               # field messages are expanded here by ShowFieldMessage
     r"^gDisableTextPrinters$",      # flag: text printing suppressed when non-zero
+    # party data
+    r"^gPlayerParty$",              # active party array (EWRAM); [0].level at +0x54 (unencrypted, used by repel)
     # task system
     r"^gTasks$",                    # task array base (IWRAM); stride 0x28, NUM_TASKS=16
     r"^Task_HandleYesNoInput$",     # script YESNO handler task; stale copy can block YESNO
