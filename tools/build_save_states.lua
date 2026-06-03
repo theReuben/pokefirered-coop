@@ -891,10 +891,13 @@ do
 end
 
 -- Player is at tile(13,36) from tall_grass_route1.ss1.
--- The eastern corridor at x=13 (tile) is unobstructed all the way north through
--- Route 1 and Viridian City to Route 2.  The previous approach (walk LEFT 5 to
--- x=8) caused a stall at tile(8,27) due to a blocking tile on Route 1.
+-- Cliff face at tile(13,31) blocks northward movement at x=10-14.  Walk UP 4
+-- to reach y=32 (last row before the cliff), then LEFT 5 to x=8 where the
+-- ledge has a gap and the path is clear north to Viridian City.
 print(string.format("[states] phase10 start tile(%d,%d)", ({playerPos()})[1]-7, ({playerPos()})[2]-7))
+walk(KEY_UP,   4)   -- tile(13,36) → tile(13,32): last clear row before cliff at y=31
+walk(KEY_LEFT, 5)   -- tile(13,32) → tile(8,32): gap in cliff runs at x ≤ 9
+print(string.format("[states] phase10 at cliff gap tile(%d,%d)", ({playerPos()})[1]-7, ({playerPos()})[2]-7))
 walkToMap(KEY_UP, MAP.VIRIDIAN, "Viridian City", 36000)
 walkToMap(KEY_UP, MAP.ROUTE2,   "Route 2",        7200)
 
