@@ -289,15 +289,26 @@ static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
     if (Multiplayer_IsCoopBattle())
     {
         // Poll for the partner's move selection sent via MP_PKT_BATTLE_TURN.
-        // If partner is disconnected we pause here every frame until they reconnect;
-        // on reconnect the MP_PKT_PARTNER_CONNECTED handler will resend our cached
-        // turn to the partner so both sides can proceed.
         Multiplayer_PollPackets();
         if (!gMultiplayerState.battleTurnReceived)
-            return; // re-run next frame; do NOT call BtlController_Complete yet
+        {
+            // If the partner disconnected mid-battle, stop waiting and use a
+            // simple fallback so the battle doesn't freeze.
+            if (!Multiplayer_IsConnected())
+            {
+                u8 foe = GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT);
+                if (gAbsentBattlerFlags & (1u << foe))
+                    foe = GetBattlerAtPosition(B_POSITION_OPPONENT_RIGHT);
+                gMultiplayerState.battleTurnSent = FALSE;
+                BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT,
+                                                  0u | ((u32)foe << 8));
+                BtlController_Complete(battler);
+            }
+            return; // re-run next frame (or after Complete above)
+        }
 
         gMultiplayerState.battleTurnReceived = FALSE;
-        gMultiplayerState.battleTurnSent     = FALSE; // turn exchange complete
+        gMultiplayerState.battleTurnSent     = FALSE;
         chosenMoveIndex = gMultiplayerState.battleTurnMoveSlot;
         gBattlerTarget  = gMultiplayerState.battleTurnTarget;
         BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT,
