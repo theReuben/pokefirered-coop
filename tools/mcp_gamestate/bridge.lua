@@ -10,9 +10,10 @@
 -- Fully callback-based (no main while loop) so emu:screenshot() is always
 -- called from within the frame callback where the renderer is safe.
 
-local CMD_FILE   = os.getenv("MGBA_BRIDGE_CMD")   or "/tmp/mgba_bridge_cmd.json"
-local RESP_FILE  = os.getenv("MGBA_BRIDGE_RESP")  or "/tmp/mgba_bridge_resp.json"
-local READY_FILE = os.getenv("MGBA_BRIDGE_READY") or "/tmp/mgba_bridge_ready"
+local CMD_FILE    = os.getenv("MGBA_BRIDGE_CMD")    or "/tmp/mgba_bridge_cmd.json"
+local RESP_FILE   = os.getenv("MGBA_BRIDGE_RESP")   or "/tmp/mgba_bridge_resp.json"
+local READY_FILE  = os.getenv("MGBA_BRIDGE_READY")  or "/tmp/mgba_bridge_ready"
+local INJECT_FILE = os.getenv("MGBA_BRIDGE_INJECT") or "/tmp/mgba_bridge_inject.hex"
 
 -- ── Minimal JSON encode/decode ────────────────────────────────────────────
 
@@ -129,6 +130,22 @@ local wait_frames_orig = 0  -- original frame count (for response)
 -- ── Frame callback ────────────────────────────────────────────────────────
 
 callbacks:add("frame", function()
+
+    -- Side-channel inject: relay writes bytes here without holding the main lock.
+    -- Processed every frame so disconnect/connect packets land immediately even
+    -- while a long wait/press command is in progress.
+    do
+        local fi = io.open(INJECT_FILE, "r")
+        if fi then
+            local hex = fi:read("*a"); fi:close()
+            os.remove(INJECT_FILE)
+            local bytes = {}
+            for h in hex:gmatch("%x%x") do bytes[#bytes+1] = tonumber(h, 16) end
+            if #bytes > 0 and ADDR.gMpRecvRing then
+                ring_push(ADDR.gMpRecvRing, bytes)
+            end
+        end
+    end
 
     -- Tick state machine.
     if mode == "waiting" then

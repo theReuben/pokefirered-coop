@@ -64,17 +64,29 @@ KEY_MASKS = {
 
 class Instance:
     def __init__(self, iid: str, work_dir: str):
-        self.iid       = iid
-        self.work_dir  = work_dir
-        self.cmd_file  = os.path.join(work_dir, f"cmd_{iid}.json")
-        self.resp_file = os.path.join(work_dir, f"resp_{iid}.json")
-        self.ready_file = os.path.join(work_dir, f"ready_{iid}")
+        self.iid         = iid
+        self.work_dir    = work_dir
+        self.cmd_file    = os.path.join(work_dir, f"cmd_{iid}.json")
+        self.resp_file   = os.path.join(work_dir, f"resp_{iid}.json")
+        self.ready_file  = os.path.join(work_dir, f"ready_{iid}")
+        self.inject_file = os.path.join(work_dir, f"inject_{iid}.hex")
         self.process: Optional[subprocess.Popen] = None
         self.addrs: dict[str, int] = {}
         self._lock = threading.Lock()  # one command at a time
 
     def alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
+
+    def inject_bytes(self, hex_str: str) -> None:
+        """Write hex bytes to the side-channel inject file (no lock needed).
+
+        The bridge reads INJECT_FILE every frame regardless of its current
+        command state, so this lands even during a long wait/press command.
+        """
+        tmp = self.inject_file + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(hex_str)
+        os.replace(tmp, self.inject_file)
 
     def send(self, cmd: dict, timeout: float = CMD_TIMEOUT) -> dict:
         if not self.alive():
@@ -190,23 +202,24 @@ def _relay_loop() -> None:
 
             if not both_alive:
                 if _connected_pair:
-                    # One instance just died — notify the survivor before resetting.
+                    # One instance just died — notify the survivor via the side-channel
+                    # inject file (no lock needed, lands on the very next frame).
                     p1_alive = bool(p1 and p1.alive())
                     p2_alive = bool(p2 and p2.alive())
                     if p1_alive and not p2_alive:
                         if "p2" not in _disconnect_injected:
                             _disconnect_injected.add("p2")
                             if _host_instance == "p2":
-                                p1.try_send_locked({"cmd": "inject", "bytes": "17"})
+                                p1.inject_bytes("17")
                                 _host_instance = "p1"
-                            p1.try_send_locked({"cmd": "inject", "bytes": "0C"})
+                            p1.inject_bytes("0C")
                     elif p2_alive and not p1_alive:
                         if "p1" not in _disconnect_injected:
                             _disconnect_injected.add("p1")
                             if _host_instance == "p1":
-                                p2.try_send_locked({"cmd": "inject", "bytes": "17"})
+                                p2.inject_bytes("17")
                                 _host_instance = "p2"
-                            p2.try_send_locked({"cmd": "inject", "bytes": "0C"})
+                            p2.inject_bytes("0C")
                 _connected_pair = False
                 _pending_inject.clear()
                 _disconnect_injected.clear()
@@ -217,8 +230,8 @@ def _relay_loop() -> None:
             # per session so each ROM auto-sets connState = MP_STATE_CONNECTED
             # without requiring an in-game handshake packet.
             if not _connected_pair:
-                p1.try_send_locked({"cmd": "inject", "bytes": "0B"})
-                p2.try_send_locked({"cmd": "inject", "bytes": "0B"})
+                p1.inject_bytes("0B")
+                p2.inject_bytes("0B")
                 _connected_pair = True
                 # Initialise last-heard timestamps so we don't immediately trigger
                 # a false-positive disconnect on session start.
@@ -239,7 +252,7 @@ def _relay_loop() -> None:
                     if src_id in _disconnect_injected:
                         _disconnect_injected.discard(src_id)
                         # Notify the current host that the partner reconnected.
-                        dst.try_send_locked({"cmd": "inject", "bytes": "0B"})
+                        dst.inject_bytes("0B")
                 combined = (pending + (" " if pending and new_bytes else "") + new_bytes).strip()
                 if combined:
                     result = dst.try_send_locked({"cmd": "inject", "bytes": combined})
@@ -264,10 +277,10 @@ def _relay_loop() -> None:
                     # Host migration: if the silent instance is the host, promote
                     # the partner to host before sending disconnect.
                     if iid == _host_instance:
-                        partner_inst.try_send_locked({"cmd": "inject", "bytes": "17"})
+                        partner_inst.inject_bytes("17")
                         _host_instance = partner_iid
                     # Inject PARTNER_DISCONNECTED (0x0C) into the partner's recv ring.
-                    partner_inst.try_send_locked({"cmd": "inject", "bytes": "0C"})
+                    partner_inst.inject_bytes("0C")
 
             # Block-exchange relay (coop boss battle SendBlock data).
             # p1 sendReady → copy data to p2 recvReady with fromPlayerIdx=0
@@ -347,9 +360,10 @@ def start_emulator(instance_id: str = "p1", rom: str = "", savestate: str = "") 
     inst.addrs = addrs
 
     env = os.environ.copy()
-    env["MGBA_BRIDGE_CMD"]   = inst.cmd_file
+    env["MGBA_BRIDGE_CMD"]    = inst.cmd_file
     env["MGBA_BRIDGE_RESP"]  = inst.resp_file
     env["MGBA_BRIDGE_READY"] = inst.ready_file
+    env["MGBA_BRIDGE_INJECT"] = inst.inject_file
     if savestate_path:
         env["MGBA_BRIDGE_SAVESTATE"] = savestate_path
     for name, addr in addrs.items():
