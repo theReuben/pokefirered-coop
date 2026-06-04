@@ -1125,9 +1125,38 @@ do
     print(string.format("[states] gym approach done: tile(%d,%d)", x, y))
 end
 waitForMap(MAP.PEWTER_GYM, "Pewter City Gym", 600, 15)
+idle(60)   -- let warp-exit animation settle
+
+-- Pre-defeat Pewter Gym trainer Liam (flag 0x534) so the path to Brock is clear.
+do
+    local sb1 = emu:read32(ADDR_SB1_PTR)
+    if sb1 ~= 0 then
+        local FLAGS_OFF = 0x1270
+        local LIAM_FLAG = 0x534
+        local byte_idx  = math.floor(LIAM_FLAG / 8)
+        local bit_pos   = LIAM_FLAG % 8
+        local addr      = sb1 + FLAGS_OFF + byte_idx
+        local mask      = math.floor(2 ^ bit_pos + 0.5)
+        local v         = emu:read8(addr)
+        if v % (mask * 2) < mask then emu:write8(addr, v + mask) end
+        print(string.format("[states] Liam trainer flag 0x534 set (byte=0x%02x)", emu:read8(addr)))
+    end
+end
+
+-- Navigate north inside the gym: enter at y=12, walk to y=8 (facing south toward entrance).
+-- The gym center column (x=6) is the only unobstructed path past the boulder rows.
+-- Gym entrance puts player at approximately (6,12); walk UP 4 tiles to reach (6,8).
+do
+    local rx, ry = playerPos()
+    print(string.format("[states] gym entry tile(%d,%d)", rx-7, ry-7))
+end
+walk(KEY_UP, 4)
+do
+    local rx, ry = playerPos()
+    print(string.format("[states] gym pre-save tile(%d,%d)", rx-7, ry-7))
+end
 
 -- ── CHECKPOINT 3: pewter_gym.ss1 ──────────────────────────────────────────────
-idle(60)
 saveState("pewter_gym.ss1")
 
 -- ── Done ──────────────────────────────────────────────────────────────────────

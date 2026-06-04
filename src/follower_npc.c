@@ -1,4 +1,5 @@
 #include "global.h"
+#include "multiplayer.h"
 #include "follower_npc.h"
 #include "follower_npc_alternate_sprites.h"
 #include "battle.h"
@@ -1404,6 +1405,10 @@ bool32 FollowerNPC_IsCollisionExempt(struct ObjectEvent *obstacle, struct Object
 {
     struct ObjectEvent *follower = &gObjectEvents[GetFollowerNPCObjectId()];
     struct ObjectEvent *player = &gObjectEvents[gPlayerAvatar.objectEventId];
+
+    // Ghost NPC is always passable — player should never be blocked by partner's ghost.
+    if (obstacle->localId == GHOST_LOCAL_ID || collider->localId == GHOST_LOCAL_ID)
+        return TRUE;
 
     if (!PlayerHasFollowerNPC())
         return FALSE;

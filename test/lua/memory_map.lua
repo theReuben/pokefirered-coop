@@ -3,15 +3,15 @@
 
 local M = {}
 
-M.Task_HandleYesNoInput = 0x081FBFB4
+M.Task_HandleYesNoInput = 0x081FC094
 M.gCoopSettings = 0x030015A8
 M.gDisableTextPrinters = 0x0203744C
 M.gMpAddrTable = 0x030015B4
-M.gPlayerParty = 0x02032320
 M.gMpBlockExchange = 0x02031350
 M.gMpRecvRing = 0x02031454
 M.gMpSendRing = 0x02031558
 M.gMultiplayerState = 0x0300157C
+M.gPlayerParty = 0x02032320
 M.gSaveBlock1Ptr = 0x03005320
 M.gSaveBlock2Ptr = 0x0300531C
 M.gSaveblock1 = 0x0200FF94

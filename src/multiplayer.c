@@ -717,6 +717,7 @@ void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing)
 
     gObjectEvents[objId].mapGroup = (u8)mapGroup;
     gObjectEvents[objId].mapNum   = (u8)mapNum;
+    gObjectEvents[objId].inanimate = TRUE; // ghost is passable so players aren't blocked
     SetObjectEventDirection(&gObjectEvents[objId], facing);
     gMultiplayerState.ghostObjectEventId = objId;
     Multiplayer_SpawnFollowerGhost();

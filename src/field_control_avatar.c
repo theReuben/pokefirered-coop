@@ -41,6 +41,7 @@
 #include "constants/metatile_behaviors.h"
 #include "constants/songs.h"
 #include "constants/trainer_hill.h"
+#include "multiplayer.h"
 
 static EWRAM_DATA u8 sWildEncounterImmunitySteps = 0;
 static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
@@ -386,6 +387,13 @@ static const u8 *GetInteractedObjectEventScript(struct MapPosition *position, u8
         objectEventId = GetObjectEventIdByPosition(position->x, position->y, position->elevation);
         break;
     }
+
+    // Ghost NPC is passable: look one tile further in the facing direction.
+    if (objectEventId != OBJECT_EVENTS_COUNT && gObjectEvents[objectEventId].localId == GHOST_LOCAL_ID)
+        objectEventId = GetObjectEventIdByPosition(
+            gObjectEvents[objectEventId].currentCoords.x + gDirectionToVectors[direction].x,
+            gObjectEvents[objectEventId].currentCoords.y + gDirectionToVectors[direction].y,
+            position->elevation);
 
     if (objectEventId == OBJECT_EVENTS_COUNT || gObjectEvents[objectEventId].localId == LOCALID_PLAYER)
     {
