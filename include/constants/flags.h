@@ -1222,9 +1222,7 @@
 #define FLAG_ITEM_SAFARI_ZONE_NORTH_EAST_NUGGET                     0x491
 #define FLAG_ITEM_SAFARI_ZONE_SOUTH_EAST_BIG_PEARL                  0x492
 
-#define FLAG_UNUSED_0x493                                           0x493 // Unused Flag
-#define FLAG_UNUSED_0x494                                           0x494 // Unused Flag
-#define FLAG_UNUSED_0x495                                           0x495 // Unused Flag
+// 0x493-0x495 reserved for co-op ball hiding (see FLAG_HIDE_*_BALL below)
 #define FLAG_UNUSED_0x496                                           0x496 // Unused Flag
 #define FLAG_UNUSED_0x497                                           0x497 // Unused Flag
 #define FLAG_UNUSED_0x498                                           0x498 // Unused Flag
@@ -1663,9 +1661,9 @@
 
 // FRLG flags
 
-#define FLAG_HIDE_BULBASAUR_BALL                           0
-#define FLAG_HIDE_SQUIRTLE_BALL                            0
-#define FLAG_HIDE_CHARMANDER_BALL                          0
+#define FLAG_HIDE_BULBASAUR_BALL                           0x493
+#define FLAG_HIDE_SQUIRTLE_BALL                            0x494
+#define FLAG_HIDE_CHARMANDER_BALL                          0x495
 #define FLAG_HIDE_OAK_IN_HIS_LAB                           0
 #define FLAG_HIDE_OAK_IN_PALLET_TOWN                       0
 #define FLAG_HIDE_RIVAL_IN_LAB                             0

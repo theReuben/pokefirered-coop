@@ -670,3 +670,7 @@ gSpecials::
 	def_special Multiplayer_GetStarterForBall2
 	def_special Multiplayer_GetRivalStarterSpecies
 	def_special Multiplayer_GetRivalStarterSlot
+	def_special Multiplayer_GetRivalBattleKey
+	def_special Multiplayer_IsBall0TakenByPartner
+	def_special Multiplayer_IsBall1TakenByPartner
+	def_special Multiplayer_IsBall2TakenByPartner

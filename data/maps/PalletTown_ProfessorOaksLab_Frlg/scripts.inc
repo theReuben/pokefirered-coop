@@ -304,6 +304,15 @@ PalletTown_ProfessorOaksLab_EventScript_RivalBattle::
 	waitbossstart
 	closemessage
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch::
+	@ In co-op use the shared remaining-starter key so both ROMs fight the same rival team.
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	goto_if_eq VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatchSolo
+	specialvar VAR_TEMP_0, Multiplayer_GetRivalBattleKey
+	goto_if_eq VAR_TEMP_0, 0, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmander
+	goto_if_eq VAR_TEMP_0, 1, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaur
+	goto_if_eq VAR_TEMP_0, 2, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtle
+	end
+PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatchSolo::
 	goto_if_eq VAR_STARTER_MON, 0, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmander
 	goto_if_eq VAR_STARTER_MON, 1, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaur
 	goto_if_eq VAR_STARTER_MON, 2, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtle
@@ -1104,6 +1113,8 @@ PalletTown_ProfessorOaksLab_EventScript_BulbasaurBall::
 	faceplayer
 	setvar PLAYER_STARTER_NUM, 0
 	specialvar PLAYER_STARTER_SPECIES, Multiplayer_GetStarterForBall0
+	specialvar VAR_RESULT, Multiplayer_IsBall0TakenByPartner
+	goto_if_ne VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_PartnerTookBall
 	goto_if_ge VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, 3, PalletTown_ProfessorOaksLab_EventScript_LastPokeBall
 	goto_if_eq VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, 2, PalletTown_ProfessorOaksLab_EventScript_ConfirmStarterChoice
 	msgbox PalletTown_ProfessorOaksLab_Text_ThoseArePokeBalls
@@ -1274,6 +1285,8 @@ PalletTown_ProfessorOaksLab_EventScript_SquirtleBall::
 	faceplayer
 	setvar PLAYER_STARTER_NUM, 1
 	specialvar PLAYER_STARTER_SPECIES, Multiplayer_GetStarterForBall1
+	specialvar VAR_RESULT, Multiplayer_IsBall1TakenByPartner
+	goto_if_ne VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_PartnerTookBall
 	goto_if_ge VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, 3, PalletTown_ProfessorOaksLab_EventScript_LastPokeBall
 	goto_if_eq VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, 2, PalletTown_ProfessorOaksLab_EventScript_ConfirmStarterChoice
 	msgbox PalletTown_ProfessorOaksLab_Text_ThoseArePokeBalls
@@ -1285,6 +1298,8 @@ PalletTown_ProfessorOaksLab_EventScript_CharmanderBall::
 	faceplayer
 	setvar PLAYER_STARTER_NUM, 2
 	specialvar PLAYER_STARTER_SPECIES, Multiplayer_GetStarterForBall2
+	specialvar VAR_RESULT, Multiplayer_IsBall2TakenByPartner
+	goto_if_ne VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_PartnerTookBall
 	goto_if_ge VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, 3, PalletTown_ProfessorOaksLab_EventScript_LastPokeBall
 	goto_if_eq VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, 2, PalletTown_ProfessorOaksLab_EventScript_ConfirmStarterChoice
 	msgbox PalletTown_ProfessorOaksLab_Text_ThoseArePokeBalls
@@ -1293,6 +1308,11 @@ PalletTown_ProfessorOaksLab_EventScript_CharmanderBall::
 
 PalletTown_ProfessorOaksLab_EventScript_LastPokeBall::
 	msgbox PalletTown_ProfessorOaksLab_Text_OaksLastMon
+	release
+	end
+
+PalletTown_ProfessorOaksLab_EventScript_PartnerTookBall::
+	msgbox PalletTown_ProfessorOaksLab_Text_PartnerTookBall
 	release
 	end
 
@@ -1596,6 +1616,10 @@ PalletTown_ProfessorOaksLab_Text_BlankEncyclopedia::
 PalletTown_ProfessorOaksLab_Text_ThoseArePokeBalls::
 	.string "Those are POKé BALLS.\n"
 	.string "They contain POKéMON!$"
+
+PalletTown_ProfessorOaksLab_Text_PartnerTookBall::
+	.string "Your partner already\n"
+	.string "chose that one!$"
 
 PalletTown_ProfessorOaksLab_Text_OaksLastMon::
 	.string "That's PROF. OAK's last POKéMON.$"

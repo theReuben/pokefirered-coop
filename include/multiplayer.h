@@ -366,6 +366,12 @@ u16 Multiplayer_GetStarterForBall2(void);
 u16 Multiplayer_GetRivalStarterSpecies(void);
 // Returns 0/1/2 for which ball slot the rival takes (for walk movement dispatch).
 u16 Multiplayer_GetRivalStarterSlot(void);
+// Returns dispatch key (0=Charmander,1=Bulbasaur,2=Squirtle rival) for RivalBattleDispatch.
+u16 Multiplayer_GetRivalBattleKey(void);
+// Returns 1 if the partner has already taken ball slot 0/1/2.
+u16 Multiplayer_IsBall0TakenByPartner(void);
+u16 Multiplayer_IsBall1TakenByPartner(void);
+u16 Multiplayer_IsBall2TakenByPartner(void);
 // Returns TRUE if partner has picked (or we're offline) — used by waitstarterpick.
 bool8 Multiplayer_NativePollPartnerStarterPick(void);
 

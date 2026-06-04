@@ -17,6 +17,8 @@
 #include "constants/vars.h"
 #include "constants/battle.h"
 #include "constants/battle_frontier.h"
+#include "constants/maps.h"
+#include "constants/map_event_ids.h"
 #include "battle.h"
 
 // ---------------------------------------------------------------------------
@@ -421,10 +423,30 @@ static bool8 ProcessOneRecvPacket(void)
         if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_STARTER_PICK - 1)
             return FALSE;
         {
-            u8 hi = 0, lo = 0;
+            static const u16 sBallFlags[3]   = { FLAG_HIDE_BULBASAUR_BALL,
+                                                  FLAG_HIDE_SQUIRTLE_BALL,
+                                                  FLAG_HIDE_CHARMANDER_BALL };
+            static const u8  sBallLocalIds[3] = { LOCALID_BULBASAUR_BALL,
+                                                   LOCALID_SQUIRTLE_BALL,
+                                                   LOCALID_CHARMANDER_BALL };
+            u8 hi = 0, lo = 0, s;
             Mp_Pop(&gMpRecvRing, &hi);
             Mp_Pop(&gMpRecvRing, &lo);
             gMultiplayerState.partnerStarterSpecies = ((u16)hi << 8) | lo;
+            // Hide whichever ball the partner took — both persistently (flag) and
+            // immediately on the current map (object event removal).
+            for (s = 0; s < 3; s++)
+            {
+                if (Multiplayer_GetRandomizedStarter(s) == gMultiplayerState.partnerStarterSpecies)
+                {
+                    FlagSet(sBallFlags[s]);
+                    RemoveObjectEventByLocalIdAndMap(
+                        sBallLocalIds[s],
+                        MAP_NUM(MAP_PALLET_TOWN_PROFESSOR_OAKS_LAB),
+                        MAP_GROUP(MAP_PALLET_TOWN_PROFESSOR_OAKS_LAB));
+                    break;
+                }
+            }
         }
         break;
 
@@ -992,6 +1014,24 @@ u16 Multiplayer_GetRivalStarterSlot(void)
     return 0;
 }
 
+// Returns a dispatch key (0/1/2) for RivalBattleDispatch when connected.
+// Key 0 = rival has Charmander, 1 = Bulbasaur, 2 = Squirtle
+// (matches the existing solo dispatch table: VAR_STARTER_MON 0→Charmander, 1→Bulbasaur, 2→Squirtle)
+u16 Multiplayer_GetRivalBattleKey(void)
+{
+    return ((u16)Multiplayer_GetRivalStarterSlot() + 1u) % 3u;
+}
+
+static u16 IsBallTakenByPartner(u8 slot)
+{
+    u16 partner = gMultiplayerState.partnerStarterSpecies;
+    return (u16)(partner != 0 && partner == Multiplayer_GetRandomizedStarter(slot));
+}
+
+u16 Multiplayer_IsBall0TakenByPartner(void) { return IsBallTakenByPartner(0); }
+u16 Multiplayer_IsBall1TakenByPartner(void) { return IsBallTakenByPartner(1); }
+u16 Multiplayer_IsBall2TakenByPartner(void) { return IsBallTakenByPartner(2); }
+
 bool8 Multiplayer_NativePollPartnerStarterPick(void)
 {
     // Resend our own pick every 60 frames while connected and still waiting.
@@ -1151,7 +1191,7 @@ u16 Multiplayer_GetRandomizedSpecies(u32 tableAddr, u8 slotIndex)
 // Returns the canonical starter for that slot if randomization is off or seed unset.
 u16 Multiplayer_GetRandomizedStarter(u8 slot)
 {
-    static const u16 sCanonical[3] = { 1, 4, 7 }; // Bulbasaur, Charmander, Squirtle
+    static const u16 sCanonical[3] = { 1, 7, 4 }; // Bulbasaur, Squirtle, Charmander (FRLG ball order)
     u16 results[3];
     u8 i;
     u32 state;
