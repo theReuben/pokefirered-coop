@@ -22,6 +22,9 @@
 #define MP_PKT_PARTY_SYNC           0x12   // 2+n*30 bytes — partner's selected party (MultiPartnerMenuPokemon * n)
 #define MP_PKT_FOLLOWER_GFX         0x13   // 3 bytes — partner's follower OBJ_EVENT_GFX id (0 = no follower)
 #define MP_PKT_BATTLE_TURN          0x14   // 4 bytes — co-op turn: move slot + target + flags
+#define MP_PKT_PING                 0x16   // 1 byte — heartbeat keep-alive (ROM→relay)
+#define MP_PKT_HOST_MIGRATE         0x17   // 1 byte — relay→ROM: you are now host
+#define MP_PKT_EVENT_LOG            0x18   // variable — async event log batch
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -77,6 +80,19 @@
 #define MP_PKT_SIZE_NAME                    (1 + PLAYER_NAME_LENGTH)  // type + 7 name bytes
 #define MP_PKT_SIZE_FOLLOWER_GFX            3  // type + gfx_hi + gfx_lo
 #define MP_PKT_SIZE_BATTLE_TURN             4  // type + move_slot + target + flags
+// Fixed sizes for new packets
+#define MP_PKT_SIZE_PING                    1  // type only
+#define MP_PKT_SIZE_HOST_MIGRATE            1  // type only
+
+// Event log packet constants
+#define MPEVENT_TRAINER_BEATEN  0x01  // data[0..1] = trainerNum (u16 lo/hi), data[2] unused
+#define MPEVENT_MAP_ENTERED     0x02  // data[0] = mapGroup, data[1] = mapNum, data[2] unused
+#define MPEVENT_CHECKPOINT      0x03  // data unused
+#define MP_EVENT_LOG_SIZE       10
+#define MP_PKT_EVENT_LOG_HDR    2     // type(1) + count(1)
+#define MP_PKT_EVENT_ENTRY_SIZE 4     // event_type(1) + data[3]
+#define MP_PKT_SIZE_EVENT_LOG_MAX (MP_PKT_EVENT_LOG_HDR + MP_EVENT_LOG_SIZE * MP_PKT_EVENT_ENTRY_SIZE)
+
 // PARTY_SYNC: type(1) + n_mons(1) + n * sizeof(MultiPartnerMenuPokemon)(30); max n=3 → 92 bytes
 #define MP_PKT_PARTY_SYNC_HDR               2   // type + n_mons
 #define MP_PKT_PARTY_SYNC_MON_SIZE          30  // sizeof(struct MultiPartnerMenuPokemon)

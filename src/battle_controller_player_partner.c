@@ -292,17 +292,25 @@ static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
         Multiplayer_PollPackets();
         if (!gMultiplayerState.battleTurnReceived)
         {
-            // If the partner disconnected mid-battle, stop waiting and use a
-            // simple fallback so the battle doesn't freeze.
+            // If the partner disconnected mid-battle, wait up to 30 seconds (1800
+            // frames) before using an AI fallback so the battle doesn't freeze.
             if (!Multiplayer_IsConnected())
             {
-                u8 foe = GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT);
-                if (gAbsentBattlerFlags & (1u << foe))
-                    foe = GetBattlerAtPosition(B_POSITION_OPPONENT_RIGHT);
-                gMultiplayerState.battleTurnSent = FALSE;
-                BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT,
-                                                  0u | ((u32)foe << 8));
-                BtlController_Complete(battler);
+                gMultiplayerState.battleGraceTimer++;
+                if (gMultiplayerState.battleGraceTimer < 1800)
+                    return; // still within grace period — keep waiting
+
+                // Grace period expired: pick move 0 targeting first live opponent.
+                {
+                    u8 foe = GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT);
+                    if (gAbsentBattlerFlags & (1u << foe))
+                        foe = GetBattlerAtPosition(B_POSITION_OPPONENT_RIGHT);
+                    gMultiplayerState.battleGraceTimer = 0;
+                    gMultiplayerState.battleTurnSent   = FALSE;
+                    BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT,
+                                                      0u | ((u32)foe << 8));
+                    BtlController_Complete(battler);
+                }
             }
             return; // re-run next frame (or after Complete above)
         }

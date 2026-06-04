@@ -207,6 +207,12 @@ struct MultiplayerState {
     u8  battleTurnSentFlags;
     u8  bossResendTimer;        // counts frames; resend BOSS_READY every 60 frames while waiting
     u8  partySyncResendTimer;   // counts frames; resend MP_PKT_PARTY_SYNC every 60 frames while waiting
+    // Heartbeat / disconnect resilience (features added in co-op v0.2)
+    u8  pingTimer;              // counts frames; sends MP_PKT_PING every 120 frames (2s) when connected
+    u8  lastCkptMapGroup;       // map group at last auto-checkpoint save; 0xFF = uninitialised
+    u8  lastCkptMapNum;         // map num at last auto-checkpoint save
+    u8  _pad2;                  // padding to keep u16 aligned
+    u16 battleGraceTimer;       // counts frames partner has been disconnected mid-battle; AI fallback at 1800
 };
 
 extern struct MultiplayerState gMultiplayerState;
@@ -349,6 +355,14 @@ u16  Multiplayer_GetRandomizedStarter(u8 slot);
 // received seed to gCoopSettings.encounterSeed automatically.
 u32  Multiplayer_GenerateSeed(void);
 void Multiplayer_SendSeedSync(u32 seed);
+
+// Auto-checkpoint — call when a battle ends to trigger a background save.
+void Multiplayer_OnBattleEnd(void);
+
+// Event log — async partner event batching.
+void Multiplayer_LogEvent(u8 type, u8 d0, u8 d1, u8 d2);
+void Multiplayer_SendEventLog(void);
+void Multiplayer_ClearEventLog(void);
 
 // Item sync — call after AddBagItem succeeds for field pickups and NPC gifts.
 // Do NOT call for shop purchases or Pokémon gifts (eggs, starters, etc.).

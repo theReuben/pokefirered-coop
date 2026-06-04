@@ -14,6 +14,7 @@
 #include "party_menu.h"
 #include "overworld.h"
 #include "follower_npc.h"
+#include "save.h"
 #include "constants/vars.h"
 #include "constants/battle.h"
 #include "constants/battle_frontier.h"
@@ -33,6 +34,17 @@ EWRAM_DATA struct MpRingBuf gMpRecvRing;
 
 // Block exchange for coop boss battles: relay shuttles SendBlock data between instances.
 EWRAM_DATA struct MpBlockExchange gMpBlockExchange;
+
+// ---------------------------------------------------------------------------
+// Async event log — EWRAM to avoid IWRAM pressure.
+// Events are accumulated and sent to the partner on reconnect.
+// ---------------------------------------------------------------------------
+struct MpEventEntry {
+    u8 type;
+    u8 data[3];
+};
+EWRAM_DATA static struct MpEventEntry sMpEventLog[MP_EVENT_LOG_SIZE];
+EWRAM_DATA static u8 sMpEventLogCount;
 
 // Address discovery table in IWRAM.  Populated once by Multiplayer_Init.
 // Tauri scans IWRAM for MP_DISCOVERY_MAGIC at index 0, then reads [1]–[5].
@@ -342,6 +354,8 @@ static bool8 ProcessOneRecvPacket(void)
 
     case MP_PKT_PARTNER_CONNECTED:
         gMultiplayerState.connState = MP_STATE_CONNECTED;
+        // Reset battle grace timer — partner is back.
+        gMultiplayerState.battleGraceTimer = 0;
         // Announce our gender and name so the partner can render our ghost
         // correctly and display our name on interaction.
         Multiplayer_SendGender();
@@ -353,11 +367,21 @@ static bool8 ProcessOneRecvPacket(void)
                 gMultiplayerState.battleTurnSentMoveSlot,
                 gMultiplayerState.battleTurnSentTarget,
                 gMultiplayerState.battleTurnSentFlags);
+        // Send accumulated event log to bring the reconnecting partner up to date.
+        // Host authority rule: on reconnect the host sends full_sync; the guest's
+        // locally-set flags are preserved because Multiplayer_ApplyFullSync ORs flags.
+        Multiplayer_SendEventLog();
+        Multiplayer_ClearEventLog();
         break;
 
     case MP_PKT_PARTNER_DISCONNECTED:
         gMultiplayerState.connState = MP_STATE_DISCONNECTED;
         Multiplayer_DespawnGhost();
+        // Anti-softlock: clear shared battle/script state so we don't hang
+        // waiting for a partner who has gone away.
+        gMultiplayerState.partnerIsInScript  = FALSE;
+        gMultiplayerState.partnerBossId      = 0;
+        gMultiplayerState.battleGraceTimer   = 0;
         break;
 
     case MP_PKT_SCRIPT_LOCK:
@@ -520,6 +544,41 @@ static bool8 ProcessOneRecvPacket(void)
         }
         break;
 
+    case MP_PKT_PING:
+        // 1-byte packet — type already consumed. No-op; relay handles timeout.
+        break;
+
+    case MP_PKT_HOST_MIGRATE:
+        // Relay says we are now the host (old host disconnected).
+        gMultiplayerState.role = MP_ROLE_HOST;
+        // Broadcast current state to the reconnecting guest.
+        Multiplayer_SendFullSync();
+        Multiplayer_SendGender();
+        Multiplayer_SendName();
+        break;
+
+    case MP_PKT_EVENT_LOG:
+        if (Mp_Available(&gMpRecvRing) < 1)
+            return FALSE;
+        {
+            u8 count = 0, i;
+            Mp_Pop(&gMpRecvRing, &count);
+            if (count > MP_EVENT_LOG_SIZE) count = MP_EVENT_LOG_SIZE;
+            if (Mp_Available(&gMpRecvRing) < (u8)(count * MP_PKT_EVENT_ENTRY_SIZE))
+                return FALSE;
+            for (i = 0; i < count; i++)
+            {
+                u8 etype = 0, d0 = 0, d1 = 0, d2 = 0;
+                Mp_Pop(&gMpRecvRing, &etype);
+                Mp_Pop(&gMpRecvRing, &d0);
+                Mp_Pop(&gMpRecvRing, &d1);
+                Mp_Pop(&gMpRecvRing, &d2);
+                // Future: apply partner events locally (display, map tracking, etc.)
+                (void)etype; (void)d0; (void)d1; (void)d2;
+            }
+        }
+        break;
+
     default:
         // Unknown type — can't recover sync; drain ring to avoid stall.
         while (Mp_Pop(&gMpRecvRing, &typeByte)) {}
@@ -639,6 +698,10 @@ void Multiplayer_Init(void)
     gMultiplayerState.bossReadyBossId    = 0;
     gMultiplayerState.partnerBossId      = 0;
     gMultiplayerState.bossResendTimer    = 0;
+    gMultiplayerState.pingTimer          = 0;
+    gMultiplayerState.lastCkptMapGroup   = 0xFF;
+    gMultiplayerState.lastCkptMapNum     = 0xFF;
+    gMultiplayerState.battleGraceTimer   = 0;
     gMultiplayerState.myStarterSpecies   = 0;
     gMultiplayerState.starterResendTimer = 0;
     gMultiplayerState.isInScript         = FALSE;
@@ -713,6 +776,31 @@ void Multiplayer_Update(void)
         gMultiplayerState.posFrameCounter++;
         if (gMultiplayerState.posFrameCounter >= 4)
             gMultiplayerState.posFrameCounter = 0;
+
+        // Heartbeat ping every 120 frames (2 seconds) so the relay can detect
+        // silent disconnects and inject PARTNER_DISCONNECTED to the other side.
+        gMultiplayerState.pingTimer++;
+        if (gMultiplayerState.pingTimer >= 120)
+        {
+            u8 pingByte = MP_PKT_PING;
+            gMultiplayerState.pingTimer = 0;
+            MpRing_Write(&gMpSendRing, &pingByte, MP_PKT_SIZE_PING);
+        }
+
+        // Auto-checkpoint: save on map change so progress isn't lost on disconnect.
+        if (gSaveBlock1Ptr)
+        {
+            u8 curMapGroup = (u8)gSaveBlock1Ptr->location.mapGroup;
+            u8 curMapNum   = (u8)gSaveBlock1Ptr->location.mapNum;
+            if (curMapGroup != gMultiplayerState.lastCkptMapGroup
+                || curMapNum  != gMultiplayerState.lastCkptMapNum)
+            {
+                gMultiplayerState.lastCkptMapGroup = curMapGroup;
+                gMultiplayerState.lastCkptMapNum   = curMapNum;
+                TrySavingData(SAVE_NORMAL);
+                Multiplayer_LogEvent(MPEVENT_MAP_ENTERED, curMapGroup, curMapNum, 0);
+            }
+        }
     }
     if (gMultiplayerState.connState == MP_STATE_CONNECTED &&
         gMultiplayerState.posFrameCounter == 0)
@@ -1598,4 +1686,56 @@ void Multiplayer_SetupCoopBattle(void)
     }
 
     CreateTask(Task_CoopBattleBlockRelay, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Async event log
+// ---------------------------------------------------------------------------
+
+void Multiplayer_LogEvent(u8 type, u8 d0, u8 d1, u8 d2)
+{
+    u8 idx;
+    if (sMpEventLogCount >= MP_EVENT_LOG_SIZE)
+        return; // log full; oldest events stay
+    idx = sMpEventLogCount++;
+    sMpEventLog[idx].type    = type;
+    sMpEventLog[idx].data[0] = d0;
+    sMpEventLog[idx].data[1] = d1;
+    sMpEventLog[idx].data[2] = d2;
+}
+
+void Multiplayer_ClearEventLog(void)
+{
+    sMpEventLogCount = 0;
+}
+
+void Multiplayer_SendEventLog(void)
+{
+    u8 pkt[MP_PKT_SIZE_EVENT_LOG_MAX];
+    u8 n = sMpEventLogCount;
+    u8 i;
+    if (n == 0) return;
+    pkt[0] = MP_PKT_EVENT_LOG;
+    pkt[1] = n;
+    for (i = 0; i < n; i++)
+    {
+        u8 base = (u8)(MP_PKT_EVENT_LOG_HDR + i * MP_PKT_EVENT_ENTRY_SIZE);
+        pkt[base + 0] = sMpEventLog[i].type;
+        pkt[base + 1] = sMpEventLog[i].data[0];
+        pkt[base + 2] = sMpEventLog[i].data[1];
+        pkt[base + 3] = sMpEventLog[i].data[2];
+    }
+    MpRing_Write(&gMpSendRing, pkt, (u8)(MP_PKT_EVENT_LOG_HDR + n * MP_PKT_EVENT_ENTRY_SIZE));
+}
+
+// ---------------------------------------------------------------------------
+// Auto-checkpoint on battle end
+// ---------------------------------------------------------------------------
+
+void Multiplayer_OnBattleEnd(void)
+{
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED)
+        return;
+    TrySavingData(SAVE_NORMAL);
+    Multiplayer_LogEvent(MPEVENT_CHECKPOINT, 0, 0, 0);
 }

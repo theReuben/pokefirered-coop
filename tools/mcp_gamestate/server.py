@@ -164,10 +164,23 @@ _connected_pair: bool = False
 # Keyed by destination instance_id ("p1" or "p2").
 _pending_inject: dict[str, str] = {}
 
+# Heartbeat / disconnect detection state.
+# Tracks when we last received non-empty bytes from each instance.
+_last_heard: dict[str, float] = {}
+# Tracks instances that have already had PARTNER_DISCONNECTED injected so we
+# only fire the event once per disconnect (until they reconnect).
+_disconnect_injected: set = set()
+# Which instance is currently the host (used for host-migration).
+_host_instance: str = "p1"
+
+# Silence threshold: if an instance hasn't sent bytes in this many seconds,
+# consider it disconnected and notify the partner.
+_HEARTBEAT_TIMEOUT = 6.0
+
 
 def _relay_loop() -> None:
     """Continuously relay multiplayer packets and coop battle blocks between p1 and p2."""
-    global _connected_pair
+    global _connected_pair, _host_instance
     while True:
         time.sleep(RELAY_INTERVAL)
         try:
@@ -178,6 +191,8 @@ def _relay_loop() -> None:
             if not both_alive:
                 _connected_pair = False
                 _pending_inject.clear()
+                _disconnect_injected.clear()
+                _last_heard.clear()
                 continue
 
             # Inject MP_PKT_PARTNER_CONNECTED (0x0B) into both recv rings once
@@ -187,12 +202,26 @@ def _relay_loop() -> None:
                 p1.try_send_locked({"cmd": "inject", "bytes": "0B"})
                 p2.try_send_locked({"cmd": "inject", "bytes": "0B"})
                 _connected_pair = True
+                # Initialise last-heard timestamps so we don't immediately trigger
+                # a false-positive disconnect on session start.
+                now = time.time()
+                _last_heard.setdefault("p1", now)
+                _last_heard.setdefault("p2", now)
 
             def relay_bytes(src: "Instance", dst: "Instance", dst_id: str) -> None:
                 """Drain src send ring → inject into dst recv ring, with retry buffering."""
+                src_id = src.iid
                 pending = _pending_inject.pop(dst_id, "")
                 r = src.try_send_locked({"cmd": "drain"})
                 new_bytes = (r.get("bytes", "") if r and r.get("ok") else "")
+                # Update heartbeat timestamp whenever the instance sends anything.
+                if new_bytes:
+                    _last_heard[src_id] = time.time()
+                    # Instance is alive again — clear its disconnect entry.
+                    if src_id in _disconnect_injected:
+                        _disconnect_injected.discard(src_id)
+                        # Notify the current host that the partner reconnected.
+                        dst.try_send_locked({"cmd": "inject", "bytes": "0B"})
                 combined = (pending + (" " if pending and new_bytes else "") + new_bytes).strip()
                 if combined:
                     result = dst.try_send_locked({"cmd": "inject", "bytes": combined})
@@ -203,6 +232,24 @@ def _relay_loop() -> None:
             # Ring-buffer packet relay (overworld position, flags, etc.)
             relay_bytes(p1, p2, "p2")  # p1 → p2
             relay_bytes(p2, p1, "p1")  # p2 → p1
+
+            # Disconnect detection: if an instance has been silent too long, tell
+            # the partner it's gone so the ROM can release waiting state.
+            now = time.time()
+            instance_map = {"p1": p1, "p2": p2}
+            for iid, inst in instance_map.items():
+                partner_iid = "p2" if iid == "p1" else "p1"
+                partner_inst = instance_map[partner_iid]
+                last = _last_heard.get(iid, now)
+                if now - last > _HEARTBEAT_TIMEOUT and iid not in _disconnect_injected:
+                    _disconnect_injected.add(iid)
+                    # Host migration: if the silent instance is the host, promote
+                    # the partner to host before sending disconnect.
+                    if iid == _host_instance:
+                        partner_inst.try_send_locked({"cmd": "inject", "bytes": "17"})
+                        _host_instance = partner_iid
+                    # Inject PARTNER_DISCONNECTED (0x0C) into the partner's recv ring.
+                    partner_inst.try_send_locked({"cmd": "inject", "bytes": "0C"})
 
             # Block-exchange relay (coop boss battle SendBlock data).
             # p1 sendReady → copy data to p2 recvReady with fromPlayerIdx=0

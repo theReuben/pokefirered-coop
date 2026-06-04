@@ -1267,6 +1267,7 @@ void SetBattleEndCallbacks(enum BattlerId battler)
             m4aSongNumStop(SE_LOW_HEALTH);
             gMain.inBattle = FALSE;
             gMain.callback1 = gPreBattleCallback1;
+            Multiplayer_OnBattleEnd();
             SetMainCallback2(gMain.savedCallback);
         }
     }
