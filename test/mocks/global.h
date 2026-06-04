@@ -69,7 +69,9 @@ struct ObjectEvent {
     u32 active               : 1; // bit 0
     u32 heldMovementActive   : 1; // bit 1
     u32 heldMovementFinished : 1; // bit 2
-    u32 _pad                 : 29;
+    u32 _flags1              : 9; // bits 3-11 (frozen..enableAnim)
+    u32 inanimate            : 1; // bit 12 — matches real struct offset 0x01 bit 4
+    u32 _pad                 : 19;
     u16 graphicsId;
     u8  movementType;
     u8  trainerType;
