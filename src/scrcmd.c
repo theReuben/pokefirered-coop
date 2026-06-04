@@ -3409,6 +3409,9 @@ bool8 ScrCmd_waitcoopparty(struct ScriptContext *ctx)
 bool8 ScrCmd_waitpartysync(struct ScriptContext *ctx)
 {
     Script_RequestEffects(SCREFF_V1);
+    // Drain any packets that accumulated in the recv ring while the party
+    // selection menu was open (Multiplayer_Update was not running then).
+    Multiplayer_Update();
     SetupNativeScript(ctx, Multiplayer_NativePollPartySync);
     return TRUE;
 }

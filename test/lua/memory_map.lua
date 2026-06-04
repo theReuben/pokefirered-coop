@@ -3,7 +3,7 @@
 
 local M = {}
 
-M.Task_HandleYesNoInput = 0x081FC094
+M.Task_HandleYesNoInput = 0x081FC09C
 M.gCoopSettings = 0x030015A8
 M.gDisableTextPrinters = 0x0203744C
 M.gMpAddrTable = 0x030015B4

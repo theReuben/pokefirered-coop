@@ -477,11 +477,16 @@ static bool8 ProcessOneRecvPacket(void)
         {
             u8 n_mons = 0;
             u8 needed;
-            Mp_Pop(&gMpRecvRing, &n_mons);
+            // Peek n_mons without consuming it yet; need 1 (count) + n*MON_SIZE bytes total.
+            if (Mp_Available(&gMpRecvRing) < 1)
+                return FALSE;
+            n_mons = gMpRecvRing.buf[(u8)(gMpRecvRing.tail)];
             if (n_mons > MULTI_PARTY_SIZE) n_mons = MULTI_PARTY_SIZE;
-            needed = n_mons * MP_PKT_PARTY_SYNC_MON_SIZE;
+            needed = 1 + n_mons * MP_PKT_PARTY_SYNC_MON_SIZE;
             if (Mp_Available(&gMpRecvRing) < needed)
                 return FALSE;
+            Mp_Pop(&gMpRecvRing, &n_mons); // consume n_mons byte now that all data is ready
+            if (n_mons > MULTI_PARTY_SIZE) n_mons = MULTI_PARTY_SIZE;
             {
                 u8 data[MULTI_PARTY_SIZE * MP_PKT_PARTY_SYNC_MON_SIZE];
                 u8 j;
@@ -717,7 +722,6 @@ void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing)
 
     gObjectEvents[objId].mapGroup = (u8)mapGroup;
     gObjectEvents[objId].mapNum   = (u8)mapNum;
-    gObjectEvents[objId].inanimate = TRUE; // ghost is passable so players aren't blocked
     SetObjectEventDirection(&gObjectEvents[objId], facing);
     gMultiplayerState.ghostObjectEventId = objId;
     Multiplayer_SpawnFollowerGhost();
