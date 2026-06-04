@@ -3,10 +3,10 @@
 
 local M = {}
 
-M.Task_HandleYesNoInput = 0x081FC0AC
-M.gCoopSettings = 0x030015A8
+M.Task_HandleYesNoInput = 0x081FC198
+M.gCoopSettings = 0x030015AC
 M.gDisableTextPrinters = 0x0203744C
-M.gMpAddrTable = 0x030015B4
+M.gMpAddrTable = 0x030015B8
 M.gMpBlockExchange = 0x02031350
 M.gMpRecvRing = 0x02031454
 M.gMpSendRing = 0x02031558

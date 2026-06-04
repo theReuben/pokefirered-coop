@@ -182,6 +182,8 @@ struct MultiplayerState {
     u8  partnerIsInScript;  // TRUE while partner has sent SCRIPT_LOCK
     u8  posFrameCounter;    // counts frames; send position every 4 frames
     u16 partnerStarterSpecies; // 0 until partner sends MP_PKT_STARTER_PICK
+    u16 myStarterSpecies;     // saved species from Multiplayer_SendStarterPick for resend
+    u8  starterResendTimer;   // counts frames; resend myStarterSpecies every 60 frames
     u8  remoteUpdateThisFrame; // set when any remote flag/var applied; cleared next Multiplayer_Update
     u8  partnerGender;         // MALE/FEMALE; meaningful only when gotPartnerGender is TRUE
     u8  gotPartnerGender;      // TRUE once partner has sent MP_PKT_GENDER
@@ -203,6 +205,7 @@ struct MultiplayerState {
     u8  battleTurnSentMoveSlot;
     u8  battleTurnSentTarget;
     u8  battleTurnSentFlags;
+    u8  bossResendTimer;        // counts frames; resend BOSS_READY every 60 frames while waiting
 };
 
 extern struct MultiplayerState gMultiplayerState;

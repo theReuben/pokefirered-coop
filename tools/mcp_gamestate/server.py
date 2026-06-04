@@ -160,6 +160,9 @@ def _parse_memory_map(path: Path) -> dict[str, int]:
 # the current session. Reset when either instance goes away so a fresh boot
 # gets the handshake again.
 _connected_pair: bool = False
+# Pending bytes that were drained but failed to inject on the previous cycle.
+# Keyed by destination instance_id ("p1" or "p2").
+_pending_inject: dict[str, str] = {}
 
 
 def _relay_loop() -> None:
@@ -174,6 +177,7 @@ def _relay_loop() -> None:
 
             if not both_alive:
                 _connected_pair = False
+                _pending_inject.clear()
                 continue
 
             # Inject MP_PKT_PARTNER_CONNECTED (0x0B) into both recv rings once
@@ -184,16 +188,21 @@ def _relay_loop() -> None:
                 p2.try_send_locked({"cmd": "inject", "bytes": "0B"})
                 _connected_pair = True
 
-            # Ring-buffer packet relay (overworld position, flags, etc.)
-            # p1 → p2
-            r = p1.try_send_locked({"cmd": "drain"})
-            if r and r.get("ok") and r.get("count", 0) > 0:
-                p2.try_send_locked({"cmd": "inject", "bytes": r["bytes"]})
+            def relay_bytes(src: "Instance", dst: "Instance", dst_id: str) -> None:
+                """Drain src send ring → inject into dst recv ring, with retry buffering."""
+                pending = _pending_inject.pop(dst_id, "")
+                r = src.try_send_locked({"cmd": "drain"})
+                new_bytes = (r.get("bytes", "") if r and r.get("ok") else "")
+                combined = (pending + (" " if pending and new_bytes else "") + new_bytes).strip()
+                if combined:
+                    result = dst.try_send_locked({"cmd": "inject", "bytes": combined})
+                    if not result or not result.get("ok"):
+                        # Inject failed (lock busy); buffer bytes for next cycle.
+                        _pending_inject[dst_id] = combined
 
-            # p2 → p1
-            r = p2.try_send_locked({"cmd": "drain"})
-            if r and r.get("ok") and r.get("count", 0) > 0:
-                p1.try_send_locked({"cmd": "inject", "bytes": r["bytes"]})
+            # Ring-buffer packet relay (overworld position, flags, etc.)
+            relay_bytes(p1, p2, "p2")  # p1 → p2
+            relay_bytes(p2, p1, "p1")  # p2 → p1
 
             # Block-exchange relay (coop boss battle SendBlock data).
             # p1 sendReady → copy data to p2 recvReady with fromPlayerIdx=0

@@ -613,6 +613,9 @@ void Multiplayer_Init(void)
     gMultiplayerState.lastSentFollowerGfxId = 0;
     gMultiplayerState.bossReadyBossId    = 0;
     gMultiplayerState.partnerBossId      = 0;
+    gMultiplayerState.bossResendTimer    = 0;
+    gMultiplayerState.myStarterSpecies   = 0;
+    gMultiplayerState.starterResendTimer = 0;
     gMultiplayerState.isInScript         = FALSE;
     gMultiplayerState.partnerIsInScript  = FALSE;
     gMultiplayerState.posFrameCounter    = 0;
@@ -953,8 +956,14 @@ void Multiplayer_SendStarterPick(void)
     pkt[0] = MP_PKT_STARTER_PICK;
     pkt[1] = (u8)(species >> 8);
     pkt[2] = (u8)(species);
-    if (gMultiplayerState.connState == MP_STATE_CONNECTED)
-        MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
+    // Save for periodic resend from the waitstarterpick poll.
+    if (species != 0)
+    {
+        gMultiplayerState.myStarterSpecies   = species;
+        gMultiplayerState.starterResendTimer = 0;
+    }
+    // Always write to ring; relay drains regardless of connState.
+    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
 }
 
 u16 Multiplayer_GetRivalStarterSpecies(void)
@@ -985,6 +994,23 @@ u16 Multiplayer_GetRivalStarterSlot(void)
 
 bool8 Multiplayer_NativePollPartnerStarterPick(void)
 {
+    // Resend our own pick every 60 frames while connected and still waiting.
+    // Guards against packet loss or relay contention dropping the initial send.
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED
+        && gMultiplayerState.partnerStarterSpecies == 0
+        && gMultiplayerState.myStarterSpecies != 0)
+    {
+        gMultiplayerState.starterResendTimer++;
+        if (gMultiplayerState.starterResendTimer >= 60)
+        {
+            u8 pkt[MP_PKT_SIZE_STARTER_PICK];
+            gMultiplayerState.starterResendTimer = 0;
+            pkt[0] = MP_PKT_STARTER_PICK;
+            pkt[1] = (u8)(gMultiplayerState.myStarterSpecies >> 8);
+            pkt[2] = (u8)(gMultiplayerState.myStarterSpecies);
+            MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
+        }
+    }
     return (bool8)(gMultiplayerState.connState != MP_STATE_CONNECTED
                 || gMultiplayerState.partnerStarterSpecies != 0);
 }
@@ -1349,6 +1375,19 @@ u16 Multiplayer_IsConnected(void)
 // Returns FALSE (stay in NATIVE mode, yield) while still waiting.
 bool8 Multiplayer_NativePollBossStart(void)
 {
+    // Resend BOSS_READY every 60 frames while waiting for partner, to recover
+    // from the initial send being silently dropped (ring full or relay contention).
+    if (gMultiplayerState.bossReadyBossId != 0
+        && gMultiplayerState.partnerBossId == 0
+        && gMultiplayerState.connState == MP_STATE_CONNECTED)
+    {
+        gMultiplayerState.bossResendTimer++;
+        if (gMultiplayerState.bossResendTimer >= 60)
+        {
+            gMultiplayerState.bossResendTimer = 0;
+            Multiplayer_SendBossReady(gMultiplayerState.bossReadyBossId);
+        }
+    }
     return (bool8)(Multiplayer_ScriptCheckBossStart() != 0);
 }
 
