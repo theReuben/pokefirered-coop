@@ -206,6 +206,7 @@ struct MultiplayerState {
     u8  battleTurnSentTarget;
     u8  battleTurnSentFlags;
     u8  bossResendTimer;        // counts frames; resend BOSS_READY every 60 frames while waiting
+    u8  partySyncResendTimer;   // counts frames; resend MP_PKT_PARTY_SYNC every 60 frames while waiting
 };
 
 extern struct MultiplayerState gMultiplayerState;

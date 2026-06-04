@@ -599,7 +599,10 @@ static void GhostMapCheck(void)
 
     if (sameMap)
     {
-        if (gMultiplayerState.ghostObjectEventId >= OBJECT_EVENTS_COUNT)
+        // Don't spawn until gender is known — avoids a 1-frame "opposite-of-self"
+        // wrong sprite before the partner's MP_PKT_GENDER has been processed.
+        if (gMultiplayerState.ghostObjectEventId >= OBJECT_EVENTS_COUNT
+            && gMultiplayerState.gotPartnerGender)
         {
             Multiplayer_SpawnGhostNPC(
                 gMultiplayerState.partnerMapGroup,
@@ -1498,7 +1501,15 @@ bool8 Multiplayer_NativePollPartySync(void)
         || gMultiplayerState.partnerPartySelectDone)
     {
         gMultiplayerState.partnerPartySelectDone = FALSE;
+        gMultiplayerState.partySyncResendTimer   = 0;
         return TRUE;
+    }
+    // Resend every 60 frames in case the single SendPartySync was dropped.
+    gMultiplayerState.partySyncResendTimer++;
+    if (gMultiplayerState.partySyncResendTimer >= 60)
+    {
+        gMultiplayerState.partySyncResendTimer = 0;
+        Multiplayer_SendPartySync();
     }
     return FALSE;
 }
