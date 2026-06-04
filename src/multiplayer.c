@@ -490,7 +490,8 @@ static bool8 ProcessOneRecvPacket(void)
             {
                 u8 data[MULTI_PARTY_SIZE * MP_PKT_PARTY_SYNC_MON_SIZE];
                 u8 j;
-                for (j = 0; j < needed; j++)
+                u8 dataLen = n_mons * MP_PKT_PARTY_SYNC_MON_SIZE;
+                for (j = 0; j < dataLen; j++)
                     Mp_Pop(&gMpRecvRing, &data[j]);
                 Multiplayer_HandleRemotePartySync(data, n_mons);
             }
@@ -689,6 +690,9 @@ void Multiplayer_Update(void)
         gMultiplayerState.posFrameCounter == 0)
     {
         Multiplayer_SendPosition();
+        // Re-send gender with every position tick so the partner's ghost always
+        // uses the correct sprite even if the initial gender exchange was missed.
+        Multiplayer_SendGender();
 
         // Broadcast follower graphics ID when it changes so partner can show
         // our follower Pokémon ghost.
