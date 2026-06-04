@@ -189,6 +189,24 @@ def _relay_loop() -> None:
             both_alive = bool(p1 and p1.alive() and p2 and p2.alive())
 
             if not both_alive:
+                if _connected_pair:
+                    # One instance just died — notify the survivor before resetting.
+                    p1_alive = bool(p1 and p1.alive())
+                    p2_alive = bool(p2 and p2.alive())
+                    if p1_alive and not p2_alive:
+                        if "p2" not in _disconnect_injected:
+                            _disconnect_injected.add("p2")
+                            if _host_instance == "p2":
+                                p1.try_send_locked({"cmd": "inject", "bytes": "17"})
+                                _host_instance = "p1"
+                            p1.try_send_locked({"cmd": "inject", "bytes": "0C"})
+                    elif p2_alive and not p1_alive:
+                        if "p1" not in _disconnect_injected:
+                            _disconnect_injected.add("p1")
+                            if _host_instance == "p1":
+                                p2.try_send_locked({"cmd": "inject", "bytes": "17"})
+                                _host_instance = "p2"
+                            p2.try_send_locked({"cmd": "inject", "bytes": "0C"})
                 _connected_pair = False
                 _pending_inject.clear()
                 _disconnect_injected.clear()
