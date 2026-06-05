@@ -213,6 +213,12 @@ struct MultiplayerState {
     u8  lastCkptMapNum;         // map num at last auto-checkpoint save
     u8  _pad2;                  // padding to keep u16 aligned
     u16 battleGraceTimer;       // counts frames partner has been disconnected mid-battle; AI fallback at 1800
+    // Trainer-busy: tracks which trainer the partner is currently battling so we
+    // suppress their vision cone and show a "Buzz off!" message on A-press.
+    u8  partnerHasBusyTrainer;       // TRUE while partner is in a trainer battle
+    u8  partnerBusyTrainerLocalId;   // localId of the trainer they're fighting
+    u8  partnerBusyTrainerMapGroup;
+    u8  partnerBusyTrainerMapNum;
 };
 
 extern struct MultiplayerState gMultiplayerState;
@@ -227,6 +233,8 @@ void Multiplayer_Update(void);
 
 // Ghost NPC
 void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);
+// Returns TRUE if the partner is currently battling the trainer in the given object event slot.
+bool32 Multiplayer_IsPartnerBusyWithTrainer(u8 objectEventId);
 void Multiplayer_DespawnGhost(void);
 void Multiplayer_UpdateGhostPosition(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);
 // Returns the OBJ_EVENT_GFX_* constant to use when spawning the ghost: keyed
@@ -235,6 +243,7 @@ u16 Multiplayer_GhostGraphicsId(void);
 
 // Packet send helpers (Phase 2 — now implemented via ring buffer)
 void Multiplayer_SendPosition(void);
+void Multiplayer_SendTrainerBusy(u8 localId, u8 mapGroup, u8 mapNum);
 void Multiplayer_SendFlagSet(u16 flagId);
 void Multiplayer_SendFlagClear(u16 flagId);
 void Multiplayer_SendVarSet(u16 varId, u16 value);

@@ -28,6 +28,7 @@
 #include "pokemon.h"
 #include "safari_zone.h"
 #include "script.h"
+#include "string_util.h"
 #include "secret_base.h"
 #include "sound.h"
 #include "start_menu.h"
@@ -408,6 +409,13 @@ static const u8 *GetInteractedObjectEventScript(struct MapPosition *position, u8
 
     gSelectedObjectEvent = objectEventId;
     gSpecialVar_LastTalked = gObjectEvents[objectEventId].localId;
+
+    // Partner is already battling this trainer — show "Buzz off!" instead of normal script.
+    if (Multiplayer_IsPartnerBusyWithTrainer(objectEventId))
+    {
+        StringCopy(gStringVar1, gMultiplayerState.partnerName);
+        return EventScript_TrainerBusyWithPartner;
+    }
 
     if (InTrainerHill() == TRUE)
         script = GetTrainerHillTrainerScript();

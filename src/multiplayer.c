@@ -290,7 +290,11 @@ static bool8 ProcessOneRecvPacket(void)
         pkt[0] = typeByte;
         { u8 i; for (i = 1; i < MP_PKT_SIZE_POSITION; i++) Mp_Pop(&gMpRecvRing, &pkt[i]); }
         if (Mp_DecodePosition(pkt, MP_PKT_SIZE_POSITION, &mapGroup, &mapNum, &x, &y, &facing))
+        {
+            // Partner is in the overworld — clear any active trainer-busy state.
+            gMultiplayerState.partnerHasBusyTrainer = FALSE;
             Multiplayer_UpdateGhostPosition(mapGroup, mapNum, x, y, facing);
+        }
         break;
 
     case MP_PKT_FLAG_SET:
@@ -378,9 +382,10 @@ static bool8 ProcessOneRecvPacket(void)
         Multiplayer_DespawnGhost();
         // Anti-softlock: clear shared battle/script state so we don't hang
         // waiting for a partner who has gone away.
-        gMultiplayerState.partnerIsInScript  = FALSE;
-        gMultiplayerState.partnerBossId      = 0;
-        gMultiplayerState.battleGraceTimer   = 0;
+        gMultiplayerState.partnerIsInScript      = FALSE;
+        gMultiplayerState.partnerBossId          = 0;
+        gMultiplayerState.battleGraceTimer       = 0;
+        gMultiplayerState.partnerHasBusyTrainer  = FALSE;
         break;
 
     case MP_PKT_SCRIPT_LOCK:
@@ -504,6 +509,21 @@ static bool8 ProcessOneRecvPacket(void)
             Mp_Pop(&gMpRecvRing, &target);
             Mp_Pop(&gMpRecvRing, &flags);
             Multiplayer_HandleBattleTurn(moveSlot, target, flags);
+        }
+        break;
+
+    case MP_PKT_TRAINER_BUSY:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_TRAINER_BUSY - 1)
+            return FALSE;
+        {
+            u8 localId = 0, mapGroup = 0, mapNum = 0;
+            Mp_Pop(&gMpRecvRing, &localId);
+            Mp_Pop(&gMpRecvRing, &mapGroup);
+            Mp_Pop(&gMpRecvRing, &mapNum);
+            gMultiplayerState.partnerBusyTrainerLocalId  = localId;
+            gMultiplayerState.partnerBusyTrainerMapGroup = mapGroup;
+            gMultiplayerState.partnerBusyTrainerMapNum   = mapNum;
+            gMultiplayerState.partnerHasBusyTrainer      = TRUE;
         }
         break;
 
@@ -965,6 +985,25 @@ void Multiplayer_SendFollowerGfx(u16 gfxId)
     pkt[2] = (u8)(gfxId & 0xFF);
     MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_FOLLOWER_GFX);
     gMultiplayerState.lastSentFollowerGfxId = gfxId;
+}
+
+void Multiplayer_SendTrainerBusy(u8 localId, u8 mapGroup, u8 mapNum)
+{
+    u8 pkt[MP_PKT_SIZE_TRAINER_BUSY];
+    pkt[0] = MP_PKT_TRAINER_BUSY;
+    pkt[1] = localId;
+    pkt[2] = mapGroup;
+    pkt[3] = mapNum;
+    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_TRAINER_BUSY);
+}
+
+bool32 Multiplayer_IsPartnerBusyWithTrainer(u8 objectEventId)
+{
+    if (!gMultiplayerState.partnerHasBusyTrainer)
+        return FALSE;
+    return gObjectEvents[objectEventId].localId   == gMultiplayerState.partnerBusyTrainerLocalId &&
+           gObjectEvents[objectEventId].mapGroup  == gMultiplayerState.partnerBusyTrainerMapGroup &&
+           gObjectEvents[objectEventId].mapNum    == gMultiplayerState.partnerBusyTrainerMapNum;
 }
 
 void Multiplayer_HandleRemoteFollowerGfx(u16 gfxId)

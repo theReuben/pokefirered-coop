@@ -22,6 +22,7 @@
 #define MP_PKT_PARTY_SYNC           0x12   // 2+n*30 bytes — partner's selected party (MultiPartnerMenuPokemon * n)
 #define MP_PKT_FOLLOWER_GFX         0x13   // 3 bytes — partner's follower OBJ_EVENT_GFX id (0 = no follower)
 #define MP_PKT_BATTLE_TURN          0x14   // 4 bytes — co-op turn: move slot + target + flags
+#define MP_PKT_TRAINER_BUSY         0x15   // 4 bytes — player started a trainer battle (localId + mapGroup + mapNum)
 #define MP_PKT_PING                 0x16   // 1 byte — heartbeat keep-alive (ROM→relay)
 #define MP_PKT_HOST_MIGRATE         0x17   // 1 byte — relay→ROM: you are now host
 #define MP_PKT_EVENT_LOG            0x18   // variable — async event log batch
@@ -80,6 +81,7 @@
 #define MP_PKT_SIZE_NAME                    (1 + PLAYER_NAME_LENGTH)  // type + 7 name bytes
 #define MP_PKT_SIZE_FOLLOWER_GFX            3  // type + gfx_hi + gfx_lo
 #define MP_PKT_SIZE_BATTLE_TURN             4  // type + move_slot + target + flags
+#define MP_PKT_SIZE_TRAINER_BUSY            4  // type + localId + mapGroup + mapNum
 // Fixed sizes for new packets
 #define MP_PKT_SIZE_PING                    1  // type only
 #define MP_PKT_SIZE_HOST_MIGRATE            1  // type only

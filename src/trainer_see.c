@@ -22,6 +22,7 @@
 #include "constants/field_effects.h"
 #include "constants/script_commands.h"
 #include "constants/trainer_types.h"
+#include "multiplayer.h"
 
 // this file's functions
 static u8 CheckTrainer(u8 objectEventId);
@@ -523,6 +524,15 @@ bool8 CheckForTrainersWantingBattle(void)
 
     if (gNoOfApproachingTrainers == 1)
     {
+        // Tell partner which trainer is now busy so they aren't triggered by the same NPC.
+        if (Multiplayer_IsConnected())
+        {
+            u8 busyObjId = gApproachingTrainers[0].objectEventId;
+            Multiplayer_SendTrainerBusy(
+                gObjectEvents[busyObjId].localId,
+                gObjectEvents[busyObjId].mapGroup,
+                gObjectEvents[busyObjId].mapNum);
+        }
         ResetTrainerOpponentIds();
         ConfigureAndSetUpOneTrainerBattle(gApproachingTrainers[gNoOfApproachingTrainers - 1].objectEventId,
                                           gApproachingTrainers[gNoOfApproachingTrainers - 1].trainerScriptPtr);
@@ -553,6 +563,10 @@ static u8 CheckTrainer(u8 objectEventId)
 {
     const u8 *trainerBattlePtr;
     u8 numTrainers = 1;
+
+    // Partner is already battling this trainer — skip vision check so P2 isn't triggered.
+    if (Multiplayer_IsPartnerBusyWithTrainer(objectEventId))
+        return 0;
 
     u8 approachDistance = GetTrainerApproachDistance(&gObjectEvents[objectEventId]);
     if (approachDistance == 0)

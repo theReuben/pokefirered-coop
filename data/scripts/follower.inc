@@ -3,6 +3,18 @@
 gText_GhostInteract::
 	.string "That's {STR_VAR_1},\nyour co-op partner!$"
 
+@ Shown when player B tries to interact with a trainer already being battled by player A.
+@ gStringVar1 is pre-populated with the battling partner's name by C code before this runs.
+gText_TrainerBusyWithPartner::
+	.string "Buzz off!\nI'm battling {STR_VAR_1}!$"
+
+EventScript_TrainerBusyWithPartner::
+	lock
+	faceplayer
+	msgbox gText_TrainerBusyWithPartner, MSGBOX_DEFAULT
+	release
+	end
+
 EventScript_GhostInteract::
 	lock
 	msgbox gText_GhostInteract, MSGBOX_DEFAULT
