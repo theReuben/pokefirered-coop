@@ -6629,8 +6629,8 @@ u32 GetObjectObjectCollidesWith(struct ObjectEvent *objectEvent, s16 x, s16 y, b
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
         curObject = &gObjectEvents[i];
-        if (curObject->localId == GHOST_LOCAL_ID)
-            continue; // ghost NPC is always passable
+        if (curObject->localId == GHOST_FOLLOWER_LOCAL_ID)
+            continue; // follower Pokémon ghost is passable; player ghost blocks normally
         if (curObject->active && (curObject->movementType != MOVEMENT_TYPE_FOLLOW_PLAYER || objectEvent != &gObjectEvents[gPlayerAvatar.objectEventId]) && curObject != objectEvent
          && !FollowerNPC_IsCollisionExempt(curObject, objectEvent)
          )
