@@ -15,5 +15,6 @@ void MoveObjectEventToMapCoords(struct ObjectEvent *objectEvent, s16 x, s16 y);
 void SetObjectEventDirection(struct ObjectEvent *objectEvent, enum Direction direction);
 u8   ObjectEventClearHeldMovementIfFinished(struct ObjectEvent *objectEvent);
 bool8 ObjectEventSetHeldMovement(struct ObjectEvent *objectEvent, u8 movementAction);
+struct ObjectEvent *GetFollowerObject(void);
 
 #endif // GUARD_EVENT_OBJECT_MOVEMENT_H

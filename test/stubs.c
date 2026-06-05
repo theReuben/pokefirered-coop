@@ -221,3 +221,4 @@ const struct UCoords32 gDirectionToVectors[4]; // zeroed; tests don't call movem
 
 bool8 PlayerHasFollowerNPC(void) { return FALSE; }
 u32   GetFollowerNPCData(enum FollowerNpcData data) { (void)data; return 0; }
+struct ObjectEvent *GetFollowerObject(void) { return NULL; }
