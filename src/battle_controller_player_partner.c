@@ -235,7 +235,7 @@ static void PlayerPartnerHandleDrawTrainerPic(enum BattlerId battler)
         xPos = 90;
         yPos = (8 - gTrainerBacksprites[trainerPicId].coordinates.size) * 4 + 80;
     }
-    else if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+    else if (Multiplayer_IsCoopBattle())
     {
         trainerPicId = gMultiplayerState.partnerGender + TRAINER_BACK_PIC_PLAYER_MALE;
         xPos = 90;
@@ -261,7 +261,7 @@ static void PlayerPartnerHandleDrawTrainerPic(enum BattlerId battler)
     }
 
     // Use back pic for co-op, Steven, or any custom partner; front pic for frontier tag battles.
-    if (gMultiplayerState.connState == MP_STATE_CONNECTED || gPartnerTrainerId > TRAINER_PARTNER(PARTNER_NONE))
+    if (Multiplayer_IsCoopBattle() || gPartnerTrainerId > TRAINER_PARTNER(PARTNER_NONE))
         isFrontPic = FALSE;
     else
         isFrontPic = TRUE;
@@ -420,7 +420,7 @@ static void PlayerPartnerHandleIntroTrainerBallThrow(enum BattlerId battler)
     const u16 *trainerPal;
     enum DifficultyLevel difficulty = GetBattlePartnerDifficultyLevel(gPartnerTrainerId);
 
-    if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+    if (Multiplayer_IsCoopBattle())
         trainerPal = gTrainerBacksprites[gMultiplayerState.partnerGender + TRAINER_BACK_PIC_PLAYER_MALE].palette.data;
     else if (gPartnerTrainerId > TRAINER_PARTNER(PARTNER_NONE))
         trainerPal = gTrainerBacksprites[gBattlePartners[difficulty][gPartnerTrainerId - TRAINER_PARTNER(PARTNER_NONE)].trainerBackPic].palette.data;

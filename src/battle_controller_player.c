@@ -1948,7 +1948,7 @@ static void PlayerHandleDrawTrainerPic(enum BattlerId battler)
                 xPos = 32;
 
             if (gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER && gPartnerTrainerId < TRAINER_PARTNER(PARTNER_NONE)
-                && gMultiplayerState.connState != MP_STATE_CONNECTED)
+                && !Multiplayer_IsCoopBattle())
             {
                 xPos = 90;
                 yPos = 80;
@@ -1967,7 +1967,7 @@ static void PlayerHandleDrawTrainerPic(enum BattlerId battler)
 
     // Use front pic for frontier tag battles; back pic for co-op network battles and Steven/custom partners.
     if (gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER && gPartnerTrainerId < TRAINER_PARTNER(PARTNER_NONE)
-        && gMultiplayerState.connState != MP_STATE_CONNECTED)
+        && !Multiplayer_IsCoopBattle())
     {
         trainerPicId = PlayerGenderToFrontTrainerPicId(gSaveBlock2Ptr->playerGender);
         isFrontPic = TRUE;
