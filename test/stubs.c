@@ -11,6 +11,7 @@
 #include "party_menu.h"
 #include "overworld.h"
 #include "follower_npc.h"
+#include "main.h"   // for struct Main / gMain stub
 #include <stdarg.h>
 
 // Controllable Random32 return value — set in tests before calling
@@ -212,6 +213,7 @@ void CreateMon(struct Pokemon *mon, u16 species, u8 level, u32 personality,
 // Party menu / overworld / follower stubs.
 // ---------------------------------------------------------------------------
 u8 gSelectedOrderFromParty[MAX_FRONTIER_PARTY_SIZE];
+struct Main gMain; // zeroed; tests set inBattle manually when needed
 
 void InitChooseHalfPartyForBattle(u8 unused) { (void)unused; }
 void SetMainCallback2(MainCallback callback) { (void)callback; }
