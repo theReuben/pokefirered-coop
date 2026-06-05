@@ -204,9 +204,16 @@ static enum TrainerPicID PlayerPartnerGetTrainerBackPicId(enum DifficultyLevel d
     enum TrainerPicID trainerPicId;
 
     if (gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER)
-        trainerPicId = gBattlePartners[difficulty][gPartnerTrainerId - TRAINER_PARTNER(PARTNER_NONE)].trainerBackPic;
+    {
+        if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+            trainerPicId = gMultiplayerState.partnerGender + TRAINER_BACK_PIC_PLAYER_MALE;
+        else
+            trainerPicId = gBattlePartners[difficulty][gPartnerTrainerId - TRAINER_PARTNER(PARTNER_NONE)].trainerBackPic;
+    }
     else
+    {
         trainerPicId = gSaveBlock2Ptr->playerGender + TRAINER_PIC_BACK_BRENDAN;
+    }
 
     return trainerPicId;
 }
@@ -408,7 +415,12 @@ static void PlayerPartnerHandleIntroTrainerBallThrow(enum BattlerId battler)
     enum DifficultyLevel difficulty = GetBattlePartnerDifficultyLevel(gPartnerTrainerId);
 
     if (gPartnerTrainerId > TRAINER_PARTNER(PARTNER_NONE))
-        trainerPal = gTrainerBacksprites[gBattlePartners[difficulty][gPartnerTrainerId - TRAINER_PARTNER(PARTNER_NONE)].trainerBackPic].palette.data;
+    {
+        if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+            trainerPal = gTrainerBacksprites[gMultiplayerState.partnerGender + TRAINER_BACK_PIC_PLAYER_MALE].palette.data;
+        else
+            trainerPal = gTrainerBacksprites[gBattlePartners[difficulty][gPartnerTrainerId - TRAINER_PARTNER(PARTNER_NONE)].trainerBackPic].palette.data;
+    }
     else if (IsAiVsAiBattle())
         trainerPal = gTrainerSprites[GetTrainerBackPicFromId(gPartnerTrainerId)].palette.data;
     else
