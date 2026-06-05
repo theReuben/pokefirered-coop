@@ -24,6 +24,7 @@
 #define MP_PKT_BATTLE_TURN          0x14   // 4 bytes — co-op turn: move slot + target + flags
 #define MP_PKT_TRAINER_BUSY         0x15   // 4 bytes — player started a trainer battle (localId + mapGroup + mapNum)
 #define MP_PKT_PING                 0x16   // 1 byte — heartbeat keep-alive (ROM→relay)
+#define MP_PKT_TRAINER_FREE         0x19   // 1 byte — player's trainer battle ended (win or loss)
 #define MP_PKT_HOST_MIGRATE         0x17   // 1 byte — relay→ROM: you are now host
 #define MP_PKT_EVENT_LOG            0x18   // variable — async event log batch
 
@@ -85,6 +86,7 @@
 // Fixed sizes for new packets
 #define MP_PKT_SIZE_PING                    1  // type only
 #define MP_PKT_SIZE_HOST_MIGRATE            1  // type only
+#define MP_PKT_SIZE_TRAINER_FREE            1  // type only
 
 // Event log packet constants
 #define MPEVENT_TRAINER_BEATEN  0x01  // data[0..1] = trainerNum (u16 lo/hi), data[2] unused

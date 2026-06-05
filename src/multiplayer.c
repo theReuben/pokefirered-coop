@@ -20,6 +20,7 @@
 #include "constants/maps.h"
 #include "constants/map_event_ids.h"
 #include "battle.h"
+#include "main.h"
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -386,6 +387,7 @@ static bool8 ProcessOneRecvPacket(void)
         gMultiplayerState.partnerBossId          = 0;
         gMultiplayerState.battleGraceTimer       = 0;
         gMultiplayerState.partnerHasBusyTrainer  = FALSE;
+        gMultiplayerState.sentBusyTrainer        = FALSE;
         break;
 
     case MP_PKT_SCRIPT_LOCK:
@@ -525,6 +527,10 @@ static bool8 ProcessOneRecvPacket(void)
             gMultiplayerState.partnerBusyTrainerMapNum   = mapNum;
             gMultiplayerState.partnerHasBusyTrainer      = TRUE;
         }
+        break;
+
+    case MP_PKT_TRAINER_FREE:
+        gMultiplayerState.partnerHasBusyTrainer = FALSE;
         break;
 
     case MP_PKT_FOLLOWER_GFX:
@@ -840,6 +846,14 @@ void Multiplayer_Update(void)
                 Multiplayer_SendFollowerGfx(curGfx);
         }
     }
+
+    // When our own trainer battle ends, notify partner so they drop the busy state.
+    if (gMultiplayerState.sentBusyTrainer && !gMain.inBattle)
+    {
+        u8 freeByte = MP_PKT_TRAINER_FREE;
+        MpRing_Write(&gMpSendRing, &freeByte, MP_PKT_SIZE_TRAINER_FREE);
+        gMultiplayerState.sentBusyTrainer = FALSE;
+    }
 }
 
 void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing)
@@ -995,6 +1009,7 @@ void Multiplayer_SendTrainerBusy(u8 localId, u8 mapGroup, u8 mapNum)
     pkt[2] = mapGroup;
     pkt[3] = mapNum;
     MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_TRAINER_BUSY);
+    gMultiplayerState.sentBusyTrainer = TRUE;
 }
 
 bool32 Multiplayer_IsPartnerBusyWithTrainer(u8 objectEventId)

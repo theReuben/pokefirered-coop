@@ -219,6 +219,7 @@ struct MultiplayerState {
     u8  partnerBusyTrainerLocalId;   // localId of the trainer they're fighting
     u8  partnerBusyTrainerMapGroup;
     u8  partnerBusyTrainerMapNum;
+    u8  sentBusyTrainer;             // TRUE after we sent TRAINER_BUSY; cleared when battle ends
 };
 
 extern struct MultiplayerState gMultiplayerState;

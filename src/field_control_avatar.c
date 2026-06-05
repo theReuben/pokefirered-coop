@@ -411,10 +411,18 @@ static const u8 *GetInteractedObjectEventScript(struct MapPosition *position, u8
     gSpecialVar_LastTalked = gObjectEvents[objectEventId].localId;
 
     // Partner is already battling this trainer — show "Buzz off!" instead of normal script.
+    // Exception: if the trainer's defeat flag is already set (partner won and flag sync
+    // arrived), drop the busy state eagerly so the normal defeated-trainer dialogue shows.
     if (Multiplayer_IsPartnerBusyWithTrainer(objectEventId))
     {
-        StringCopy(gStringVar1, gMultiplayerState.partnerName);
-        return EventScript_TrainerBusyWithPartner;
+        const u8 *trainerScript = GetObjectEventScriptPointerByObjectEventId(objectEventId);
+        if (trainerScript != NULL && GetTrainerFlagFromScriptPointer(trainerScript))
+            gMultiplayerState.partnerHasBusyTrainer = FALSE;
+        else
+        {
+            StringCopy(gStringVar1, gMultiplayerState.partnerName);
+            return EventScript_TrainerBusyWithPartner;
+        }
     }
 
     if (InTrainerHill() == TRUE)
