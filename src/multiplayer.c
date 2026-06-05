@@ -1075,7 +1075,8 @@ void Multiplayer_SendStarterPick(void)
         gMultiplayerState.myStarterSpecies   = species;
         gMultiplayerState.starterResendTimer = 0;
     }
-    // Always write to ring; relay drains regardless of connState.
+    if (gMultiplayerState.connState == MP_STATE_DISCONNECTED)
+        return;
     MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
 }
 

@@ -178,7 +178,8 @@ static void TestGhostMapCheckSpawnsOnSameMap(void)
 {
     ResetAll();
     SetPlayerMap(0, 5);
-    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gMultiplayerState.connState      = MP_STATE_CONNECTED;
+    gMultiplayerState.gotPartnerGender = TRUE;
     Multiplayer_UpdateGhostPosition(0, 5, 3, 4, DIR_SOUTH);
     gTestNextSpawnSlot = 9;
     Multiplayer_Update();

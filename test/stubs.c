@@ -49,6 +49,11 @@ void RemoveObjectEvent(struct ObjectEvent *objectEvent)
         objectEvent->active = 0;
 }
 
+void RemoveObjectEventByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup)
+{
+    (void)localId; (void)mapNum; (void)mapGroup;
+}
+
 void MoveObjectEventToMapCoords(struct ObjectEvent *objectEvent, s16 x, s16 y)
 {
     if (objectEvent)
@@ -111,6 +116,27 @@ void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value)
     gTestLastRemoteVarId    = varId;
     gTestLastRemoteVarValue = value;
 }
+
+// FlagSet/FlagGet/FlagClear stubs — backed by the SaveBlock1 flags array.
+void FlagSet(u16 flagId)
+{
+    if (gSaveBlock1Ptr && flagId < 280 * 8)
+        gSaveBlock1Ptr->flags[flagId / 8] |= (1 << (flagId % 8));
+}
+bool8 FlagGet(u16 flagId)
+{
+    if (gSaveBlock1Ptr && flagId < 280 * 8)
+        return (gSaveBlock1Ptr->flags[flagId / 8] >> (flagId % 8)) & 1;
+    return FALSE;
+}
+void FlagClear(u16 flagId)
+{
+    if (gSaveBlock1Ptr && flagId < 280 * 8)
+        gSaveBlock1Ptr->flags[flagId / 8] &= ~(1 << (flagId % 8));
+}
+
+// TrySavingData stub — native tests don't exercise real save; just no-op.
+u8 TrySavingData(u8 saveType) { (void)saveType; return 0; }
 
 // VarGet/VarSet stub — backed by a small array indexed from TEMP_VARS_START.
 static u16 sVars[16];

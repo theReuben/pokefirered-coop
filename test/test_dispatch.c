@@ -81,10 +81,11 @@ static void TestPositionSameMapTriggersGhostSpawn(void)
     u8 i, len;
 
     ResetAll();
-    sTestSave.location.mapGroup = 0;
-    sTestSave.location.mapNum   = 5;
-    gMultiplayerState.connState = MP_STATE_CONNECTED;
-    gTestNextSpawnSlot          = 8;
+    sTestSave.location.mapGroup         = 0;
+    sTestSave.location.mapNum           = 5;
+    gMultiplayerState.connState         = MP_STATE_CONNECTED;
+    gMultiplayerState.gotPartnerGender  = TRUE;
+    gTestNextSpawnSlot                  = 8;
 
     len = Mp_EncodePosition(pkt, 0, 5, 4, 6, DIR_NORTH);
     for (i = 0; i < len; i++) Mp_Push(&gMpRecvRing, pkt[i]);

@@ -53,6 +53,15 @@ typedef u32 bool32;
 // Minimal item constants for multiplayer.c native build.
 #define ITEM_NONE 0
 
+// Minimal OamData stub — the real struct is GBA hardware-specific; tests never
+// read/write oam fields, so an opaque fixed-size placeholder is sufficient.
+struct OamData { u32 attr[2]; };
+
+// Starter ball hide-flags (FRLG values from include/constants/flags_frlg.h).
+#define FLAG_HIDE_BULBASAUR_BALL   0x028
+#define FLAG_HIDE_SQUIRTLE_BALL    0x029
+#define FLAG_HIDE_CHARMANDER_BALL  0x02A
+
 // Forward declarations for pointer-only uses in headers we'll include later.
 struct Sprite;
 struct SpriteTemplate;

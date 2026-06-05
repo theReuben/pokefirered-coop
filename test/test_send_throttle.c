@@ -56,7 +56,8 @@ static void TestPositionEmittedOnFourthFrame(void)
     Multiplayer_Update();
     Multiplayer_Update(); // 4th frame: SendPosition fires
 
-    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_POSITION);
+    // Position tick also sends a gender re-sync packet alongside position.
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)(MP_PKT_SIZE_POSITION + MP_PKT_SIZE_GENDER));
     Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, MP_PKT_POSITION);
     Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 0);   // mapGroup
     Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 1);   // mapNum
@@ -72,11 +73,11 @@ static void TestPositionRepeatsEveryFourFrames(void)
 
     SetUpConnectedPlayer();
     for (i = 0; i < 4; i++) Multiplayer_Update();
-    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_POSITION);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)(MP_PKT_SIZE_POSITION + MP_PKT_SIZE_GENDER));
     while (Mp_Pop(&gMpSendRing, &b)) {}
 
     for (i = 0; i < 4; i++) Multiplayer_Update();
-    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_POSITION);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)(MP_PKT_SIZE_POSITION + MP_PKT_SIZE_GENDER));
 }
 
 // ---- Suppression while disconnected ----------------------------------------

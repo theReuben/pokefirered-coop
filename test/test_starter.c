@@ -159,17 +159,18 @@ static void TestRivalStarterFallbackWhenPartnerUnknown(void)
 
 static void TestRivalStarterSlotMatchesSpecies(void)
 {
-    // Slot 0 = Bulbasaur, 1 = Charmander, 2 = Squirtle in canonical mapping.
+    // FRLG ball order (left to right): slot 0=Bulbasaur, 1=Squirtle, 2=Charmander.
+    // Matches events.inc positions x=8,9,10 and sCanonical[] in multiplayer.c.
     // GetRivalStarterSlot must return the index whose species == GetRivalStarterSpecies().
     ResetForStarterTest();
 
     VarSet(PLAYER_STARTER_SPECIES, SPECIES_BULBASAUR);
     gMultiplayerState.partnerStarterSpecies = SPECIES_CHARMANDER;
-    ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 2); // Squirtle is in slot 2
+    ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 1); // Squirtle is in slot 1
 
     VarSet(PLAYER_STARTER_SPECIES, SPECIES_BULBASAUR);
     gMultiplayerState.partnerStarterSpecies = SPECIES_SQUIRTLE;
-    ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 1); // Charmander is in slot 1
+    ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 2); // Charmander is in slot 2
 
     VarSet(PLAYER_STARTER_SPECIES, SPECIES_CHARMANDER);
     gMultiplayerState.partnerStarterSpecies = SPECIES_SQUIRTLE;
