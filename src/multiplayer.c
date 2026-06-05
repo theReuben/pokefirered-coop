@@ -13,7 +13,6 @@
 #include "battle_main.h"
 #include "party_menu.h"
 #include "overworld.h"
-#include "follower_npc.h"
 #include "save.h"
 #include "constants/vars.h"
 #include "constants/battle.h"
@@ -812,11 +811,11 @@ void Multiplayer_Update(void)
 
         // Broadcast follower graphics ID when it changes so partner can show
         // our follower Pokémon ghost.
-        if (gMultiplayerState.connState == MP_STATE_CONNECTED)
         {
             u16 curGfx = 0;
-            if (PlayerHasFollowerNPC())
-                curGfx = (u16)GetFollowerNPCData(FNPC_DATA_GFX_ID);
+            const struct ObjectEvent *follower = GetFollowerObject();
+            if (follower != NULL)
+                curGfx = follower->graphicsId;
             if (curGfx != gMultiplayerState.lastSentFollowerGfxId)
                 Multiplayer_SendFollowerGfx(curGfx);
         }
