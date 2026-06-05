@@ -43,15 +43,24 @@ DRIVER = REPO_ROOT / "test" / "lua" / "coop" / "_driver.lua"
 
 
 def find_mgba() -> str:
-    for binary in ("mgba-qt", "mgba"):
+    # Explicit override via environment variable (used by CI and local setups).
+    env_mgba = os.environ.get("MGBA", "")
+    if env_mgba and os.path.isfile(env_mgba) and os.access(env_mgba, os.X_OK):
+        return env_mgba
+    # Standard PATH names.
+    for binary in ("mgba-headless", "mgba-qt", "mgba"):
         path = shutil.which(binary)
         if path:
             return path
-    # macOS app bundle fallback
+    # CI headless build path (populated by the build-mgba workflow step).
+    ci_headless = "/tmp/mgba-build/mgba-headless"
+    if os.path.isfile(ci_headless) and os.access(ci_headless, os.X_OK):
+        return ci_headless
+    # macOS app bundle fallback.
     macos_bundle = "/Applications/mGBA.app/Contents/MacOS/mGBA"
     if os.path.isfile(macos_bundle) and os.access(macos_bundle, os.X_OK):
         return macos_bundle
-    sys.exit("error: mGBA not found (tried PATH and /Applications/mGBA.app)")
+    sys.exit("error: mGBA not found (tried PATH, /tmp/mgba-build, and /Applications/mGBA.app)")
 
 
 def find_xvfb() -> str | None:
