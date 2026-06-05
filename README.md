@@ -8,13 +8,16 @@ Two players explore Kanto simultaneously. You see each other on the map, beat tr
 
 ## Explore together
 
-Your partner appears as a real character on your screen. Watch them walk around, run into tall grass, and wander into a different town entirely.
+Your partner appears as a real character on your screen — sprite, follower Pokémon and all. Both players move freely and independently; you can be on completely different maps at the same time.
 
-<p align="center">
-  <img src="media/route1_ghost_walk.gif" alt="Both players on Route 1" width="480">
-</p>
+These two GIFs are captured simultaneously from each player's screen:
 
-Both players move independently — you can be on completely different maps at the same time. The ghost NPC appears and disappears as your partner enters or leaves your area.
+<table><tr>
+<td align="center"><b>Player 1's screen</b><br><img src="media/coop_walk_p1pov.gif" alt="Player 1 sees Player 2 ahead with their Bulbasaur" width="360"></td>
+<td align="center"><b>Player 2's screen</b><br><img src="media/coop_walk_p2pov.gif" alt="Player 2 sees Player 1 behind with their Bulbasaur" width="360"></td>
+</tr></table>
+
+P1 sees P2's ghost and follower Pokémon walking ahead. P2 sees P1's ghost and follower trailing behind. The ghost NPC appears and disappears in real time as your partner enters or leaves your area.
 
 ---
 
@@ -23,14 +26,14 @@ Both players move independently — you can be on completely different maps at t
 When both players approach a gym leader, the battle automatically becomes a **co-op double battle**. Each player brings their own Pokémon and controls their own side.
 
 <p align="center">
-  <img src="media/pewter_gym_battle_intro_3x.png" alt="Challenged by Leader Brock" width="480">
+  <img src="media/pewter_gym_facing_brock_3x.png" alt="Both players facing Brock in Pewter Gym" width="480">
 </p>
 
 <p align="center">
-  <img src="media/coop_double_battle_3x.png" alt="Co-op double battle vs Brock" width="480">
+  <img src="media/coop_double_battle_3x.png" alt="Co-op double battle: two Bulbasaurs vs Geodude and Onix" width="480">
 </p>
 
-Both players see the same battle, make their own move choices, and the turn doesn't resolve until both have selected. RNG is synchronised so the same damage rolls land on both screens.
+Both players' Pokémon fight on the same side. The turn doesn't resolve until both players have made their move selection. RNG is synchronised so damage rolls and crits are identical on both screens.
 
 ---
 
