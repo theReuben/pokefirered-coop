@@ -683,10 +683,10 @@ static void GhostMapCheck(void)
 
     if (sameMap)
     {
-        // Don't spawn until gender is known — avoids a 1-frame "opposite-of-self"
-        // wrong sprite before the partner's MP_PKT_GENDER has been processed.
-        if (gMultiplayerState.ghostObjectEventId >= OBJECT_EVENTS_COUNT
-            && gMultiplayerState.gotPartnerGender)
+        // Spawn immediately; Multiplayer_GhostGraphicsId() uses a fallback gender
+        // (opposite-of-self) until MP_PKT_GENDER arrives, so the ghost is always
+        // visible.  HandleRemoteGender despawns+respawns if the sprite needs to change.
+        if (gMultiplayerState.ghostObjectEventId >= OBJECT_EVENTS_COUNT)
         {
             Multiplayer_SpawnGhostNPC(
                 gMultiplayerState.partnerMapGroup,
@@ -795,6 +795,21 @@ void Multiplayer_Update(void)
 
     GhostMapCheck();
     GhostTick();
+
+    // While disconnected, periodically send a ping so the partner's ROM can
+    // auto-connect on first packet arrival without needing the relay to inject
+    // a bootstrap packet.  Without this, both ROMs stay DISCONNECTED forever
+    // because position/gender are only sent in the CONNECTED block below.
+    if (gMultiplayerState.connState == MP_STATE_DISCONNECTED)
+    {
+        gMultiplayerState.pingTimer++;
+        if (gMultiplayerState.pingTimer >= 120)
+        {
+            u8 pingByte = MP_PKT_PING;
+            gMultiplayerState.pingTimer = 0;
+            MpRing_Write(&gMpSendRing, &pingByte, MP_PKT_SIZE_PING);
+        }
+    }
 
     if (gMultiplayerState.connState == MP_STATE_CONNECTED)
     {

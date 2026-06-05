@@ -198,6 +198,12 @@ PalletTown_ProfessorOaksLab_Movement_OakBringDexesToDeskSouth::
 
 PalletTown_ProfessorOaksLab_ChooseStarterScene::
 	lockall
+	@ Guarantee Oak is at (6,11) regardless of whether OnTransition already ran
+	@ ReadyOakForStarterScene.  The guest's var sync can arrive after OnTransition,
+	@ leaving Oak stranded at (6,3) which causes the walk_up movement to fail.
+	call PalletTown_ProfessorOaksLab_EventScript_ReadyOakForStarterScene
+	removeobject LOCALID_OAKS_LAB_PROF_OAK
+	addobject LOCALID_OAKS_LAB_PROF_OAK
 	textcolor NPC_TEXT_COLOR_MALE
 	applymovement LOCALID_OAKS_LAB_PROF_OAK, PalletTown_ProfessorOaksLab_Movement_OakEnter
 	waitmovement 0
@@ -357,7 +363,7 @@ PalletTown_ProfessorOaksLab_EventScript_RivalCoopBattleSquirtle::
 	waitcoopparty
 	waitpartysync
 	docooptrainerbattle TRAINER_RIVAL_OAKS_LAB_SQUIRTLE
-	gotopostbattlescript
+	goto PalletTown_ProfessorOaksLab_EventScript_EndRivalBattle
 	end
 
 PalletTown_ProfessorOaksLab_Movement_RivalApproachForBattleSquirtleLeft::
@@ -419,7 +425,7 @@ PalletTown_ProfessorOaksLab_EventScript_RivalCoopBattleCharmander::
 	waitcoopparty
 	waitpartysync
 	docooptrainerbattle TRAINER_RIVAL_OAKS_LAB_CHARMANDER
-	gotopostbattlescript
+	goto PalletTown_ProfessorOaksLab_EventScript_EndRivalBattle
 	end
 
 PalletTown_ProfessorOaksLab_Movement_ApproachForBattleCharmanderLeft::
@@ -484,7 +490,7 @@ PalletTown_ProfessorOaksLab_EventScript_RivalCoopBattleBulbasaur::
 	waitcoopparty
 	waitpartysync
 	docooptrainerbattle TRAINER_RIVAL_OAKS_LAB_BULBASAUR
-	gotopostbattlescript
+	goto PalletTown_ProfessorOaksLab_EventScript_EndRivalBattle
 	end
 
 PalletTown_ProfessorOaksLab_Movement_RivalApproachForBattleBulbasaurLeft::
