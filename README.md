@@ -30,6 +30,10 @@ When both players approach a gym leader, the battle automatically becomes a **co
 </p>
 
 <p align="center">
+  <img src="media/coop_battle_intro_3x.png" alt="Battle intro: Red and Leaf challenge Brock together" width="480">
+</p>
+
+<p align="center">
   <img src="media/coop_double_battle_3x.png" alt="Co-op double battle: two Bulbasaurs vs Geodude and Onix" width="480">
 </p>
 
