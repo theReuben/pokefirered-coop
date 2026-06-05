@@ -351,26 +351,47 @@ For this mod, we intercept at a higher level. Instead of modifying the hardware 
 ### Building the ROM
 Follow the standard pokeemerald-expansion INSTALL.md. Ensure FRLG mode is enabled in the build config.
 
-### Testing Multiplayer Locally
-Run two instances of mGBA pointed at the built ROM. Use mGBA's built-in link cable networking to connect them locally for early testing before the Tauri app is ready.
+### Testing Multiplayer Locally (MCP tools — preferred)
 
-### Testing with Relay Server
+The project uses a headless mGBA MCP server (`tools/mcp_gamestate/server.py`) that lets Claude Code control two emulator instances directly. The relay between them runs automatically inside the server process.
+
+```bash
+# In Claude Code — add the MCP server:
+claude mcp add --scope project gamestate -- python3 tools/mcp_gamestate/server.py
+
+# Build save states (one-time, or after ROM rebuild):
+make build-states
+```
+
+Then use the MCP tools (`start_emulator`, `screenshot`, `press_button`, `wait`, `load_savestate`) to drive both instances. Prebuilt states live in `test/lua/states/`.
+
+### Testing with Relay Server (local PartyKit dev)
 ```bash
 cd relay-server/
-npx partykit dev    # local dev server
+npx partykit dev    # starts local relay at ws://localhost:1999
 ```
-Then point two Tauri app instances at `localhost:1999`.
+Then point two Tauri app instances at `localhost:1999` via the `COOP_RELAY_URL` env var.
 
 ## Phase Checklist
 
-- [ ] Phase 0: Get pokeemerald-expansion building in FRLG mode, verify clean ROM output
-- [ ] Phase 1: Ghost NPC — spawn P2 on same map, move from hardcoded test data
-- [ ] Phase 1.5: Co-op starter selection — Oak's lab script, `starter_pick`/`starter_taken` messages, rival gets unchosen third
-- [ ] Phase 2: Serial hook — get two mGBA instances exchanging position data through link cable
-- [ ] Phase 3: Flag sync — trainer/story flags propagate between instances
-- [ ] Phase 4: Randomizer — seeded encounter table shuffle with full national dex; `CoopSettings` save section; on by default
-- [ ] Phase 5: Boss readiness — gym leader scripts wait for both players, then start battle
-- [ ] Phase 6: Tauri app — bundle ROM + libmgba + WebSocket net adapter, host/join UI with randomizer toggle (on by default)
-- [ ] Phase 7: PartyKit deployment — deploy relay server, hardcode URL in app
-- [ ] Phase 5.5: Party selection — `waitcoopparty` command, party sync packet, partner party loaded for double battle
-- [ ] Phase 8: True co-op double battles — partner controller driven by network, turn sync via `MP_PKT_BATTLE_TURN`, RNG seed lockstep
+- [x] Phase 0: Get pokeemerald-expansion building in FRLG mode, verify clean ROM output
+- [x] Phase 1: Ghost NPC — spawn P2 on same map, move from position packets; follower Pokémon ghost included
+- [x] Phase 1.5: Co-op starter selection — Oak's lab script, `starter_pick`/`starter_taken` messages, rival gets unchosen third
+- [x] Phase 2: Serial hook — ring buffer IPC; relay in MCP server shuttles packets between mGBA instances
+- [x] Phase 3: Flag sync — trainer/story flags propagate between instances via `FlagSet`/`VarSet` hooks
+- [x] Phase 4: Randomizer — seeded encounter table shuffle with full national dex; `CoopSettings` save section; on by default
+- [x] Phase 5: Boss readiness — gym leader scripts wait for both players, then start co-op double battle
+- [x] Phase 5.5: Party selection — `waitcoopparty` command, party sync packet, partner party loaded for double battle
+- [x] Phase 8: True co-op double battles — partner controller driven by network, turn sync via `MP_PKT_BATTLE_TURN`, RNG seed lockstep; battle reconnect/grace timer
+- [ ] Phase 6: Tauri app — ROM + libmgba embedded, ring-buffer serial bridge (`serial_bridge.rs`), WebSocket net adapter, host/join UI built; **needs end-to-end integration test**
+- [ ] Phase 7: PartyKit deployment — relay server built (302 lines), URL hardcoded in app (`wss://pokefirered-coop.thereuben.partykit.dev`); **needs live deployment verification**
+
+### Post-launch / resilience (added beyond original spec)
+- [x] Heartbeat ping every 2s; relay detects silence and injects `PARTNER_DISCONNECTED`
+- [x] Process-death detection — side-channel inject file so disconnect lands even during long wait commands
+- [x] Ghost NPC despawns within ~0.5s of partner disconnect
+- [x] Host migration on disconnect mid-session
+- [x] Battle grace timer — AI fallback after 30s of partner silence mid-battle
+- [x] Auto-checkpoint save on every map transition while connected
+- [x] Event log replay on reconnect so partner catches up on missed flag/var events
+- [x] CI pipeline — ROM build, native unit tests, save-state smoke test, release packaging
