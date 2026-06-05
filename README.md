@@ -13,8 +13,8 @@ Your partner appears as a real character on your screen — sprite, follower Pok
 These two GIFs are captured simultaneously from each player's screen:
 
 <table><tr>
-<td align="center"><b>Player 1's screen</b><br><img src="media/coop_walk_p1pov.gif" alt="Player 1 sees Player 2 ahead with their Bulbasaur" width="360"></td>
-<td align="center"><b>Player 2's screen</b><br><img src="media/coop_walk_p2pov.gif" alt="Player 2 sees Player 1 behind with their Bulbasaur" width="360"></td>
+<td align="center"><b>Player 1's screen</b><br><img src="media/coop_walk_p1pov.gif" alt="Player 1 (Bulbasaur) sees Player 2 ahead with their Charmander" width="360"></td>
+<td align="center"><b>Player 2's screen</b><br><img src="media/coop_walk_p2pov.gif" alt="Player 2 (Charmander) sees Player 1 ahead with their Bulbasaur" width="360"></td>
 </tr></table>
 
 P1 sees P2's ghost and follower Pokémon walking ahead. P2 sees P1's ghost and follower trailing behind. The ghost NPC appears and disappears in real time as your partner enters or leaves your area.

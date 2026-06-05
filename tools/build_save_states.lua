@@ -869,6 +869,187 @@ walk(KEY_UP, 3)   -- (13,39) → (13,36): into tall grass band
 do local x,y = playerPos(); print(string.format("[states] route1 pre-save tile(%d,%d)", x-7, y-7)) end
 idle(30)
 saveState("tall_grass_route1.ss1")
+saveState("p1_route1.ss1")   -- same state, named for explicit p1 test use
+
+-- ── PHASE 8b: reload Oak's Lab → pick Charmander → Route 1 ──────────────────
+-- Reload oaks_lab.ss1 (player at tile(8,5), VAR_LAB=2, connState=0).
+-- Navigate RIGHT 2 → UP 1 to face Charmander ball at tile(10,4).
+-- Then follow the same pick/exit sequence as Phase 8.
+log("phase 8b: reload lab → pick charmander → p2_route1.ss1")
+
+do
+    local f = assert(io.open(STATES_DIR .. "oaks_lab.ss1", "rb"),
+                     "oaks_lab.ss1 not found — run phase 1-7 first")
+    local buf = f:read("*all")
+    f:close()
+    emu:loadStateBuffer(buf)
+end
+idle(60)
+
+do
+    local sb2 = emu:read32(ADDR_SB2_PTR)
+    if sb2 ~= 0 then
+        local opt = emu:read16(sb2 + 0x14)
+        emu:write16(sb2 + 0x14, (opt & 0xFFF8) | 2)
+        print("[states] text speed -> FAST")
+    end
+end
+
+-- Navigate to Charmander: RIGHT 2 from (8,5) → (10,5); UP 1 blocked by (10,4)
+walk(KEY_RIGHT, 2)
+walk(KEY_UP, 1)
+do local x,y = playerPos()
+   print(string.format("[states] at Charmander ball tile(%d,%d)", x-7, y-7)) end
+
+do
+    local lock0 = emu:read8(ADDR_FIELD_LOCK)
+    if lock0 == 1 then
+        print("[states] WARNING: stale lock — clearing")
+        emu:write8(ADDR_FIELD_LOCK, 0)
+    end
+end
+
+killYesNoTask()
+
+local charm_started = false
+for try = 1, 90 do
+    press(KEY_A, 3, 12)
+    if emu:read8(ADDR_FIELD_LOCK) == 1 then
+        print(string.format("[states] charmander ball lock at try=%d", try))
+        charm_started = true
+        break
+    end
+end
+if not charm_started then
+    error("[states] Charmander ball never triggered after 90 tries")
+end
+
+-- Wait for "Do you want CHARMANDER?" YESNO (ctx=1)
+do
+    local seen = false
+    for i = 1, 600 do
+        emu:setKeys(0); emu:runFrame()
+        if emu:read8(ADDR_SCRIPT_STATUS) == 1 then
+            seen = true
+            print(string.format("[states] charmander: YESNO at i=%d", i))
+            break
+        end
+        if i % 60 == 0 then press(KEY_A, 1, 3) end
+    end
+    if not seen then error("[states] Charmander YESNO never appeared") end
+end
+idle(10)
+press(KEY_A, 2, 5)   -- YES to "Do you want CHARMANDER?"
+
+-- Wait for nickname YESNO
+do
+    local seen = false
+    for i = 1, 500 do
+        emu:setKeys(0); emu:runFrame()
+        if emu:read8(ADDR_SCRIPT_STATUS) == 1 then
+            seen = true
+            print(string.format("[states] charmander: nickname YESNO at i=%d", i))
+            break
+        end
+        if i % 20 == 0 then press(KEY_A, 1, 3) end
+    end
+    if not seen then error("[states] charmander nickname YESNO never appeared") end
+end
+idle(10)
+press(KEY_B, 2, 5)   -- NO (no nickname)
+
+-- Wait for VAR_LAB=3 and lock=0
+do
+    local done = false
+    for i = 1, 700 do
+        emu:setKeys(0); emu:runFrame()
+        if readVar(LAB_OFF) == 3 and emu:read8(ADDR_FIELD_LOCK) == 0 then
+            print(string.format("[states] charmander: VAR_LAB=3 lock=0 at i=%d", i))
+            done = true
+            break
+        end
+        if i % 20 == 0 then press(KEY_A, 1, 3) end
+    end
+    if not done then
+        error("[states] Charmander pick failed: VAR_LAB never reached 3")
+    end
+end
+
+-- Bypass rival battle coord trigger
+do
+    local fptr = emu:read32(ADDR_SB1_PTR)
+    emu:write16(fptr + LAB_OFF, 4)
+    print("[states] rival battle bypassed: VAR_LAB set to 4")
+end
+
+idle(120)  -- extra wait for rival's pick animation to fully settle
+-- The rival walks to the Bulbasaur ball (tile ≈ 8-9, y=4-5) after the Charmander
+-- pick. Stepping DOWN 1 tile first clears that blocking row before going LEFT.
+do
+    local cx, cy = playerPos()
+    print(string.format("[states] charmander EXIT pre-walk tile(%d,%d)", cx-7, cy-7))
+end
+walk(KEY_DOWN, 1)   -- (10,5) → (10,6): below rival's ball row
+-- Now align to column 6 from the new y=6 row (rival can't block here)
+do
+    local cx, cy = playerPos()
+    local tx = cx - 7
+    print(string.format("[states] charmander after DOWN 1: tile(%d,%d)", tx, cy-7))
+    if tx > 6 then walk(KEY_LEFT, tx - 6)
+    elseif tx < 6 then walk(KEY_RIGHT, 6 - tx) end
+end
+do local x,y = playerPos()
+   print(string.format("[states] charmander at column 6: tile(%d,%d)", x-7, y-7)) end
+-- walkToMap handles A-spam for any exit dialogue
+walkToMap(KEY_DOWN, MAP.PALLET, "Pallet Town (charmander)", 18000)
+
+-- Pallet Town → Route 1 (same path as phase 9)
+idle(120)
+walk(KEY_LEFT, 4)   -- (16,14) → (12,14)
+idle(5)
+do
+    local reached = false
+    -- Phase A: hold UP until stopped by sign lady at y≈3 or until Route 1
+    for i = 1, 220 do
+        emu:setKeys(KEY_UP); emu:runFrame()
+        local g, n = readMap()
+        if g == MAP.ROUTE1.g and n == MAP.ROUTE1.n then
+            emu:setKeys(0); reached = true; break
+        end
+    end
+    emu:setKeys(0)
+    if not reached then
+        -- Phase B: step RIGHT 1 to bypass sign lady column
+        walk(KEY_RIGHT, 1)
+        idle(5)
+        -- Phase C: hold UP with A spam until Route 1
+        for i = 1, 600 do
+            emu:setKeys(KEY_UP); emu:runFrame()
+            local g, n = readMap()
+            if g == MAP.ROUTE1.g and n == MAP.ROUTE1.n then
+                emu:setKeys(0); reached = true; break
+            end
+            if i % 20 == 0 then emu:setKeys(KEY_A); emu:runFrame(); emu:setKeys(0) end
+        end
+        emu:setKeys(0)
+    end
+end
+waitForMap(MAP.ROUTE1, "Route 1 (charmander)", 3600, 15)
+
+idle(90)
+do
+    for i = 1, 300 do
+        local lock = emu:read8(ADDR_FIELD_LOCK)
+        local ctx  = emu:read8(ADDR_SCRIPT_STATUS)
+        if lock == 0 and ctx ~= 1 then break end
+        press(KEY_A, 2, 5)
+    end
+end
+walk(KEY_UP, 3)   -- into tall grass band
+idle(30)
+
+-- ── CHECKPOINT p2: p2_route1.ss1 ──────────────────────────────────────────────
+saveState("p2_route1.ss1")
 
 -- ── PHASE 10: Route 1 → Viridian → Forest → Pewter Gym ───────────────────────
 -- Disable encounter randomizer (gCoopSettings.randomizeEncounters = 0) so the
