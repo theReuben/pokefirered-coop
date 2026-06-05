@@ -63,6 +63,11 @@ def find_mgba() -> str:
     sys.exit("error: mGBA not found (tried PATH, /tmp/mgba-build, and /Applications/mGBA.app)")
 
 
+def needs_display(mgba: str) -> bool:
+    """Return False for headless mGBA builds — they don't need a virtual display."""
+    return "headless" not in os.path.basename(mgba).lower()
+
+
 def find_xvfb() -> str | None:
     """Returns xvfb-run path, or None on macOS/non-Linux where it isn't needed."""
     return shutil.which("xvfb-run")
@@ -98,10 +103,13 @@ def spawn_instance(
     )
     env["LUA_TEST_RESULTS"] = str(inst_dir / "result.txt")
 
-    log = open(inst_dir / "mgba.log", "w")
-    # -S loads a Lua script (mGBA 0.10+ Qt and SDL frontends).
-    # xvfb is None on macOS where a real display is always available.
-    if xvfb:
+    log_path = inst_dir / "mgba.log"
+    log = open(log_path, "w")
+    # Headless mGBA is built without SDL/Qt and needs no virtual display.
+    # Using xvfb-run with two simultaneous instances causes a display-number
+    # race under xvfb-run -a, making both processes fail immediately.
+    use_xvfb = xvfb and needs_display(mgba)
+    if use_xvfb:
         cmd = [xvfb, "-a", mgba, "-S", str(script), str(rom)]
     else:
         cmd = [mgba, "-S", str(script), str(rom)]
@@ -113,6 +121,23 @@ def spawn_instance(
         stderr=log,
         preexec_fn=os.setsid,
     )
+
+
+def dump_log(workdir: Path, instance_id: str, *, tail: int = 30) -> None:
+    """Print the last `tail` lines of an instance's mGBA log."""
+    log_path = workdir / instance_id / "mgba.log"
+    try:
+        lines = log_path.read_text().splitlines()
+    except OSError:
+        print(f"  [{instance_id}] (no log file)")
+        return
+    if not lines:
+        print(f"  [{instance_id}] (log is empty)")
+        return
+    snippet = lines[-tail:]
+    print(f"  [{instance_id}] --- last {len(snippet)} lines of mgba.log ---")
+    for line in snippet:
+        print(f"  [{instance_id}] {line}")
 
 
 def bridge_tick(workdir: Path) -> None:
@@ -208,17 +233,35 @@ def main() -> int:
             ))
 
         deadline = time.monotonic() + args.timeout
+        reported_early_exit: set[int] = set()
         while time.monotonic() < deadline:
             bridge_tick(workdir)
             if both_finished(workdir):
                 break
-            for p in procs:
+            all_dead = True
+            for p, inst in zip(procs, ("p1", "p2")):
                 if p.poll() is not None:
-                    print(f"  WARN: instance exited early (pid {p.pid}, "
-                          f"rc {p.returncode})")
+                    if p.pid not in reported_early_exit:
+                        reported_early_exit.add(p.pid)
+                        print(f"  WARN: {inst} exited early (pid {p.pid}, "
+                              f"rc {p.returncode})")
+                        dump_log(workdir, inst)
+                else:
+                    all_dead = False
+            # If every instance has already exited and no results appeared
+            # yet, give them a brief grace period then stop spinning.
+            if all_dead and not both_finished(workdir):
+                time.sleep(1.0)
+                bridge_tick(workdir)
+                if not both_finished(workdir):
+                    print("  all instances exited without writing results — aborting")
+                    break
             time.sleep(0.05)
         else:
             print(f"  TIMEOUT after {args.timeout}s")
+            for p, inst in zip(procs, ("p1", "p2")):
+                if not (workdir / inst / "result.txt").exists():
+                    dump_log(workdir, inst)
 
         # Drain one last time so any final outbox flush makes it across.
         bridge_tick(workdir)
