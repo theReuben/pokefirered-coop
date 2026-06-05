@@ -1,100 +1,78 @@
 # Pokémon FireRed Co-Op
 
-A networked 2-player co-op mod for Pokémon FireRed, built on pokeemerald-expansion. Both players explore Kanto simultaneously in a shared world — beating trainers, fighting gym leaders together, and catching randomized Pokémon from across all generations.
+Play Pokémon FireRed with a friend — together, in real time.
 
-## Building the ROM
+Two players explore Kanto simultaneously. You see each other on the map, beat trainers as a team, and fight gym leaders side-by-side in true co-op double battles. Wild Pokémon are randomized from the full national dex using a shared seed, so you're both discovering the same surprises.
 
-Requires devkitARM. See [INSTALL.md](INSTALL.md) for toolchain setup.
+---
 
-```bash
-make firered -j$(nproc)
-```
+## Explore together
 
-Output: `pokefirered.gba`. One expected linker warning about RWX ELF segments is normal.
+Your partner appears as a real character on your screen. Watch them walk around, run into tall grass, and wander into a different town entirely.
 
-## Status
+<p align="center">
+  <img src="media/route1_ghost_walk.gif" alt="Both players on Route 1" width="480">
+</p>
 
-All ROM-side features are complete and tested. The Tauri desktop app and PartyKit relay server are built and need end-to-end integration testing before release.
+Both players move independently — you can be on completely different maps at the same time. The ghost NPC appears and disappears as your partner enters or leaves your area.
 
-| Feature | Status |
+---
+
+## Fight gym leaders as a team
+
+When both players approach a gym leader, the battle automatically becomes a **co-op double battle**. Each player brings their own Pokémon and controls their own side.
+
+<p align="center">
+  <img src="media/pewter_gym_battle_intro_3x.png" alt="Challenged by Leader Brock" width="480">
+</p>
+
+<p align="center">
+  <img src="media/coop_double_battle_3x.png" alt="Co-op double battle vs Brock" width="480">
+</p>
+
+Both players see the same battle, make their own move choices, and the turn doesn't resolve until both have selected. RNG is synchronised so the same damage rolls land on both screens.
+
+---
+
+## Choose your starter together
+
+Both players pick from Oak's three starters in the same room. Once someone claims a Pokémon, it's locked — your partner can't pick the same one. The rival gets whichever starter neither of you chose.
+
+<p align="center">
+  <img src="media/oaks_lab_starter_selection_3x.png" alt="Both players in Oak's Lab choosing starters" width="480">
+</p>
+
+---
+
+## Features at a glance
+
+| | |
 |---|---|
-| Ghost NPC — see your partner on the map | ✅ |
-| Position sync (~4 updates/sec) | ✅ |
-| Follower Pokémon ghost | ✅ |
-| Co-op starter selection (Oak's lab) | ✅ |
-| Trainer / story flag sync | ✅ |
-| Randomized wild encounters (shared seed) | ✅ |
-| Boss readiness system (gym leaders wait for both) | ✅ |
-| Co-op double battles (turn sync, RNG lockstep) | ✅ |
-| Disconnect detection + ghost despawn (<0.5s) | ✅ |
-| Battle grace timer / reconnect | ✅ |
-| Auto-checkpoint save on map change | ✅ |
-| Tauri desktop app | 🔧 built, needs E2E test |
-| PartyKit relay deployment | 🔧 built, needs deployment |
+| 👥 Real-time ghost NPC | See your partner move around the map live |
+| 🎮 True co-op double battles | Both players fight gym leaders together |
+| 🎲 Shared randomized encounters | Full national dex, same seed for both players |
+| 🏆 Shared world state | Beat a trainer once — it counts for both |
+| ⚡ Disconnect recovery | Ghost despawns in <0.5s; reconnect and resume |
+| 💾 Auto-checkpoint saves | Saves on every map transition while connected |
 
-## Project Structure
+---
 
-```
-src/multiplayer.c              Core co-op logic (1700+ lines)
-include/multiplayer.h          Packet format, ring buffer API, state struct
-include/constants/multiplayer.h  Packet type constants
-src/event_data.c               FlagSet/VarSet hooks for flag sync
-data/maps/*/scripts.inc        Per-map event scripts (boss triggers, Oak's lab)
-src/scrcmd.c                   Script commands: waitbossstart, waitcoopparty, etc.
+## How to play
 
-tools/mcp_gamestate/           Headless mGBA MCP server for Claude Code testing
-  server.py                    MCP server — boots instances, relays packets
-  bridge.lua                   Lua script running inside mGBA (IPC bridge)
-test/lua/states/               Pre-built save states for automated testing
-  oaks_lab.ss1                 Outside Oak's lab, starters ready to pick
-  tall_grass_route1.ss1        Route 1 with both players present
-  pewter_gym.ss1               Pewter Gym ready for co-op boss battle
+1. One player clicks **Host** and shares the room code
+2. The other clicks **Join** and enters the code
+3. Both press New Game and head to Oak's lab
 
-relay-server/src/server.ts     PartyKit relay server (302 lines)
-tauri-app/src-tauri/           Rust backend: libmgba FFI, ring buffer bridge, WebSocket
-tauri-app/src/                 React frontend: host/join UI, game screen
-```
+No port-forwarding, no emulator setup, no technical knowledge required. Download the app and play.
 
-## Testing with Claude Code (MCP)
+---
 
-The project includes a headless mGBA MCP server that lets Claude Code drive two emulator instances and verify co-op behaviour automatically.
+## Technical details
 
-```bash
-# Add the MCP server once:
-claude mcp add --scope project gamestate -- python3 tools/mcp_gamestate/server.py
+<details>
+<summary>Architecture, building, and testing</summary>
 
-# Rebuild save states after any ROM change:
-make build-states
-```
-
-Available tools: `start_emulator`, `stop_emulator`, `screenshot`, `press_button`, `wait`, `load_savestate`. Instances `p1` and `p2` relay packets automatically.
-
-## Running the Relay Server Locally
-
-```bash
-cd relay-server/
-npm install
-npx partykit dev    # starts at ws://localhost:1999
-```
-
-Override the relay URL in the Tauri app:
-
-```bash
-COOP_RELAY_URL=ws://localhost:1999/parties/main cargo tauri dev
-```
-
-## Running the Tauri App
-
-```bash
-cd tauri-app/
-npm install
-cargo tauri dev     # development build with hot reload
-cargo tauri build   # release build
-```
-
-The production relay URL (`wss://pokefirered-coop.thereuben.partykit.dev`) is baked into release builds. Override with the `COOP_RELAY_URL` environment variable for staging.
-
-## Architecture
+### Architecture
 
 ```
 Player 1 (Tauri)                        Player 2 (Tauri)
@@ -112,27 +90,84 @@ Player 1 (Tauri)                        Player 2 (Tauri)
           (pokefirered-coop.thereuben.partykit.dev)
 ```
 
-The ROM uses two ring buffers in EWRAM (`gMpSendRing`, `gMpRecvRing`). The Tauri app's `serial_bridge.rs` polls these buffers at ~60fps via libmgba memory reads/writes and forwards raw bytes over WebSocket to the relay server, which fans them out to the partner.
+The ROM uses two ring buffers in EWRAM (`gMpSendRing`, `gMpRecvRing`). The Tauri app's `serial_bridge.rs` polls them at ~60fps via libmgba memory reads/writes and forwards raw bytes over WebSocket to the relay server, which fans them out to the partner.
 
-## Packet Reference
+### Building the ROM
 
-| Byte | Name | Description |
-|---|---|---|
-| `0x01` | POSITION | Map ID, tile X/Y, facing direction (every 4 frames) |
-| `0x02` | FLAG\_SET | Trainer/story flag set |
-| `0x03` | FLAG\_CLEAR | Flag cleared |
-| `0x04` | VAR\_SET | Script variable changed |
-| `0x08` | BOSS\_READY | Player at gym trigger, ready to fight |
-| `0x09` | BOSS\_CANCEL | Player walked away from trigger |
-| `0x0B` | PARTNER\_CONNECTED | Partner joined session |
-| `0x0C` | PARTNER\_DISCONNECTED | Partner left or timed out |
-| `0x0D` | FULL\_SYNC | Full flag/var dump sent on connect |
-| `0x10` | STARTER\_PICK | Player chose a starter species |
-| `0x11` | NAME | Player name (sent on connect) |
-| `0x12` | PARTY\_SYNC | Full party snapshot for double battle setup |
-| `0x13` | BATTLE\_TURN | Move slot + target selection |
-| `0x14` | FOLLOWER\_GFX | Lead follower Pokémon graphics ID |
-| `0x16` | PING | Heartbeat (every 2s, used for disconnect detection) |
-| `0x17` | HOST\_MIGRATE | Surviving player promoted to host on partner death |
+Requires devkitARM. See [INSTALL.md](INSTALL.md) for toolchain setup.
+
+```bash
+make firered -j$(nproc)
+```
+
+Output: `pokefirered.gba`.
+
+### Running the relay server locally
+
+```bash
+cd relay-server/
+npm install
+npx partykit dev    # starts at ws://localhost:1999
+```
+
+Override the relay URL in the Tauri app:
+
+```bash
+COOP_RELAY_URL=ws://localhost:1999/parties/main cargo tauri dev
+```
+
+### Running the Tauri app
+
+```bash
+cd tauri-app/
+npm install
+cargo tauri dev     # development build with hot reload
+cargo tauri build   # release build
+```
+
+### Testing with Claude Code (MCP)
+
+```bash
+claude mcp add --scope project gamestate -- python3 tools/mcp_gamestate/server.py
+make build-states
+```
+
+Available tools: `start_emulator`, `stop_emulator`, `screenshot`, `press_button`, `wait`, `load_savestate`. Instances `p1` and `p2` relay packets automatically.
+
+### Project structure
+
+```
+src/multiplayer.c              Core co-op logic (1700+ lines)
+include/multiplayer.h          Packet format, ring buffer API, state struct
+include/constants/multiplayer.h  Packet type constants
+src/event_data.c               FlagSet/VarSet hooks for flag sync
+data/maps/*/scripts.inc        Per-map event scripts (boss triggers, Oak's lab)
+
+tools/mcp_gamestate/           Headless mGBA MCP server for Claude Code testing
+test/lua/states/               Pre-built save states for automated testing
+
+relay-server/src/server.ts     PartyKit relay server (302 lines)
+tauri-app/src-tauri/           Rust backend: libmgba FFI, ring buffer bridge, WebSocket
+tauri-app/src/                 React frontend: host/join UI, game screen
+```
+
+### Status
+
+| Feature | Status |
+|---|---|
+| Ghost NPC + position sync | ✅ |
+| Follower Pokémon ghost | ✅ |
+| Co-op starter selection | ✅ |
+| Trainer / story flag sync | ✅ |
+| Randomized wild encounters (shared seed) | ✅ |
+| Boss readiness + co-op double battles | ✅ |
+| Turn sync + RNG lockstep | ✅ |
+| Disconnect detection + ghost despawn | ✅ |
+| Battle grace timer / reconnect | ✅ |
+| Auto-checkpoint save on map change | ✅ |
+| Tauri desktop app | 🔧 built, needs E2E test |
+| PartyKit relay deployment | 🔧 built, needs deployment |
 
 For full architecture and implementation guidelines see [CLAUDE.md](CLAUDE.md).
+
+</details>
