@@ -389,6 +389,86 @@ callbacks:add("frame", function()
         end
         write_resp({ok=true, addr=string.format("0x%08X", addr), values=out})
 
+    -- advance_text: press A every press_interval frames until the dialogue box closes.
+    -- Handles both printing-animation and waiting-for-input states.
+    -- cmd.max_frames (default 600), cmd.press_interval (default 30), cmd.max_presses (default 40)
+    -- resp: {ok, presses, result="closed"|"timeout"}
+    elseif c == "advance_text" then
+        local max_frames     = tonumber(cmd.max_frames)     or 600
+        local press_interval = tonumber(cmd.press_interval) or 30
+        local max_presses    = tonumber(cmd.max_presses)    or 40
+        local KEY_A = 0x001
+
+        local function is_box_open()
+            local open = false
+            if ADDR.sFirstTextPrinter then
+                open = open or (emu:read32(ADDR.sFirstTextPrinter) ~= 0)
+            end
+            if ADDR.sGlobalScriptContextStatus then
+                local status = emu:read8(ADDR.sGlobalScriptContextStatus)
+                local mode4  = emu:read8(ADDR.sGlobalScriptContextStatus + 4)
+                open = open or (status == 1) or (mode4 == 2)
+            end
+            return open
+        end
+
+        local presses    = 0
+        local frame_cnt  = 0
+        local last_press = -press_interval  -- allow press on frame 0
+
+        -- Wait up to 60 frames for the box to appear (handles slight script delay)
+        for _ = 1, 60 do
+            emu:runFrame(); frame_cnt = frame_cnt + 1
+            if is_box_open() then break end
+        end
+
+        while frame_cnt <= max_frames and presses <= max_presses do
+            if not is_box_open() then
+                write_resp({ok=true, presses=presses, result="closed"})
+                return
+            end
+            if frame_cnt - last_press >= press_interval then
+                emu:setKeys(KEY_A)
+                for _i = 1, 3 do emu:runFrame() end
+                emu:setKeys(0)
+                for _i = 1, 3 do emu:runFrame() end
+                frame_cnt = frame_cnt + 6; last_press = frame_cnt; presses = presses + 1
+            else
+                emu:runFrame(); frame_cnt = frame_cnt + 1
+            end
+        end
+        write_resp({ok=true, presses=presses, result="timeout"})
+
+    -- move_steps: move the player N tiles in cardinal directions.
+    -- cmd.sequence: string like "LEFT:3,DOWN:3" — comma-separated DIRECTION:COUNT pairs.
+    -- Timing: 16 frames hold + 8 frames release per tile step (standard walk speed).
+    -- resp: {ok, steps, x, y}  where x/y is player tile position after movement.
+    elseif c == "move_steps" then
+        local seq = cmd.sequence or ""
+        local DIR = {LEFT=0x020, RIGHT=0x010, UP=0x040, DOWN=0x080}
+        local total = 0
+
+        for dir, cnt_s in seq:upper():gmatch("(%a+):(%d+)") do
+            local mask  = DIR[dir]
+            local count = tonumber(cnt_s) or 0
+            if mask and count > 0 then
+                for _s = 1, count do
+                    emu:setKeys(mask)
+                    for _i = 1, 16 do emu:runFrame() end
+                    emu:setKeys(0)
+                    for _i = 1, 8  do emu:runFrame() end
+                    total = total + 1
+                end
+            end
+        end
+
+        local base = 0x020015bc  -- gObjectEvents[0]
+        local x = emu:read16(base + 0x10)
+        local y = emu:read16(base + 0x12)
+        if x >= 0x8000 then x = x - 0x10000 end
+        if y >= 0x8000 then y = y - 0x10000 end
+        write_resp({ok=true, steps=total, x=x, y=y})
+
     -- read_u16: read a 16-bit value from an absolute address.
     -- cmd.addr (hex string or integer) → resp.value (integer)
     elseif c == "read_u16" then

@@ -643,6 +643,73 @@ def save_savestate(path: str, instance_id: str = "p1") -> str:
     return f"Saved state to '{p}' ({r.get('size', '?')} bytes)."
 
 
+# ── Tool: advance_text ───────────────────────────────────────────────────
+
+@mcp.tool()
+def advance_text(
+    instance_id: str = "p1",
+    max_frames: int = 600,
+    press_interval: int = 30,
+    max_presses: int = 40,
+) -> str:
+    """Advance through dialogue by pressing A until the text box closes.
+
+    More efficient than repeated press_button(A) + get_text_state calls —
+    the entire sequence runs inside the emulator in one round-trip.
+
+    Use this whenever you need to dismiss overworld dialogue, NPC text,
+    or any message box.  Call once; it returns when the box is gone.
+
+    Args:
+        instance_id:    Which instance to control ('p1' or 'p2').
+        max_frames:     Give up after this many frames (default 600 = ~10s).
+        press_interval: Press A every N frames while box is open (default 30).
+        max_presses:    Hard cap on A presses before giving up (default 40).
+    """
+    inst = _inst(instance_id)
+    timeout = max_frames / 60.0 + 15
+    r = inst.send_locked({
+        "cmd": "advance_text",
+        "max_frames": max_frames,
+        "press_interval": press_interval,
+        "max_presses": max_presses,
+    }, timeout=timeout)
+    if not r.get("ok"):
+        return f"advance_text failed: {r.get('error', 'unknown')}"
+    result  = r.get("result", "?")
+    presses = r.get("presses", 0)
+    return f"{instance_id}: text box {result} after {presses} A-presses"
+
+
+# ── Tool: move_steps ──────────────────────────────────────────────────────
+
+@mcp.tool()
+def move_steps(sequence: str, instance_id: str = "p1") -> str:
+    """Move the player a fixed number of tiles in each direction.
+
+    Executes the entire movement atomically in one round-trip, saving many
+    press_button + wait calls.
+
+    sequence format: comma-separated "DIRECTION:COUNT" pairs (case-insensitive).
+    Example: "LEFT:3,DOWN:3" moves 3 tiles left then 3 tiles down.
+    Valid directions: LEFT, RIGHT, UP, DOWN.
+
+    Args:
+        sequence:    Movement sequence, e.g. 'LEFT:3,DOWN:3'.
+        instance_id: Which instance to control ('p1' or 'p2').
+    """
+    import re as _re
+    total_steps = sum(int(n) for n in _re.findall(r':(\d+)', sequence))
+    timeout = total_steps * (16 + 8) / 60.0 + 10
+    inst = _inst(instance_id)
+    r = inst.send_locked({"cmd": "move_steps", "sequence": sequence.upper()},
+                         timeout=max(timeout, CMD_TIMEOUT))
+    if not r.get("ok"):
+        return f"move_steps failed: {r.get('error', 'unknown')}"
+    return (f"{instance_id}: moved {r.get('steps', '?')} steps "
+            f"→ tile ({r.get('x', '?')}, {r.get('y', '?')})")
+
+
 # ── Tool: read_memory ────────────────────────────────────────────────────
 
 def _resolve_addr(inst: "Instance", address: str) -> int:
