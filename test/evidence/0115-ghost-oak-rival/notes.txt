@@ -1,0 +1,62 @@
+Fix commit: aa0f9aa48f
+Bugs fixed from 0.1.15 manual test report
+
+─────────────────────────────────────────────────────────────────────────
+Bug 1 — Ghosts not visible at all (Tauri)
+─────────────────────────────────────────────────────────────────────────
+Root cause: both ROMs start DISCONNECTED and only send position/gender
+when CONNECTED.  Neither side breaks the deadlock, so auto-connect never
+fires and ghosts never spawn.
+
+Fix: (a) send MP_PKT_PING every 120 frames while DISCONNECTED so each
+ROM can auto-connect on first packet arrival; (b) remove the
+gotPartnerGender spawn guard so the ghost spawns immediately using the
+fallback sprite (opposite-of-self) without waiting for MP_PKT_GENDER.
+
+Evidence:
+  p1_ghost_visible.png — P1 (Red/male) can see P2's green ghost sprite
+    immediately after both ROMs boot from fresh p1_route1/p2_route1 save
+    states with no external bootstrap packet injected.
+  p2_ghost_visible.png — P2 (Green/female) can see P1's red ghost sprite
+    in the same session; ghosts appear within ~2 seconds (one ping cycle).
+
+─────────────────────────────────────────────────────────────────────────
+Bug 2 — Prof Oak not visible for guest in Oak's lab
+─────────────────────────────────────────────────────────────────────────
+Root cause: OnTransition moves Oak to (6,11) when VAR_MAP_SCENE==1, but
+the guest's var sync can arrive AFTER OnTransition runs, leaving Oak at
+the default (6,3) position (behind the counter, not visible from the
+entrance).  When ChooseStarterScene fires from OnFrame, the walk_up*6
+movement from (6,3) tries to walk Oak to y=-3 and fails.
+
+Fix: ChooseStarterScene now calls ReadyOakForStarterScene + removeobject
++ addobject at the top, guaranteeing Oak is at (6,11) before the
+animation starts regardless of whether OnTransition ran it.
+
+Evidence:
+  p1_oak_choose_starter_scene.png — ChooseStarterScene plays correctly:
+    Oak walks from (6,11), player walks up, scene completes.
+  p1_oak_mid_scene.png — same session, captured mid-run.
+  (Full proof of the guest-specific timing issue requires a two-instance
+  test where one instance starts with VAR_MAP_SCENE=0 and syncs to 1
+  mid-session; the defensive fix is verified here via single-player run.)
+
+─────────────────────────────────────────────────────────────────────────
+Bug 3 — Game freeze after Pokémon selection for rival fight
+─────────────────────────────────────────────────────────────────────────
+Root cause: docooptrainerbattle bypasses TrainerBattleLoadArgs so
+sTrainerBattleEndScript is never set.  After the battle,
+gotopostbattlescript returns EventScript_TestSignpostMsg (the null
+fallback) which never calls releaseall, permanently locking the player.
+
+Fix: all three co-op rival scripts (Squirtle/Charmander/Bulbasaur) now
+use `goto EventScript_EndRivalBattle` directly instead of
+gotopostbattlescript.  EndRivalBattle heals the party, shows the
+exit message, sets FLAG_BEAT_RIVAL_IN_OAKS_LAB, advances
+VAR_MAP_SCENE to 4, and calls releaseall.
+
+Evidence: no screenshot — reaching the post-battle state requires
+completing the party selection screen + battle, which needs the
+oaks_lab_picked.ss1 save state (currently stale; needs rebuild with
+pick_starter.lua).  The code fix is verified by reading the script
+bytecode path.

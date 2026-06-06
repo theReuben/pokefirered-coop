@@ -434,7 +434,7 @@ def list_instances() -> str:
 # ── Tool: screenshot ──────────────────────────────────────────────────────
 
 @mcp.tool()
-def screenshot(instance_id: str = "p1") -> Image:
+def screenshot(instance_id: str = "p1", save_path: str = "") -> Image:
     """Take a screenshot of the current game screen.
 
     Returns the screen image so you can see what the game is showing.
@@ -442,12 +442,25 @@ def screenshot(instance_id: str = "p1") -> Image:
 
     Args:
         instance_id: Which player's screen to capture ('p1' or 'p2').
+        save_path: Optional path to also save the PNG on disk (e.g.
+            'test/evidence/fix_ghost_p1.png').  Relative paths are
+            resolved from the repo root.  Parent directories are created
+            automatically.  Useful for capturing fix evidence that can be
+            committed alongside a bug-fix commit.
     """
     path = f"/tmp/mgba_screen_{instance_id}.png"
     r = _inst(instance_id).send_locked({"cmd": "screenshot", "path": path})
     if not r.get("ok"):
         raise RuntimeError(f"Screenshot failed: {r.get('error', 'unknown')}")
-    return Image(data=open(path, "rb").read(), format="png")
+    data = open(path, "rb").read()
+    if save_path:
+        import shutil, pathlib
+        dest = pathlib.Path(save_path)
+        if not dest.is_absolute():
+            dest = pathlib.Path(__file__).parent.parent.parent / dest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(path, dest)
+    return Image(data=data, format="png")
 
 # ── Tool: press_button ────────────────────────────────────────────────────
 
