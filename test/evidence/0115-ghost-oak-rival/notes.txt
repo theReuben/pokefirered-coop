@@ -55,8 +55,13 @@ gotopostbattlescript.  EndRivalBattle heals the party, shows the
 exit message, sets FLAG_BEAT_RIVAL_IN_OAKS_LAB, advances
 VAR_MAP_SCENE to 4, and calls releaseall.
 
-Evidence: no screenshot — reaching the post-battle state requires
-completing the party selection screen + battle, which needs the
-oaks_lab_picked.ss1 save state (currently stale; needs rebuild with
-pick_starter.lua).  The code fix is verified by reading the script
-bytecode path.
+Evidence:
+  rival_post_battle.png — Both P1 and RIVAL sprites visible in Oak's lab
+    overworld; dialogue box open with rival's exit line "Aaaaaaa: Okay!
+    I'll make my POKÉMON battle to toughen it up!" confirming that
+    EventScript_EndRivalBattle ran to completion (get_text_state returned
+    box_open=True, no freeze).  Captured in a live two-instance co-op
+    session: oaks_lab_picked.ss1 was rebuilt with pick_starter.lua
+    (VAR_MAP_SCENE=3), both P1 and P2 triggered the rival battle at tile
+    (5,8), fought through to completion, and arrived here without the
+    permanent lock that the pre-fix gotopostbattlescript path caused.

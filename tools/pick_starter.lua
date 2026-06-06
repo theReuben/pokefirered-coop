@@ -20,15 +20,17 @@ local mm = assert(loadfile(mm_path), "[pick] Cannot load " .. mm_path)()
 local ADDR_SCRIPT_STATUS = mm.sGlobalScriptContextStatus
 local ADDR_FIELD_LOCK    = mm.sLockFieldControls
 
--- gSaveblock1 is the EWRAM struct (not the pointer).  Using it directly avoids
--- IWRAM-layout drift when loading a save state built with a different ROM version.
--- vars[0] at ptr+0x1390; VAR_MAP_SCENE_OAKS_LAB at (0x4055-0x3638)*2 = 0x143A from vars[0].
-local ADDR_VAR_LAB = mm.gSaveblock1 + 0x1390 + 0x143A
+-- VarGet disassembly: ptr + (id - 0x3638) * 2  (constant 0xffffc9c8 = -0x3638).
+-- For VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB = 0x4055:
+--   offset = (0x4055 - 0x3638) * 2 = 0xA1D * 2 = 0x143A
+-- Must dereference gSaveBlock1Ptr at runtime — the save system loads SaveBlock1 at a
+-- different EWRAM address than the static symbol gSaveblock1.
+local VAR_LAB_OFFSET = 0x143A
 
 local function readVar()
-    local ptr = emu:read32(ADDR_SB1_PTR)
+    local ptr = emu:read32(mm.gSaveBlock1Ptr)
     if ptr == 0 then return 0 end
-    return emu:read16(ptr + LAB_OFF)
+    return emu:read16(ptr + VAR_LAB_OFFSET)
 end
 
 local total_frames = 0
