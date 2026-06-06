@@ -287,7 +287,7 @@ static void PlayerPartnerHandleChooseAction(enum BattlerId battler)
     {
         // In co-op, battler 1 always fights — move selection is synced via network.
         // Switching on KO is handled by PlayerPartnerHandleChoosePokemon (AI fallback).
-        BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, 0);
+        BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_USE_MOVE, 0);
         BtlController_Complete(battler);
         return;
     }

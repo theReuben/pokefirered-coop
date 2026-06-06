@@ -372,6 +372,23 @@ callbacks:add("frame", function()
     elseif c == "ping" then
         write_resp({ok=true, msg="pong"})
 
+    -- read_range: read N consecutive values (u8/u16/u32) starting at addr.
+    -- cmd.addr (hex or int), cmd.count (int, max 256), cmd.width (8|16|32)
+    -- resp.values: array of hex strings (no "0x" prefix)
+    elseif c == "read_range" then
+        local addr  = tonumber(cmd.addr) or tonumber(tostring(cmd.addr), 16) or 0
+        local n     = math.min(tonumber(cmd.count) or 1, 256)
+        local width = tonumber(cmd.width) or 32
+        local out   = {}
+        if width == 8 then
+            for i = 0, n-1 do out[#out+1] = string.format("%02X", emu:read8(addr + i)) end
+        elseif width == 16 then
+            for i = 0, n-1 do out[#out+1] = string.format("%04X", emu:read16(addr + i*2)) end
+        else
+            for i = 0, n-1 do out[#out+1] = string.format("%08X", emu:read32(addr + i*4)) end
+        end
+        write_resp({ok=true, addr=string.format("0x%08X", addr), values=out})
+
     -- read_u16: read a 16-bit value from an absolute address.
     -- cmd.addr (hex string or integer) → resp.value (integer)
     elseif c == "read_u16" then

@@ -643,6 +643,193 @@ def save_savestate(path: str, instance_id: str = "p1") -> str:
     return f"Saved state to '{p}' ({r.get('size', '?')} bytes)."
 
 
+# ── Tool: read_memory ────────────────────────────────────────────────────
+
+def _resolve_addr(inst: "Instance", address: str) -> int:
+    """Resolve a symbol name or hex/decimal string to an integer address."""
+    # Try numeric first (handles "0x..." and plain integers)
+    try:
+        return int(address, 0)
+    except ValueError:
+        pass
+    # Try symbol lookup from memory_map.lua
+    addr = inst.addrs.get(address)
+    if addr is not None:
+        return addr
+    raise ValueError(
+        f"Unknown address '{address}'. Use a hex address (e.g. '0x03002558') "
+        f"or a symbol from memory_map.lua (e.g. 'gBattlerControllerFuncs'). "
+        f"Known symbols: {', '.join(sorted(inst.addrs))}"
+    )
+
+
+@mcp.tool()
+def read_memory(
+    address: str,
+    instance_id: str = "p1",
+    count: int = 1,
+    width: int = 32,
+) -> str:
+    """Read raw GBA memory and return hex values.
+
+    address can be a symbol name from memory_map.lua (e.g. 'gBattlerControllerFuncs')
+    or a hex address string (e.g. '0x03002558').
+
+    Args:
+        address:     Symbol name or hex address.
+        instance_id: Which instance to read from ('p1' or 'p2').
+        count:       Number of values to read (default 1, max 256).
+        width:       Bits per value: 8, 16, or 32 (default 32).
+    """
+    inst = _inst(instance_id)
+    addr = _resolve_addr(inst, address)
+    r = inst.send_locked({"cmd": "read_range", "addr": addr, "count": count, "width": width})
+    if not r.get("ok"):
+        return f"read_memory failed: {r.get('error', 'unknown')}"
+    values = r.get("values", [])
+    stride = width // 8
+    lines = []
+    for i, v in enumerate(values):
+        lines.append(f"  [{i}] 0x{addr + i*stride:08X} = 0x{v}")
+    return f"{address} (width={width}):\n" + "\n".join(lines)
+
+
+# ── Tool: battle_diag ─────────────────────────────────────────────────────
+
+# Thumb function addresses as stored in controller tables (address | 1).
+# Built once from memory_map.lua data; refreshed when start_emulator is called.
+_FUNC_NAMES: dict[int, str] = {}
+
+def _build_func_table(addrs: dict[str, int]) -> dict[int, str]:
+    """Map Thumb function pointer values → human-readable names."""
+    table: dict[int, str] = {}
+    func_symbols = [
+        "HandleChooseMoveAfterDma3",
+        "HandleInputChooseMove",
+        "SetControllerToPlayer",
+        "SetControllerToPlayerPartner",
+        "SetControllerToOpponent",
+        "PlayerHandleChooseMove",
+        "BeginBattleIntro",
+    ]
+    for sym in func_symbols:
+        if sym in addrs:
+            raw = addrs[sym]
+            table[raw] = sym          # plain address
+            table[raw | 1] = sym      # Thumb bit set (how GBA stores it)
+    return table
+
+
+@mcp.tool()
+def battle_diag(instance_id: str = "p1") -> str:
+    """One-shot battle state diagnostic — replaces screenshot-based inference.
+
+    Reads controller function pointers, battle state machine status,
+    and key multiplayer flags directly from GBA memory. Use this whenever
+    the battle appears frozen or behaves unexpectedly.
+
+    Args:
+        instance_id: Which instance to inspect ('p1' or 'p2').
+    """
+    inst = _inst(instance_id)
+    addrs = inst.addrs
+    func_names = _build_func_table(addrs)
+
+    def read32(sym_or_addr, offset=0):
+        base = _resolve_addr(inst, str(sym_or_addr)) if isinstance(sym_or_addr, str) else sym_or_addr
+        r = inst.send_locked({"cmd": "read_range", "addr": base + offset, "count": 1, "width": 32})
+        return int(r.get("values", ["0"])[0], 16) if r.get("ok") else None
+
+    def read8(sym_or_addr, offset=0):
+        base = _resolve_addr(inst, str(sym_or_addr)) if isinstance(sym_or_addr, str) else sym_or_addr
+        r = inst.send_locked({"cmd": "read_range", "addr": base + offset, "count": 1, "width": 8})
+        return int(r.get("values", ["0"])[0], 16) if r.get("ok") else None
+
+    def read_arr8(sym_or_addr, count, offset=0):
+        base = _resolve_addr(inst, str(sym_or_addr)) if isinstance(sym_or_addr, str) else sym_or_addr
+        r = inst.send_locked({"cmd": "read_range", "addr": base + offset, "count": count, "width": 8})
+        return [int(v, 16) for v in r.get("values", [])] if r.get("ok") else []
+
+    def read_arr32(sym_or_addr, count, offset=0):
+        base = _resolve_addr(inst, str(sym_or_addr)) if isinstance(sym_or_addr, str) else sym_or_addr
+        r = inst.send_locked({"cmd": "read_range", "addr": base + offset, "count": count, "width": 32})
+        return [int(v, 16) for v in r.get("values", [])] if r.get("ok") else []
+
+    def fname(ptr):
+        name = func_names.get(ptr, "")
+        return f"0x{ptr:08X} ({name})" if name else f"0x{ptr:08X} (?)"
+
+    lines = [f"=== battle_diag [{instance_id}] ==="]
+
+    # ── gBattlersCount / gBattleTypeFlags ────────────────────────────────
+    if "gBattlersCount" in addrs:
+        bc = read8("gBattlersCount")
+        lines.append(f"gBattlersCount      = {bc}")
+    if "gBattleTypeFlags" in addrs:
+        bf = read32("gBattleTypeFlags")
+        if bf is not None:
+            MULTI   = bf & (1 << 4)
+            DOUBLE  = bf & (1 << 8)
+            LINK    = bf & (1 << 1)
+            INGAME  = bf & (1 << 17)
+            COOP    = bf & (1 << 30) if bf else 0
+            lines.append(f"gBattleTypeFlags    = 0x{bf:08X}  "
+                         f"(MULTI={'Y' if MULTI else 'N'} DOUBLE={'Y' if DOUBLE else 'N'} "
+                         f"LINK={'Y' if LINK else 'N'} INGAME_PARTNER={'Y' if INGAME else 'N'})")
+
+    # ── gBattleMainFunc ──────────────────────────────────────────────────
+    if "gBattleMainFunc" in addrs:
+        mf = read32("gBattleMainFunc")
+        lines.append(f"gBattleMainFunc     = {fname(mf) if mf is not None else '?'}")
+
+    # ── gBattlerControllerFuncs[0..3] ────────────────────────────────────
+    if "gBattlerControllerFuncs" in addrs:
+        ctrl = read_arr32("gBattlerControllerFuncs", 4)
+        lines.append("gBattlerControllerFuncs:")
+        roles = ["player_left", "opponent_left", "player_right", "opponent_right"]
+        for i, (ptr, role) in enumerate(zip(ctrl, roles)):
+            lines.append(f"  [battler {i} / {role}] = {fname(ptr)}")
+
+    # ── gAbsentBattlerFlags / gBattlerPositions ──────────────────────────
+    if "gAbsentBattlerFlags" in addrs:
+        ab = read8("gAbsentBattlerFlags")
+        lines.append(f"gAbsentBattlerFlags = 0b{ab:04b}  "
+                     f"(battlers absent: {[i for i in range(4) if ab is not None and ab & (1<<i)]})")
+    if "gBattlerPositions" in addrs:
+        pos = read_arr8("gBattlerPositions", 4)
+        pos_names = ["player_left","opponent_left","player_right","opponent_right"]
+        lines.append(f"gBattlerPositions   = {[pos_names[p] if p < 4 else p for p in pos]}")
+
+    # ── gBattleCommunication ─────────────────────────────────────────────
+    if "gBattleCommunication" in addrs:
+        bc_arr = read_arr8("gBattleCommunication", 8)
+        STATE_NAMES = {0:"TURN_START", 1:"BEFORE_ACTION", 2:"WAIT_ACTION",
+                       3:"SELECTION_SCRIPT", 4:"CONFIRMED_STANDBY", 5:"CONFIRMED"}
+        decoded = [STATE_NAMES.get(v, str(v)) for v in bc_arr]
+        lines.append(f"gBattleCommunication= {decoded}")
+
+    # ── gMultiplayerState key fields ─────────────────────────────────────
+    if "gMultiplayerState" in addrs:
+        mp_base = addrs["gMultiplayerState"]
+        # Struct offsets (see include/multiplayer.h + PLAYER_NAME_LENGTH=7)
+        offsets = {
+            "connState":              1,
+            "partnerPartySelectDone": 31,
+            "battleTurnReceived":     38,
+            "battleTurnSent":         42,
+            "battleGraceTimer_lo":    52,  # u16 — read low byte
+        }
+        mp_vals = {k: read8(mp_base, off) for k, off in offsets.items()}
+        CONN = {0: "DISCONNECTED", 1: "CONNECTED", 2: "CONNECTING"}
+        lines.append("gMultiplayerState:")
+        lines.append(f"  connState             = {CONN.get(mp_vals['connState'], mp_vals['connState'])}")
+        lines.append(f"  partnerPartySelectDone= {bool(mp_vals['partnerPartySelectDone'])}")
+        lines.append(f"  battleTurnReceived    = {bool(mp_vals['battleTurnReceived'])}")
+        lines.append(f"  battleTurnSent        = {bool(mp_vals['battleTurnSent'])}")
+
+    return "\n".join(lines)
+
+
 # ── Cleanup ───────────────────────────────────────────────────────────────
 
 import atexit

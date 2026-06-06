@@ -45,6 +45,25 @@ WANTED_PATTERNS = [
     # task system
     r"^gTasks$",                    # task array base (IWRAM); stride 0x28, NUM_TASKS=16
     r"^Task_HandleYesNoInput$",     # script YESNO handler task; stale copy can block YESNO
+    # battle system debug
+    r"^gBattlerControllerFuncs$",   # [4] function pointers — one per battler
+    r"^gBattleMainFunc$",           # current battle-engine state-machine function pointer
+    r"^gBattleCommunication$",      # [8] per-battler action-selection state
+    r"^gBattlersCount$",            # number of active battlers (2 single, 4 double)
+    r"^gBattleStruct$",             # pointer to heap-allocated battle struct
+    r"^gBattlerPositions$",         # [4] battler→position mapping
+    r"^gAbsentBattlerFlags$",       # bitmask of absent (fainted/empty) battler slots
+    r"^gBattleTypeFlags$",          # active BATTLE_TYPE_* flags
+    r"^gChosenActionByBattler$",    # [4] committed action per battler
+    r"^gBattlerPartyIndexes$",      # [4] party index each battler uses
+    # key controller functions (ROM — for decoding gBattlerControllerFuncs values)
+    r"^HandleChooseMoveAfterDma3$", # waiting for DMA3 BG copy to finish before accepting input
+    r"^HandleInputChooseMove$",     # player move-selection input handler
+    r"^SetControllerToPlayer$",     # initialiser — transitions to PlayerHandleAction
+    r"^SetControllerToPlayerPartner$",  # initialiser — transitions to PlayerPartnerHandleAction
+    r"^SetControllerToOpponent$",   # initialiser — transitions to OpponentHandleAction
+    r"^PlayerHandleChooseMove$",    # entry: sets up move UI then → HandleChooseMoveAfterDma3
+    r"^BeginBattleIntro$",          # first function run by gBattleMainFunc at battle start
 ]
 
 _WANTED_RE = [re.compile(p) for p in WANTED_PATTERNS]
