@@ -434,7 +434,7 @@ def list_instances() -> str:
 # ── Tool: screenshot ──────────────────────────────────────────────────────
 
 @mcp.tool()
-def screenshot(instance_id: str = "p1", save_path: str = "") -> Image:
+def screenshot(instance_id: str = "p1", save_path: str = "", claim: str = "") -> Image:
     """Take a screenshot of the current game screen.
 
     Returns the screen image so you can see what the game is showing.
@@ -445,8 +445,10 @@ def screenshot(instance_id: str = "p1", save_path: str = "") -> Image:
         save_path: Optional path to also save the PNG on disk (e.g.
             'test/evidence/fix_ghost_p1.png').  Relative paths are
             resolved from the repo root.  Parent directories are created
-            automatically.  Useful for capturing fix evidence that can be
-            committed alongside a bug-fix commit.
+            automatically.  When provided, a JSON sidecar is also written
+            alongside the PNG capturing text-box state at capture time.
+        claim: One-sentence description of what this screenshot proves.
+            Written into the JSON sidecar for use by verify-evidence.
     """
     path = f"/tmp/mgba_screen_{instance_id}.png"
     r = _inst(instance_id).send_locked({"cmd": "screenshot", "path": path})
@@ -454,12 +456,24 @@ def screenshot(instance_id: str = "p1", save_path: str = "") -> Image:
         raise RuntimeError(f"Screenshot failed: {r.get('error', 'unknown')}")
     data = open(path, "rb").read()
     if save_path:
-        import shutil, pathlib
+        import shutil, pathlib, json, datetime
         dest = pathlib.Path(save_path)
         if not dest.is_absolute():
             dest = pathlib.Path(__file__).parent.parent.parent / dest
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(path, dest)
+        tr = _inst(instance_id).send_locked({"cmd": "get_text"})
+        sidecar = {
+            "instance_id": instance_id,
+            "captured_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "claim": claim,
+            "box_open": tr.get("box_open", False),
+            "printing": tr.get("printing", False),
+            "waiting_for_input": tr.get("waiting_for_input", False),
+            "in_native_script": tr.get("in_native_script", False),
+            "text": tr.get("text", "").strip(),
+        }
+        dest.with_suffix(".json").write_text(json.dumps(sidecar, indent=2))
     return Image(data=data, format="png")
 
 # ── Tool: press_button ────────────────────────────────────────────────────
