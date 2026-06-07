@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "gamestate": {
-      "command": "python",
+      "command": "C:\\Users\\reube\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
       "args": ["tools/mcp_gamestate/server.py"],
       "env": {
         "MGBA": "C:\\msys64\\tmp\\mgba-build\\mgba-headless.exe"
