@@ -456,7 +456,7 @@ def screenshot(instance_id: str = "p1", save_path: str = "", claim: str = "") ->
         claim: One-sentence description of what this screenshot proves.
             Written into the JSON sidecar for use by verify-evidence.
     """
-    path = f"/tmp/mgba_screen_{instance_id}.png"
+    path = os.path.join(_get_work_dir(), f"mgba_screen_{instance_id}.png")
     r = _inst(instance_id).send_locked({"cmd": "screenshot", "path": path})
     if not r.get("ok"):
         raise RuntimeError(f"Screenshot failed: {r.get('error', 'unknown')}")

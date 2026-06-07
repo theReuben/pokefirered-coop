@@ -151,7 +151,8 @@ callbacks:add("frame", function()
         rec_frames = rec_frames + 1
         if rec_frames % rec_interval == 0 then
             rec_count = rec_count + 1
-            local path = string.format("%s/%06d.png", rec_dir, rec_count)
+            local sep = (rec_dir:find("\\") and "\\" or "/")
+            local path = string.format("%s%s%06d.png", rec_dir, sep, rec_count)
             pcall(function() emu:screenshot(path) end)
         end
     end
