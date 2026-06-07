@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Edit",
+      "Write",
+      "Read",
+      "mcp__gamestate__screenshot",
+      "mcp__gamestate__read_memory",
+      "mcp__gamestate__list_instances",
+      "mcp__gamestate__game_state",
+      "mcp__gamestate__get_text_state",
+      "mcp__gamestate__wait",
+      "mcp__gamestate__start_emulator",
+      "mcp__gamestate__stop_emulator",
+      "mcp__gamestate__press_button",
+      "mcp__gamestate__load_savestate",
+      "mcp__gamestate__save_savestate",
+      "mcp__gamestate__advance_text",
+      "mcp__gamestate__move_steps",
+      "mcp__gamestate__battle_diag",
+      "mcp__gamestate__write_memory",
+      "mcp__gamestate__run_frames"
+    ]
+  }
+}

@@ -26,6 +26,14 @@ local function json_encode_val(v)
     if t == "number"  then return string.format("%d", v) end
     if t == "boolean" then return tostring(v) end
     if t == "table"   then
+        -- Encode as JSON array if table is a sequence (keys 1..n with no gaps).
+        local n = #v
+        if n > 0 then
+            local parts = {}
+            for i = 1, n do parts[i] = json_encode_val(v[i]) end
+            return "[" .. table.concat(parts, ",") .. "]"
+        end
+        -- Empty table or non-sequence: encode as object.
         local parts = {}
         for k, val in pairs(v) do
             parts[#parts+1] = string.format('"%s":%s', k, json_encode_val(val))
@@ -482,12 +490,26 @@ callbacks:add("frame", function()
         local v = emu:read32(addr)
         write_resp({ok=true, addr=string.format("0x%08X", addr), value=v})
 
+    -- write_u8: write an 8-bit value to an absolute address.
+    elseif c == "write_u8" then
+        local addr = tonumber(cmd.addr) or tonumber(tostring(cmd.addr), 16) or 0
+        local v    = tonumber(cmd.value) or 0
+        emu:write8(addr, v & 0xFF)
+        write_resp({ok=true, addr=string.format("0x%08X", addr), value=v})
+
     -- write_u16: write a 16-bit value to an absolute address.
     -- cmd.addr (hex string or integer), cmd.value (integer) → resp.ok
     elseif c == "write_u16" then
         local addr = tonumber(cmd.addr) or tonumber(tostring(cmd.addr), 16) or 0
         local v    = tonumber(cmd.value) or 0
         emu:write16(addr, v)
+        write_resp({ok=true, addr=string.format("0x%08X", addr), value=v})
+
+    -- write_u32: write a 32-bit value to an absolute address.
+    elseif c == "write_u32" then
+        local addr = tonumber(cmd.addr) or tonumber(tostring(cmd.addr), 16) or 0
+        local v    = tonumber(cmd.value) or 0
+        emu:write32(addr, v)
         write_resp({ok=true, addr=string.format("0x%08X", addr), value=v})
 
     -- read_player_pos: read player tile X/Y from gObjectEvents[0].

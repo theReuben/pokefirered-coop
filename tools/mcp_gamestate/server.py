@@ -187,7 +187,9 @@ _host_instance: str = "p1"
 
 # Silence threshold: if an instance hasn't sent bytes in this many seconds,
 # consider it disconnected and notify the partner.
-_HEARTBEAT_TIMEOUT = 6.0
+# 60s gives party-selection menus (which pause Multiplayer_Update) enough
+# runway without triggering false-positive disconnects.
+_HEARTBEAT_TIMEOUT = 60.0
 
 
 def _relay_loop() -> None:
@@ -230,6 +232,9 @@ def _relay_loop() -> None:
             # per session so each ROM auto-sets connState = MP_STATE_CONNECTED
             # without requiring an in-game handshake packet.
             if not _connected_pair:
+                # Flush any stale pending-inject bytes left over from a
+                # previous session before delivering the connect event.
+                _pending_inject.clear()
                 p1.inject_bytes("0B")
                 p2.inject_bytes("0B")
                 _connected_pair = True
@@ -759,6 +764,35 @@ def read_memory(
     for i, v in enumerate(values):
         lines.append(f"  [{i}] 0x{addr + i*stride:08X} = 0x{v}")
     return f"{address} (width={width}):\n" + "\n".join(lines)
+
+
+@mcp.tool()
+def write_memory(
+    address: str,
+    value: int,
+    instance_id: str = "p1",
+    width: int = 32,
+) -> str:
+    """Write a value to a GBA memory address.
+
+    address can be a symbol name from memory_map.lua or a hex string (e.g. '0x0300157C').
+
+    Args:
+        address:     Symbol name or hex address.
+        value:       Integer value to write.
+        instance_id: Which instance to write to ('p1' or 'p2').
+        width:       Bits: 8, 16, or 32 (default 32).
+    """
+    inst = _inst(instance_id)
+    addr = _resolve_addr(inst, address)
+    cmd_map = {8: "write_u8", 16: "write_u16", 32: "write_u32"}
+    cmd = cmd_map.get(width)
+    if cmd is None:
+        return "write_memory: width must be 8, 16, or 32"
+    r = inst.send_locked({"cmd": cmd, "addr": addr, "value": value})
+    if not r.get("ok"):
+        return f"write_memory failed: {r.get('error', 'unknown')}"
+    return f"wrote 0x{value:X} to {address} (0x{addr:08X}) width={width}"
 
 
 # ── Tool: battle_diag ─────────────────────────────────────────────────────

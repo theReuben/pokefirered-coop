@@ -462,7 +462,19 @@ static bool8 ProcessOneRecvPacket(void)
             u8 hi = 0, lo = 0, s;
             Mp_Pop(&gMpRecvRing, &hi);
             Mp_Pop(&gMpRecvRing, &lo);
-            gMultiplayerState.partnerStarterSpecies = ((u16)hi << 8) | lo;
+            {
+                u16 received = ((u16)hi << 8) | lo;
+                // Validate: only store if species matches one of the three
+                // valid starters.  Rejects stale/corrupt packets.
+                for (s = 0; s < 3; s++)
+                {
+                    if (Multiplayer_GetRandomizedStarter(s) == received)
+                    {
+                        gMultiplayerState.partnerStarterSpecies = received;
+                        break;
+                    }
+                }
+            }
             // Hide whichever ball the partner took — both persistently (flag) and
             // immediately on the current map (object event removal).
             for (s = 0; s < 3; s++)
@@ -796,6 +808,16 @@ void Multiplayer_Update(void)
     GhostMapCheck();
     GhostTick();
 
+    // Auto-recover myStarterSpecies from VAR_STARTER_MON when it's been cleared
+    // (e.g., save-state reload after Multiplayer_Init zeroed the field).
+    // VAR_STARTER_MON lives in the save block and survives reloads.
+    if (gMultiplayerState.myStarterSpecies == 0)
+    {
+        u16 slot = VarGet(VAR_STARTER_MON);
+        if (slot <= 2)
+            gMultiplayerState.myStarterSpecies = Multiplayer_GetRandomizedStarter(slot);
+    }
+
     // While disconnected, periodically send a ping so the partner's ROM can
     // auto-connect on first packet arrival without needing the relay to inject
     // a bootstrap packet.  Without this, both ROMs stay DISCONNECTED forever
@@ -825,6 +847,22 @@ void Multiplayer_Update(void)
             u8 pingByte = MP_PKT_PING;
             gMultiplayerState.pingTimer = 0;
             MpRing_Write(&gMpSendRing, &pingByte, MP_PKT_SIZE_PING);
+        }
+
+        // Background starter-pick resend: guarantees partner sees our starter even
+        // when the save state was created after waitstarterpick already completed.
+        if (gMultiplayerState.partnerStarterSpecies == 0
+            && gMultiplayerState.myStarterSpecies != 0)
+        {
+            if (++gMultiplayerState.starterResendTimer >= 60)
+            {
+                u8 pkt[MP_PKT_SIZE_STARTER_PICK];
+                gMultiplayerState.starterResendTimer = 0;
+                pkt[0] = MP_PKT_STARTER_PICK;
+                pkt[1] = (u8)(gMultiplayerState.myStarterSpecies >> 8);
+                pkt[2] = (u8)(gMultiplayerState.myStarterSpecies);
+                MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
+            }
         }
 
         // Auto-checkpoint: save on map change so progress isn't lost on disconnect.
@@ -1150,7 +1188,9 @@ void Multiplayer_SendStarterPick(void)
 
 u16 Multiplayer_GetRivalStarterSpecies(void)
 {
-    u16 mine    = VarGet(VAR_TEMP_2); // PLAYER_STARTER_SPECIES
+    // Use myStarterSpecies (set at pick time) not VAR_TEMP_2: the RivalBattleTrigger
+    // scripts overwrite VAR_TEMP_2 with ball position (1/2/3) before this is called.
+    u16 mine    = gMultiplayerState.myStarterSpecies;
     u16 partner = gMultiplayerState.partnerStarterSpecies;
     u8 i;
     for (i = 0; i < 3; i++)
