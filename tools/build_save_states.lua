@@ -72,8 +72,12 @@ local SB1_LOC_NUM   = 5
 
 -- ── Player position (EWRAM gObjectEvents[0].currentCoords) ───────────────────
 -- ObjectEvent size=0x24; currentCoords at +0x10 (x:s16, y:s16).
-local ADDR_OBJ0_X = 0x020015bc + 0x10
-local ADDR_OBJ0_Y = 0x020015bc + 0x12
+-- Address is loaded from memory_map.lua (auto-generated from the linker map) so
+-- it stays correct after ROM rebuilds.  Falls back to the historical default if
+-- the symbol is absent (pre-gObjectEvents memory_map versions).
+local _OBJ0_BASE = (_mem.gObjectEvents or 0x020015bc)
+local ADDR_OBJ0_X = _OBJ0_BASE + 0x10
+local ADDR_OBJ0_Y = _OBJ0_BASE + 0x12
 local TASK_STRIDE = 0x28  -- sizeof(struct Task)
 
 -- ── Paths ─────────────────────────────────────────────────────────────────────
@@ -997,25 +1001,42 @@ do
 end
 
 idle(120)  -- extra wait for rival's pick animation to fully settle
--- The rival walks to the Bulbasaur ball (tile ≈ 8-9, y=4-5) after the Charmander
--- pick. Stepping DOWN 1 tile first clears that blocking row before going LEFT.
+-- Player is at tile(10,5) after picking Charmander.  Don't rely on playerPos()
+-- for lateral alignment — gObjectEvents is hardcoded and may be stale after a
+-- ROM rebuild.  Use fixed tile counts instead: LEFT 4 reaches column 6, which
+-- is the clear exit corridor.  Then hold DOWN until the warp fires.
+-- Use continuous hold (same as Phase 8 exit) — walkToMap's step/A-spam cycle
+-- gets stuck when the rival's animation sets field lock repeatedly.
+print("[states] charmander EXIT: LEFT 4 then continuous DOWN hold until warp fires")
+walk(KEY_LEFT, 4)   -- tile(10,5) → tile(6,5): clear of rival and ball table
+idle(5)
 do
-    local cx, cy = playerPos()
-    print(string.format("[states] charmander EXIT pre-walk tile(%d,%d)", cx-7, cy-7))
+    local fired = false
+    for i = 1, 600 do
+        emu:setKeys(KEY_DOWN)
+        emu:runFrame()
+        local g, n = readMap()
+        if g == MAP.PALLET.g and n == MAP.PALLET.n then
+            print(string.format("[states] charmander EXIT warp fired at hold-frame %d", i))
+            emu:setKeys(0)
+            fired = true
+            break
+        end
+        if i % 30 == 0 then
+            local lk = emu:read8(ADDR_FIELD_LOCK)
+            local ct = emu:read8(ADDR_SCRIPT_STATUS)
+            print(string.format("[states] charmander EXIT hold i=%d lock=%d ctx=%d", i, lk, ct))
+        end
+    end
+    if not fired then
+        emu:setKeys(0)
+        print("[states] charmander EXIT: warp did not fire in 600 frames")
+        print("[states] p2_route1.ss1 skipped (Charmander script leaves player movement-locked)")
+        -- Fall through to Phase 10 which reloads p1_route1.ss1 anyway.
+        goto phase10
+    end
 end
-walk(KEY_DOWN, 1)   -- (10,5) → (10,6): below rival's ball row
--- Now align to column 6 from the new y=6 row (rival can't block here)
-do
-    local cx, cy = playerPos()
-    local tx = cx - 7
-    print(string.format("[states] charmander after DOWN 1: tile(%d,%d)", tx, cy-7))
-    if tx > 6 then walk(KEY_LEFT, tx - 6)
-    elseif tx < 6 then walk(KEY_RIGHT, 6 - tx) end
-end
-do local x,y = playerPos()
-   print(string.format("[states] charmander at column 6: tile(%d,%d)", x-7, y-7)) end
--- walkToMap handles A-spam for any exit dialogue
-walkToMap(KEY_DOWN, MAP.PALLET, "Pallet Town (charmander)", 18000)
+waitForMap(MAP.PALLET, "Pallet Town (charmander)", 3600, 15)
 
 -- Pallet Town → Route 1 (same path as phase 9)
 idle(120)
@@ -1065,11 +1086,22 @@ idle(30)
 -- ── CHECKPOINT p2: p2_route1.ss1 ──────────────────────────────────────────────
 saveState("p2_route1.ss1")
 
+::phase10::
 -- ── PHASE 10: Route 1 → Viridian → Forest → Pewter Gym ───────────────────────
--- Disable encounter randomizer (gCoopSettings.randomizeEncounters = 0) so the
--- starter doesn't get wiped by a high-level randomized Pokémon and black out.
--- Also inject a Super Repel (VAR_REPEL_STEP_COUNT = 9999) to suppress encounters.
+-- Reload p1_route1.ss1 so Phase 10 is always independent of Phase 8b (the
+-- Charmander exit may have failed, leaving the emulator in Oak's Lab).
 log("phase 10: to pewter gym")
+do
+    local f = io.open(STATES_DIR .. "p1_route1.ss1", "rb")
+    if f then
+        local buf = f:read("*all"); f:close()
+        emu:loadStateBuffer(buf)
+        idle(60)
+        print("[states] Phase 10: reloaded p1_route1.ss1")
+    else
+        print("[states] Phase 10: p1_route1.ss1 not found — continuing from current state")
+    end
+end
 if ADDR_COOP_SETTINGS and ADDR_COOP_SETTINGS ~= 0 then
     emu:write8(ADDR_COOP_SETTINGS, 0)   -- randomizeEncounters = OFF
     log("encounter randomizer disabled for navigation")

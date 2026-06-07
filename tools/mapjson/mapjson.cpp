@@ -916,6 +916,40 @@ void process_layouts(string layouts_filepath, string output_asm, string output_c
 }
 
 int main(int argc, char *argv[]) {
+    // Expand @file response-file arguments.
+    // Any argument of the form @path is replaced by the newline-separated
+    // contents of that file.  This lets callers avoid Windows command-line
+    // length limits (32 767 chars) when passing hundreds of map file paths.
+    vector<string> resp_storage;
+    vector<char *> resp_argv;
+    {
+        bool has_at = false;
+        for (int i = 0; i < argc; i++)
+            if (argv[i][0] == '@') { has_at = true; break; }
+        if (has_at) {
+            resp_argv.push_back(argv[0]);
+            for (int i = 1; i < argc; i++) {
+                if (argv[i][0] != '@') {
+                    resp_argv.push_back(argv[i]);
+                } else {
+                    ifstream resp(argv[i] + 1);
+                    if (!resp.is_open())
+                        FATAL_ERROR("Cannot open response file: %s\n", argv[i] + 1);
+                    string line;
+                    while (getline(resp, line)) {
+                        if (!line.empty() && line.back() == '\r') line.pop_back();
+                        if (!line.empty()) {
+                            resp_storage.push_back(line);
+                            resp_argv.push_back(const_cast<char *>(resp_storage.back().c_str()));
+                        }
+                    }
+                }
+            }
+            argc = (int)resp_argv.size();
+            argv = resp_argv.data();
+        }
+    }
+
     if (argc < 3)
         FATAL_ERROR("USAGE: mapjson <mode> <game-version> [options]\n");
 
