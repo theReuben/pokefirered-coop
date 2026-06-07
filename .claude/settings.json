@@ -20,7 +20,11 @@
       "mcp__gamestate__move_steps",
       "mcp__gamestate__battle_diag",
       "mcp__gamestate__write_memory",
-      "mcp__gamestate__run_frames"
+      "mcp__gamestate__run_frames",
+      "mcp__gamestate__check_battle_sync",
+      "mcp__gamestate__start_recording",
+      "mcp__gamestate__stop_recording",
+      "mcp__gamestate__stop_recording_side_by_side"
     ]
   }
 }

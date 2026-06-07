@@ -1,10 +1,10 @@
 {
   "mcpServers": {
     "gamestate": {
-      "command": "python3",
+      "command": "python",
       "args": ["tools/mcp_gamestate/server.py"],
       "env": {
-        "MGBA": "/tmp/mgba-build/mgba-headless"
+        "MGBA": "C:\\msys64\\tmp\\mgba-build\\mgba-headless.exe"
       }
     }
   }
