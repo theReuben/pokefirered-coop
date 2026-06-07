@@ -17,9 +17,10 @@
 #include "constants/multiplayer.h"
 #include <string.h>
 
-// VAR_TEMP_2 holds the local player's chosen starter species; the
-// PalletTown_ProfessorOaksLab script writes it via setvar before calling
-// Multiplayer_SendStarterPick.
+// VAR_TEMP_2 holds the local player's chosen starter species when the picker
+// script calls Multiplayer_SendStarterPick.  The rival trigger then overwrites
+// it with a ball position (1/2/3), so Multiplayer_GetRivalStarterSpecies reads
+// gMultiplayerState.myStarterSpecies instead.
 #define PLAYER_STARTER_SPECIES VAR_TEMP_2
 
 // Multiplayer_Update calls GhostMapCheck which dereferences gSaveBlock1Ptr,
@@ -37,6 +38,7 @@ static void ResetForStarterTest(void)
     // hardware where Init runs once at boot). Reset it manually so test
     // ordering can't leak state between cases.
     gMultiplayerState.partnerStarterSpecies = 0;
+    gMultiplayerState.myStarterSpecies      = 0;
     gCoopSettings.encounterSeed       = 0; // canonical starters
     gCoopSettings.randomizeEncounters = 1; // randomization toggle is on but seed=0
     VarSet(PLAYER_STARTER_SPECIES, 0);
@@ -115,7 +117,7 @@ static void TestRivalStarterUnchosenAllPermutations(void)
     ResetForStarterTest();
 
     // Player picks Bulbasaur, partner picks Charmander → rival = Squirtle
-    VarSet(PLAYER_STARTER_SPECIES, SPECIES_BULBASAUR);
+    gMultiplayerState.myStarterSpecies      = SPECIES_BULBASAUR;
     gMultiplayerState.partnerStarterSpecies = SPECIES_CHARMANDER;
     ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_SQUIRTLE);
 
@@ -124,7 +126,7 @@ static void TestRivalStarterUnchosenAllPermutations(void)
     ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_CHARMANDER);
 
     // Player picks Charmander, partner picks Bulbasaur → rival = Squirtle
-    VarSet(PLAYER_STARTER_SPECIES, SPECIES_CHARMANDER);
+    gMultiplayerState.myStarterSpecies      = SPECIES_CHARMANDER;
     gMultiplayerState.partnerStarterSpecies = SPECIES_BULBASAUR;
     ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_SQUIRTLE);
 
@@ -133,7 +135,7 @@ static void TestRivalStarterUnchosenAllPermutations(void)
     ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_BULBASAUR);
 
     // Player picks Squirtle, partner picks Bulbasaur → rival = Charmander
-    VarSet(PLAYER_STARTER_SPECIES, SPECIES_SQUIRTLE);
+    gMultiplayerState.myStarterSpecies      = SPECIES_SQUIRTLE;
     gMultiplayerState.partnerStarterSpecies = SPECIES_BULBASAUR;
     ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_CHARMANDER);
 
@@ -149,7 +151,7 @@ static void TestRivalStarterFallbackWhenPartnerUnknown(void)
     // same species as the player.
     u16 rival;
     ResetForStarterTest();
-    VarSet(PLAYER_STARTER_SPECIES, SPECIES_BULBASAUR);
+    gMultiplayerState.myStarterSpecies      = SPECIES_BULBASAUR;
     gMultiplayerState.partnerStarterSpecies = 0;
 
     rival = Multiplayer_GetRivalStarterSpecies();
@@ -164,15 +166,15 @@ static void TestRivalStarterSlotMatchesSpecies(void)
     // GetRivalStarterSlot must return the index whose species == GetRivalStarterSpecies().
     ResetForStarterTest();
 
-    VarSet(PLAYER_STARTER_SPECIES, SPECIES_BULBASAUR);
+    gMultiplayerState.myStarterSpecies      = SPECIES_BULBASAUR;
     gMultiplayerState.partnerStarterSpecies = SPECIES_CHARMANDER;
     ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 1); // Squirtle is in slot 1
 
-    VarSet(PLAYER_STARTER_SPECIES, SPECIES_BULBASAUR);
+    gMultiplayerState.myStarterSpecies      = SPECIES_BULBASAUR;
     gMultiplayerState.partnerStarterSpecies = SPECIES_SQUIRTLE;
     ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 2); // Charmander is in slot 2
 
-    VarSet(PLAYER_STARTER_SPECIES, SPECIES_CHARMANDER);
+    gMultiplayerState.myStarterSpecies      = SPECIES_CHARMANDER;
     gMultiplayerState.partnerStarterSpecies = SPECIES_SQUIRTLE;
     ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 0); // Bulbasaur is in slot 0
 }
