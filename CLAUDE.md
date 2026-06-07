@@ -363,7 +363,48 @@ claude mcp add --scope project gamestate -- python3 tools/mcp_gamestate/server.p
 make build-states
 ```
 
-Then use the MCP tools (`start_emulator`, `screenshot`, `press_button`, `wait`, `load_savestate`) to drive both instances. Prebuilt states live in `test/lua/states/`.
+MCP tools available: `start_emulator`, `stop_emulator`, `list_instances`, `screenshot`, `press_button`, `wait`, `load_savestate`, `save_savestate`, `advance_text`, `move_steps`, `get_text_state`, `read_memory`, `write_memory`, `battle_diag`, `check_battle_sync`, `start_recording`, `stop_recording`, `stop_recording_side_by_side`.
+
+#### Save state catalogue — always load DIFFERENT states for p1 and p2
+
+Loading the same `.ss1` file for both instances causes conflicts: both instances share the same trainer ID and save data, so save-data-dependent logic (starter selection, flag state) immediately diverges in unexpected ways. Use role-specific states from this table:
+
+| State file | Who | Game state |
+|---|---|---|
+| `oaks_lab.ss1` | P1 | At Bulbasaur ball; VAR_LAB=2; no starter picked yet |
+| `p2_oaks_lab.ss1` | P2 | At Charmander ball; VAR_LAB=2; no starter picked yet |
+| `p1_rivals_lab.ss1` | P1 | Bulbasaur in party; VAR_LAB=3; rival battle coord trigger live |
+| `p2_rivals_lab.ss1` | P2 | Charmander in party; VAR_LAB=3; rival battle coord trigger live |
+| `p1_route1.ss1` | P1 | Bulbasaur; Route 1 entry |
+| `p2_route1.ss1` | P2 | Charmander; Route 1 entry |
+| `tall_grass_route1.ss1` | either | Route 1 tall grass (single-player use only) |
+| `pewter_gym.ss1` | either | Pewter Gym, Brock visible (single-player use only) |
+
+For the co-op rival battle specifically: start p1 with `p1_rivals_lab.ss1` and p2 with `p2_rivals_lab.ss1`. Both states have `connState=0` so the relay will inject `PARTNER_CONNECTED` automatically.
+
+#### Sync check protocol — fail fast on desync
+
+Run `check_battle_sync()` immediately after a co-op battle starts (as soon as the battle intro animation is underway). **If it returns `FAIL`, stop the test run immediately** — do not advance the game further or take more screenshots. Report the full `check_battle_sync()` output plus both instances' `battle_diag()` outputs.
+
+Desync red flags — stop testing if any of these are observed:
+- `gBattleTypeFlags` or `gBattlersCount` differ between p1 and p2
+- One instance is in battle while the other is on the overworld
+- Both in battle but `check_battle_sync()` says FAIL (different opponents, different controllers)
+- `gBattleCommunication` diverges and stays diverged for more than ~120 frames
+
+#### Recording test runs
+
+Start recording on both instances before navigating, then `stop_recording_side_by_side` at the end. The output MP4 shows P1 (left) and P2 (right) side-by-side, making visual desyncs obvious at a glance. Requires `ffmpeg` on PATH.
+
+```python
+# Typical dual-instance test session with recording:
+start_recording("p1")
+start_recording("p2")
+# ... load states, drive inputs, run check_battle_sync() after battle starts ...
+stop_recording_side_by_side("test/recordings/rival_battle_run1.mp4")
+```
+
+Use `stop_recording(instance_id)` instead if you only need a single-instance video.
 
 ### Testing with Relay Server (local PartyKit dev)
 ```bash

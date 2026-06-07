@@ -730,6 +730,11 @@ end
 print(string.format("[states] P8 done: lock=%d ctx=%d VAR_LAB=%d",
       emu:read8(ADDR_FIELD_LOCK), emu:read8(ADDR_SCRIPT_STATUS), readVar(LAB_OFF)))
 
+-- ── CHECKPOINT 1b: p1_rivals_lab.ss1 ─────────────────────────────────────────
+-- P1 has Bulbasaur; VAR_LAB=3; rival battle coord trigger at tile(7,8) is live.
+-- MCP relay injects PARTNER_CONNECTED on boot; test navigates both to tile(7,8).
+saveState("p1_rivals_lab.ss1")
+
 -- Bump VAR_LAB to 4 so the rival-battle coord trigger at (7,8) (fires ==3) is skipped.
 do
     local fptr = emu:read32(ADDR_SB1_PTR)
@@ -901,6 +906,11 @@ walk(KEY_UP, 1)
 do local x,y = playerPos()
    print(string.format("[states] at Charmander ball tile(%d,%d)", x-7, y-7)) end
 
+-- ── CHECKPOINT p2_oaks_lab.ss1 ───────────────────────────────────────────────
+-- P2 at Charmander ball; VAR_LAB=2; no starter picked yet.
+-- Pair with oaks_lab.ss1 for P1 to test the full co-op starter selection flow.
+saveState("p2_oaks_lab.ss1")
+
 do
     local lock0 = emu:read8(ADDR_FIELD_LOCK)
     if lock0 == 1 then
@@ -974,6 +984,10 @@ do
         error("[states] Charmander pick failed: VAR_LAB never reached 3")
     end
 end
+
+-- ── CHECKPOINT p2_rivals_lab.ss1 ─────────────────────────────────────────────
+-- P2 has Charmander; VAR_LAB=3; rival battle coord trigger at tile(7,8) is live.
+saveState("p2_rivals_lab.ss1")
 
 -- Bypass rival battle coord trigger
 do

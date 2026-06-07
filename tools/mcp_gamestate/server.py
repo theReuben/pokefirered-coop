@@ -135,6 +135,7 @@ class Instance:
 
 _instances: dict[str, Instance] = {}
 _work_dir: Optional[tempfile.TemporaryDirectory] = None
+_recording_dirs: dict[str, str] = {}
 
 
 def _get_work_dir() -> str:
@@ -929,6 +930,259 @@ def battle_diag(instance_id: str = "p1") -> str:
         lines.append(f"  battleTurnSent        = {bool(mp_vals['battleTurnSent'])}")
 
     return "\n".join(lines)
+
+
+# ── Tool: start_recording ────────────────────────────────────────────────────
+
+@mcp.tool()
+def start_recording(instance_id: str = "p1", fps: int = 15) -> str:
+    """Begin recording the game screen as a sequence of PNG frames.
+
+    Captures one screenshot every (60 / fps) emulated frames. Call
+    stop_recording or stop_recording_side_by_side to finalise into a video.
+
+    For dual-instance recording call this for both p1 and p2 before driving
+    any inputs, then stop_recording_side_by_side at the end.
+
+    Args:
+        instance_id: Which instance to record ('p1' or 'p2').
+        fps: Target capture rate in frames-per-second (default 15).
+    """
+    global _recording_dirs
+    rec_dir = os.path.join(_get_work_dir(), f"rec_{instance_id}_{int(time.time())}")
+    os.makedirs(rec_dir, exist_ok=True)
+    interval = max(1, round(60 / fps))
+    r = _inst(instance_id).send_locked(
+        {"cmd": "start_record", "dir": rec_dir, "interval": interval}
+    )
+    if not r.get("ok"):
+        return f"start_recording failed: {r.get('error', 'unknown')}"
+    _recording_dirs[instance_id] = rec_dir
+    return (
+        f"{instance_id}: recording to {rec_dir} "
+        f"at ~{60 // interval}fps (every {interval} frames)"
+    )
+
+
+# ── Tool: stop_recording ──────────────────────────────────────────────────────
+
+@mcp.tool()
+def stop_recording(instance_id: str = "p1", output_path: str = "") -> str:
+    """Stop recording and stitch captured frames into an MP4 video.
+
+    The GBA screen (240×160) is scaled 2× to 480×320 in the output.
+    Requires ffmpeg on PATH; if not found, returns the frame directory so
+    you can encode manually.
+
+    Args:
+        instance_id: Which instance to stop ('p1' or 'p2').
+        output_path: Destination MP4 (relative to repo root or absolute).
+            Defaults to test/recordings/{instance_id}_{timestamp}.mp4.
+    """
+    r = _inst(instance_id).send_locked({"cmd": "stop_record"}, timeout=10)
+    if not r.get("ok"):
+        return f"stop_recording failed: {r.get('error', 'unknown')}"
+
+    rec_dir     = r.get("dir", "") or _recording_dirs.get(instance_id, "")
+    frame_count = r.get("frames", 0)
+    if not rec_dir or frame_count == 0:
+        return f"{instance_id}: recording stopped (0 frames — nothing to encode)"
+
+    if not output_path:
+        output_path = f"test/recordings/{instance_id}_{int(time.time())}.mp4"
+    out = Path(output_path)
+    if not out.is_absolute():
+        out = REPO_ROOT / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-framerate", "15",
+        "-i", os.path.join(rec_dir, "%06d.png"),
+        "-vf", "scale=480:320",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(out),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            return f"ffmpeg failed:\n{result.stderr[-800:]}"
+    except FileNotFoundError:
+        return (
+            f"ffmpeg not found — install it, then encode manually:\n"
+            f"  ffmpeg -framerate 15 -i '{rec_dir}/%06d.png' "
+            f"-vf scale=480:320 -c:v libx264 '{out}'"
+        )
+    except subprocess.TimeoutExpired:
+        return f"ffmpeg timed out stitching {frame_count} frames from {rec_dir}"
+
+    return f"{instance_id}: saved {out} ({frame_count} frames, ~{frame_count / 15:.1f}s)"
+
+
+# ── Tool: stop_recording_side_by_side ─────────────────────────────────────────
+
+@mcp.tool()
+def stop_recording_side_by_side(output_path: str = "") -> str:
+    """Stop recording on both p1 and p2 and produce a single side-by-side MP4.
+
+    P1 appears on the left, P2 on the right.  Combined frame is 960×320.
+    This is the preferred way to record dual-instance tests — visual desyncs
+    (different opponents, different battle screens) are immediately obvious.
+
+    Requires ffmpeg on PATH.
+
+    Args:
+        output_path: Destination MP4 (relative to repo root or absolute).
+            Defaults to test/recordings/sidebyside_{timestamp}.mp4.
+    """
+    dirs: dict[str, str] = {}
+    counts: dict[str, int] = {}
+    for iid in ("p1", "p2"):
+        inst = _instances.get(iid)
+        if inst and inst.alive():
+            r = inst.send_locked({"cmd": "stop_record"}, timeout=10)
+            if r and r.get("ok"):
+                dirs[iid]   = r.get("dir", "") or _recording_dirs.get(iid, "")
+                counts[iid] = r.get("frames", 0)
+
+    missing = [k for k in ("p1", "p2") if not dirs.get(k)]
+    if missing:
+        return (
+            f"stop_recording_side_by_side: no recording dir for {missing} — "
+            "call start_recording on both instances first"
+        )
+
+    if not output_path:
+        output_path = f"test/recordings/sidebyside_{int(time.time())}.mp4"
+    out = Path(output_path)
+    if not out.is_absolute():
+        out = REPO_ROOT / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    p1_pat = os.path.join(dirs["p1"], "%06d.png")
+    p2_pat = os.path.join(dirs["p2"], "%06d.png")
+    cmd = [
+        "ffmpeg", "-y",
+        "-framerate", "15", "-i", p1_pat,
+        "-framerate", "15", "-i", p2_pat,
+        "-filter_complex",
+        "[0:v]scale=480:320[l];[1:v]scale=480:320[r];[l][r]hstack=inputs=2[v]",
+        "-map", "[v]",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(out),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            return f"ffmpeg failed:\n{result.stderr[-800:]}"
+    except FileNotFoundError:
+        return "ffmpeg not found — install it to generate side-by-side video"
+    except subprocess.TimeoutExpired:
+        return "ffmpeg timed out producing side-by-side video"
+
+    total = max(counts.get("p1", 0), counts.get("p2", 0))
+    return f"side-by-side saved to {out} ({total} frames, ~{total / 15:.1f}s)"
+
+
+# ── Tool: check_battle_sync ───────────────────────────────────────────────────
+
+@mcp.tool()
+def check_battle_sync() -> str:
+    """Compare battle state between p1 and p2 to detect desyncs early.
+
+    Reads key battle memory from both instances and compares them.
+    Returns PASS if they agree, FAIL (with details) if they differ.
+
+    Call this immediately after a co-op battle starts.  If it returns FAIL,
+    STOP THE TEST RUN immediately — do not advance the game or take more
+    screenshots.  Two instances fighting different opponents is a critical
+    co-op desync bug.
+
+    Checks:
+      gBattleTypeFlags             — must be identical (determines battle mode)
+      gBattlersCount               — must be identical (4 for a double battle)
+      gBattleMainFunc              — current battle state-machine function
+      gBattlerControllerFuncs[0..3] — controller assignment per battler slot
+    """
+    p1 = _instances.get("p1")
+    p2 = _instances.get("p2")
+    if not (p1 and p1.alive() and p2 and p2.alive()):
+        return "SKIP: both p1 and p2 must be running for a sync check"
+
+    addrs = p1.addrs
+
+    def r32(inst: Instance, sym: str):
+        if sym not in addrs:
+            return None
+        res = inst.send_locked(
+            {"cmd": "read_range", "addr": addrs[sym], "count": 1, "width": 32}
+        )
+        return int(res["values"][0], 16) if res.get("ok") and res.get("values") else None
+
+    def r8(inst: Instance, sym: str):
+        if sym not in addrs:
+            return None
+        res = inst.send_locked(
+            {"cmd": "read_range", "addr": addrs[sym], "count": 1, "width": 8}
+        )
+        return int(res["values"][0], 16) if res.get("ok") and res.get("values") else None
+
+    def rarr32(inst: Instance, sym: str, count: int):
+        if sym not in addrs:
+            return []
+        res = inst.send_locked(
+            {"cmd": "read_range", "addr": addrs[sym], "count": count, "width": 32}
+        )
+        return [int(v, 16) for v in res["values"]] if res.get("ok") else []
+
+    lines: list[str] = []
+    all_pass = True
+
+    def chk(field: str, v1, v2, fmt: str = "0x{:08X}"):
+        nonlocal all_pass
+        ok = v1 is not None and v2 is not None and v1 == v2
+        if not ok:
+            all_pass = False
+        s1 = "?" if v1 is None else fmt.format(v1)
+        s2 = "?" if v2 is None else fmt.format(v2)
+        lines.append(f"  {'PASS' if ok else 'FAIL'} {field}: p1={s1}  p2={s2}")
+
+    btf1 = r32(p1, "gBattleTypeFlags");  btf2 = r32(p2, "gBattleTypeFlags")
+    bc1  = r8 (p1, "gBattlersCount");    bc2  = r8 (p2, "gBattlersCount")
+    mf1  = r32(p1, "gBattleMainFunc");   mf2  = r32(p2, "gBattleMainFunc")
+    c1   = rarr32(p1, "gBattlerControllerFuncs", 4)
+    c2   = rarr32(p2, "gBattlerControllerFuncs", 4)
+
+    chk("gBattleTypeFlags", btf1, btf2)
+    chk("gBattlersCount",   bc1,  bc2,  fmt="{}")
+    chk("gBattleMainFunc",  mf1,  mf2)
+    for i in range(min(len(c1), len(c2))):
+        chk(f"gBattlerControllerFuncs[{i}]", c1[i], c2[i])
+
+    if btf1 is not None and not (btf1 & (1 << 8)):
+        lines.append(
+            "  WARN gBattleTypeFlags: BATTLE_TYPE_DOUBLE not set on p1 — "
+            "expected for a co-op battle"
+        )
+    if bc1 is not None and bc1 != 4:
+        lines.append(
+            f"  WARN gBattlersCount={bc1} on p1 — expected 4 for a double battle"
+        )
+
+    if all_pass and btf1 == 0:
+        verdict = (
+            "NO_BATTLE — neither instance is in battle yet "
+            "(call again once the battle intro has started)"
+        )
+    elif all_pass:
+        verdict = "PASS — both instances agree on battle state"
+    else:
+        verdict = (
+            "FAIL — DESYNC DETECTED — "
+            "stop the test run immediately and investigate"
+        )
+
+    return verdict + "\n" + "\n".join(lines)
 
 
 # ── Cleanup ───────────────────────────────────────────────────────────────

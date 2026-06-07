@@ -15,6 +15,13 @@ local RESP_FILE   = os.getenv("MGBA_BRIDGE_RESP")   or "/tmp/mgba_bridge_resp.js
 local READY_FILE  = os.getenv("MGBA_BRIDGE_READY")  or "/tmp/mgba_bridge_ready"
 local INJECT_FILE = os.getenv("MGBA_BRIDGE_INJECT") or "/tmp/mgba_bridge_inject.hex"
 
+-- ── Recording state ───────────────────────────────────────────────────────────
+local rec_active   = false
+local rec_dir      = ""
+local rec_interval = 4    -- capture every N frames (4 ≈ 15fps from 60fps source)
+local rec_count    = 0    -- sequential PNG index used in output filename
+local rec_frames   = 0    -- emulated frames elapsed since recording started
+
 -- ── Minimal JSON encode/decode ────────────────────────────────────────────
 
 local function json_encode_val(v)
@@ -138,6 +145,16 @@ local wait_frames_orig = 0  -- original frame count (for response)
 -- ── Frame callback ────────────────────────────────────────────────────────
 
 callbacks:add("frame", function()
+
+    -- Screen recording: capture a PNG every rec_interval frames when active.
+    if rec_active then
+        rec_frames = rec_frames + 1
+        if rec_frames % rec_interval == 0 then
+            rec_count = rec_count + 1
+            local path = string.format("%s/%06d.png", rec_dir, rec_count)
+            pcall(function() emu:screenshot(path) end)
+        end
+    end
 
     -- Side-channel inject: relay writes bytes here without holding the main lock.
     -- Processed every frame so disconnect/connect packets land immediately even
@@ -596,6 +613,22 @@ callbacks:add("frame", function()
         else
             write_resp({ok=true, var=emu:read16(var_addr)})
         end
+
+    -- start_record: begin capturing screenshots every rec_interval emulated frames.
+    -- cmd.dir (string): directory to write numbered PNG files into (created by caller).
+    -- cmd.interval (int): frames between captures; default 4 (~15fps at 60fps source).
+    elseif c == "start_record" then
+        rec_dir      = cmd.dir or "/tmp/mgba_record"
+        rec_interval = math.max(1, tonumber(cmd.interval) or 4)
+        rec_count    = 0
+        rec_frames   = 0
+        rec_active   = true
+        write_resp({ok=true, dir=rec_dir, interval=rec_interval})
+
+    -- stop_record: stop capturing and return the number of PNG frames written.
+    elseif c == "stop_record" then
+        rec_active = false
+        write_resp({ok=true, dir=rec_dir, frames=rec_count})
 
     -- quit: exit cleanly.
     elseif c == "quit" then
