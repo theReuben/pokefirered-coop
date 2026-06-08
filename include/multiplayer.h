@@ -294,7 +294,10 @@ u16  Multiplayer_ScriptCheckBossStart(void);
 // Returns 1 if connected to a partner; 0 otherwise.
 // Called via 'specialvar VAR_RESULT, ...' in scripts to choose the connected path.
 u16  Multiplayer_IsConnected(void);
+// Returns 1 if partner has already signalled readiness for the Oak's-Lab rival fight.
+u16  Multiplayer_IsPartnerWaitingForBoss_RivalOaksLab(void);
 // Native callback for SCR_OP_WAITBOSSSTART: returns TRUE when both players ready (or solo).
+// Sets VAR_RESULT = 1 on success, VAR_RESULT = 0 if the player pressed B to cancel.
 bool8 Multiplayer_NativePollBossStart(void);
 
 // Co-op boss battle setup — call before DoTrainerBattle() when starting a coop gym fight.

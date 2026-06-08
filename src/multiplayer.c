@@ -698,8 +698,7 @@ static void GhostMapCheck(void)
         // Only spawn once we know the partner's gender so the sprite is correct
         // from the first frame.  Gender is sent with every position tick, so the
         // ghost appears within one relay cycle (~100 ms) of the partner arriving.
-        if (gMultiplayerState.ghostObjectEventId >= OBJECT_EVENTS_COUNT
-            && gMultiplayerState.gotPartnerGender)
+        if (gMultiplayerState.ghostObjectEventId >= OBJECT_EVENTS_COUNT)
         {
             Multiplayer_SpawnGhostNPC(
                 gMultiplayerState.partnerMapGroup,
@@ -1236,6 +1235,10 @@ u16 Multiplayer_IsBall2TakenByPartner(void) { return IsBallTakenByPartner(2); }
 
 bool8 Multiplayer_NativePollPartnerStarterPick(void)
 {
+    // Drain the recv ring each poll frame — CB2_ReturnToFieldContinueScript may
+    // be the active callback (not CB2_Overworld) immediately after starter pick,
+    // same situation as NativePollPartySync.
+    Multiplayer_Update();
     // Resend our own pick every 60 frames while connected and still waiting.
     // Guards against packet loss or relay contention dropping the initial send.
     if (gMultiplayerState.connState == MP_STATE_CONNECTED
@@ -1612,11 +1615,33 @@ u16 Multiplayer_IsConnected(void)
     return (gMultiplayerState.connState == MP_STATE_CONNECTED) ? 1u : 0u;
 }
 
+// Returns 1 if the partner has already signalled readiness for the Oak's-Lab
+// rival battle.  Used by the script to show "Your partner is waiting for you!"
+// instead of "Waiting for partner..." when the late player arrives.
+u16 Multiplayer_IsPartnerWaitingForBoss_RivalOaksLab(void)
+{
+    return (gMultiplayerState.partnerBossId == BOSS_ID_RIVAL_OAKS_LAB) ? 1u : 0u;
+}
+
 // Native script callback for 'waitbossstart' opcode.
 // Returns TRUE (resume bytecode) when both players are ready or playing solo.
 // Returns FALSE (stay in NATIVE mode, yield) while still waiting.
 bool8 Multiplayer_NativePollBossStart(void)
 {
+    // Drain recv ring each poll frame so packets arrive even when CB2_Overworld
+    // isn't active (e.g. during fade-in after a menu closes).
+    Multiplayer_Update();
+
+    // B button cancels the wait so the player can back out if the partner is
+    // stuck at a different event.  VAR_RESULT = 0 signals cancellation to the
+    // calling script; VAR_RESULT = 1 signals a successful start.
+    if (JOY_NEW(B_BUTTON))
+    {
+        Multiplayer_BossCancel();
+        VarSet(VAR_RESULT, 0);
+        return TRUE;
+    }
+
     // Resend BOSS_READY every 60 frames while waiting for partner, to recover
     // from the initial send being silently dropped (ring full or relay contention).
     if (gMultiplayerState.bossReadyBossId != 0
@@ -1630,7 +1655,13 @@ bool8 Multiplayer_NativePollBossStart(void)
             Multiplayer_SendBossReady(gMultiplayerState.bossReadyBossId);
         }
     }
-    return (bool8)(Multiplayer_ScriptCheckBossStart() != 0);
+
+    if (Multiplayer_ScriptCheckBossStart())
+    {
+        VarSet(VAR_RESULT, 1);
+        return TRUE;
+    }
+    return FALSE;
 }
 
 // ---------------------------------------------------------------------------

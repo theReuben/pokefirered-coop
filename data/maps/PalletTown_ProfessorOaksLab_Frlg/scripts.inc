@@ -310,10 +310,26 @@ PalletTown_ProfessorOaksLab_EventScript_RivalBattle::
 	specialvar VAR_RESULT, Multiplayer_IsConnected
 	goto_if_eq VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch
 	special Multiplayer_BossReady_RivalOaksLab
+	@ If partner already sent their ready signal, skip to the short "waiting for you" path.
+	specialvar VAR_RESULT, Multiplayer_IsPartnerWaitingForBoss_RivalOaksLab
+	goto_if_ne VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_RivalBattlePartnerAlreadyWaiting
 	message PalletTown_ProfessorOaksLab_Text_WaitingForPartner
 	waitmessage
 	waitbossstart
+	@ VAR_RESULT = 0 means the player pressed B to back out; return to overworld.
+	goto_if_eq VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_RivalBattleWaitCancelled
 	closemessage
+	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch
+PalletTown_ProfessorOaksLab_EventScript_RivalBattlePartnerAlreadyWaiting::
+	message PalletTown_ProfessorOaksLab_Text_PartnerWaitingForYou
+	waitmessage
+	waitbossstart
+	closemessage
+	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch
+PalletTown_ProfessorOaksLab_EventScript_RivalBattleWaitCancelled::
+	closemessage
+	releaseall
+	end
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch::
 	@ In co-op use the shared remaining-starter key so both ROMs fight the same rival team.
 	specialvar VAR_RESULT, Multiplayer_IsConnected
@@ -1422,6 +1438,10 @@ PalletTown_ProfessorOaksLab_Text_RivalLetsCheckOutMons::
 
 PalletTown_ProfessorOaksLab_Text_WaitingForPartner::
 	.string "Waiting for partner...$"
+
+PalletTown_ProfessorOaksLab_Text_PartnerWaitingForYou::
+	.string "Your partner is waiting\n"
+	.string "for you!$"
 
 PalletTown_ProfessorOaksLab_Text_RivalDefeat::
 	.string "WHAT?\n"
