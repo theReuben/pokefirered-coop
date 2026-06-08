@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-06-08T19:55:12.871530Z",
+  "claim": "P2 on trigger tile after reaching (5,8) \u2014 checking for boss_ready/party menu",
+  "box_open": true,
+  "printing": true,
+  "waiting_for_input": false,
+  "in_native_script": true,
+  "text": "Aaaaaaa? Wait, Aaaaaaa!\nLet's check out our POK?MON!?Come on, I'll take you on!"
+}

@@ -983,10 +983,10 @@ def battle_diag(instance_id: str = "p1") -> str:
     if "gBattleTypeFlags" in addrs:
         bf = read32("gBattleTypeFlags")
         if bf is not None:
-            MULTI   = bf & (1 << 4)
-            DOUBLE  = bf & (1 << 8)
-            LINK    = bf & (1 << 1)
-            INGAME  = bf & (1 << 17)
+            DOUBLE  = bf & (1 << 0)   # 0x00000001
+            LINK    = bf & (1 << 1)   # 0x00000002
+            MULTI   = bf & (1 << 6)   # 0x00000040
+            INGAME  = bf & (1 << 17)  # 0x00020000
             COOP    = bf & (1 << 30) if bf else 0
             lines.append(f"gBattleTypeFlags    = 0x{bf:08X}  "
                          f"(MULTI={'Y' if MULTI else 'N'} DOUBLE={'Y' if DOUBLE else 'N'} "
@@ -1035,7 +1035,7 @@ def battle_diag(instance_id: str = "p1") -> str:
             "battleGraceTimer_lo":    52,  # u16 — read low byte
         }
         mp_vals = {k: read8(mp_base, off) for k, off in offsets.items()}
-        CONN = {0: "DISCONNECTED", 1: "CONNECTED", 2: "CONNECTING"}
+        CONN = {0: "DISCONNECTED", 1: "CONNECTING", 2: "CONNECTED"}
         lines.append("gMultiplayerState:")
         lines.append(f"  connState             = {CONN.get(mp_vals['connState'], mp_vals['connState'])}")
         lines.append(f"  partnerPartySelectDone= {bool(mp_vals['partnerPartySelectDone'])}")
@@ -1080,7 +1080,8 @@ def start_recording(instance_id: str = "p1", fps: int = 15) -> str:
 # ── Tool: stop_recording ──────────────────────────────────────────────────────
 
 @mcp.tool()
-def stop_recording(instance_id: str = "p1", output_path: str = "") -> str:
+def stop_recording(instance_id: str = "p1", output_path: str = "",
+                   tail_frames: int = 0) -> str:
     """Stop recording and stitch captured frames into an MP4 video.
 
     The GBA screen (240×160) is scaled 2× to 480×320 in the output.
@@ -1091,6 +1092,8 @@ def stop_recording(instance_id: str = "p1", output_path: str = "") -> str:
         instance_id: Which instance to stop ('p1' or 'p2').
         output_path: Destination MP4 (relative to repo root or absolute).
             Defaults to test/recordings/{instance_id}_{timestamp}.mp4.
+        tail_frames: If > 0, encode only the last N frames (faster for
+            long recordings — use e.g. 500 to clip just the battle start).
     """
     r = _inst(instance_id).send_locked({"cmd": "stop_record"}, timeout=10)
     if not r.get("ok"):
@@ -1108,11 +1111,20 @@ def stop_recording(instance_id: str = "p1", output_path: str = "") -> str:
         out = REPO_ROOT / out
     out.parent.mkdir(parents=True, exist_ok=True)
 
+    extra: list[str] = []
+    encode_frames = frame_count
+    if tail_frames > 0 and tail_frames < frame_count:
+        start_num = frame_count - tail_frames
+        extra = ["-start_number", str(start_num)]
+        encode_frames = tail_frames
+
     cmd = [
         "ffmpeg", "-y",
         "-framerate", "15",
+        *extra,
         "-i", os.path.join(rec_dir, "%06d.png"),
         "-vf", "scale=480:320",
+        "-vframes", str(encode_frames),
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         str(out),
     ]
@@ -1127,15 +1139,16 @@ def stop_recording(instance_id: str = "p1", output_path: str = "") -> str:
             f"-vf scale=480:320 -c:v libx264 '{out}'"
         )
     except subprocess.TimeoutExpired:
-        return f"ffmpeg timed out stitching {frame_count} frames from {rec_dir}"
+        return f"ffmpeg timed out stitching {encode_frames} frames from {rec_dir}"
 
-    return f"{instance_id}: saved {out} ({frame_count} frames, ~{frame_count / 15:.1f}s)"
+    return f"{instance_id}: saved {out} ({encode_frames} frames, ~{encode_frames / 15:.1f}s)"
 
 
 # ── Tool: stop_recording_side_by_side ─────────────────────────────────────────
 
 @mcp.tool()
-def stop_recording_side_by_side(output_path: str = "") -> str:
+def stop_recording_side_by_side(output_path: str = "",
+                                tail_frames: int = 0) -> str:
     """Stop recording on both p1 and p2 and produce a single side-by-side MP4.
 
     P1 appears on the left, P2 on the right.  Combined frame is 960×320.
@@ -1147,6 +1160,9 @@ def stop_recording_side_by_side(output_path: str = "") -> str:
     Args:
         output_path: Destination MP4 (relative to repo root or absolute).
             Defaults to test/recordings/sidebyside_{timestamp}.mp4.
+        tail_frames: If > 0, encode only the last N frames from each instance
+            (use e.g. 500 to clip just the battle start and avoid timeouts on
+            long recording sessions).
     """
     dirs: dict[str, str] = {}
     counts: dict[str, int] = {}
@@ -1172,15 +1188,24 @@ def stop_recording_side_by_side(output_path: str = "") -> str:
         out = REPO_ROOT / out
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    p1_pat = os.path.join(dirs["p1"], "%06d.png")
-    p2_pat = os.path.join(dirs["p2"], "%06d.png")
+    def _inp(iid: str) -> list[str]:
+        pat = os.path.join(dirs[iid], "%06d.png")
+        fc  = counts.get(iid, 0)
+        if tail_frames > 0 and tail_frames < fc:
+            return ["-framerate", "15", "-start_number", str(fc - tail_frames),
+                    "-i", pat]
+        return ["-framerate", "15", "-i", pat]
+
+    encode_frames = tail_frames if tail_frames > 0 else max(counts.get("p1", 0), counts.get("p2", 0))
+    vframes_args = ["-vframes", str(encode_frames)] if tail_frames > 0 else []
+
     cmd = [
         "ffmpeg", "-y",
-        "-framerate", "15", "-i", p1_pat,
-        "-framerate", "15", "-i", p2_pat,
+        *_inp("p1"), *_inp("p2"),
         "-filter_complex",
         "[0:v]scale=480:320[l];[1:v]scale=480:320[r];[l][r]hstack=inputs=2[v]",
         "-map", "[v]",
+        *vframes_args,
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         str(out),
     ]
@@ -1194,7 +1219,7 @@ def stop_recording_side_by_side(output_path: str = "") -> str:
         return "ffmpeg timed out producing side-by-side video"
 
     total = max(counts.get("p1", 0), counts.get("p2", 0))
-    return f"side-by-side saved to {out} ({total} frames, ~{total / 15:.1f}s)"
+    return f"side-by-side saved to {out} ({encode_frames} frames encoded, ~{encode_frames / 15:.1f}s)"
 
 
 # ── Tool: check_battle_sync ───────────────────────────────────────────────────
@@ -1272,7 +1297,7 @@ def check_battle_sync() -> str:
     for i in range(min(len(c1), len(c2))):
         chk(f"gBattlerControllerFuncs[{i}]", c1[i], c2[i])
 
-    if btf1 is not None and not (btf1 & (1 << 8)):
+    if btf1 is not None and not (btf1 & (1 << 0)):
         lines.append(
             "  WARN gBattleTypeFlags: BATTLE_TYPE_DOUBLE not set on p1 — "
             "expected for a co-op battle"

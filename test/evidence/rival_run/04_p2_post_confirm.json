@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-06-08T20:01:11.165216Z",
+  "claim": "P2 waiting for P1 party sync \u2014 did battle start?",
+  "box_open": true,
+  "printing": true,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}
