@@ -695,10 +695,11 @@ static void GhostMapCheck(void)
 
     if (sameMap)
     {
-        // Spawn immediately; Multiplayer_GhostGraphicsId() uses a fallback gender
-        // (opposite-of-self) until MP_PKT_GENDER arrives, so the ghost is always
-        // visible.  HandleRemoteGender despawns+respawns if the sprite needs to change.
-        if (gMultiplayerState.ghostObjectEventId >= OBJECT_EVENTS_COUNT)
+        // Only spawn once we know the partner's gender so the sprite is correct
+        // from the first frame.  Gender is sent with every position tick, so the
+        // ghost appears within one relay cycle (~100 ms) of the partner arriving.
+        if (gMultiplayerState.ghostObjectEventId >= OBJECT_EVENTS_COUNT
+            && gMultiplayerState.gotPartnerGender)
         {
             Multiplayer_SpawnGhostNPC(
                 gMultiplayerState.partnerMapGroup,
@@ -739,8 +740,9 @@ void Multiplayer_Init(void)
     gMultiplayerState.lastCkptMapGroup   = 0xFF;
     gMultiplayerState.lastCkptMapNum     = 0xFF;
     gMultiplayerState.battleGraceTimer   = 0;
-    gMultiplayerState.myStarterSpecies   = 0;
-    gMultiplayerState.starterResendTimer = 0;
+    gMultiplayerState.myStarterSpecies      = 0;
+    gMultiplayerState.partnerStarterSpecies = 0;
+    gMultiplayerState.starterResendTimer    = 0;
     gMultiplayerState.isInScript         = FALSE;
     gMultiplayerState.partnerIsInScript  = FALSE;
     gMultiplayerState.posFrameCounter    = 0;
@@ -1694,6 +1696,11 @@ void Multiplayer_HandleRemotePartySync(const u8 *data, u8 n_mons)
 
 bool8 Multiplayer_NativePollPartySync(void)
 {
+    // Drain the recv ring each poll frame.  CB2_Overworld normally does this,
+    // but CB2_ReturnToFieldContinueScript (running after the party menu closes)
+    // may still be executing its fade-in when the native poll starts, leaving
+    // party-sync packets unprocessed.
+    Multiplayer_Update();
     if (gMultiplayerState.connState != MP_STATE_CONNECTED
         || gMultiplayerState.partnerPartySelectDone)
     {
