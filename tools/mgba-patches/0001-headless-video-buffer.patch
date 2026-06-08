@@ -1,0 +1,17 @@
+diff --git a/src/platform/headless-main.c b/src/platform/headless-main.c
+index 61110b1..2a05904 100644
+--- a/src/platform/headless-main.c
++++ b/src/platform/headless-main.c
+@@ -117,6 +117,12 @@ int main(int argc, char * argv[]) {
+ 	mCoreInitConfig(core, "headless");
+ 	mArgumentsApply(&args, NULL, 0, &core->config);
+ 
++	// Allocate a video buffer so screenshots (emu:screenshot / core:screenshot)
++	// have pixels to read.  Without this, getPixels() returns NULL and the PNG
++	// writer segfaults.  256x256x4 covers the GBA's 240x160 framebuffer.
++	static uint32_t _headlessVideoBuffer[256 * 256];
++	core->setVideoBuffer(core, _headlessVideoBuffer, 256);
++
+ 	mCoreConfigSetDefaultValue(&core->config, "idleOptimization", "remove");
+ 	mCoreConfigSetDefaultIntValue(&core->config, "logToStdout", true);
+ 	mCoreLoadConfig(core);

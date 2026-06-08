@@ -188,9 +188,15 @@ _host_instance: str = "p1"
 
 # Silence threshold: if an instance hasn't sent bytes in this many seconds,
 # consider it disconnected and notify the partner.
-# 60s gives party-selection menus (which pause Multiplayer_Update) enough
-# runway without triggering false-positive disconnects.
-_HEARTBEAT_TIMEOUT = 60.0
+#
+# IMPORTANT: this is WALL-CLOCK time in the relay thread, which is unrelated to
+# emulated time when an AI/agent drives the emulators step by step (each emulated
+# second can take many wall-clock seconds of tool round-trips).  Menus that pause
+# Multiplayer_Update (party select, bag, etc.) send no packets, so a low timeout
+# fires a false PARTNER_DISCONNECTED mid-test.  Real process death is detected
+# separately via process.poll(), so this silence timeout is only a backstop.
+# Default high (1 hour) and allow override via COOP_HEARTBEAT_TIMEOUT.
+_HEARTBEAT_TIMEOUT = float(os.environ.get("COOP_HEARTBEAT_TIMEOUT", "3600"))
 
 
 def _relay_loop() -> None:
@@ -714,6 +720,113 @@ def move_steps(sequence: str, instance_id: str = "p1") -> str:
         return f"move_steps failed: {r.get('error', 'unknown')}"
     return (f"{instance_id}: moved {r.get('steps', '?')} steps "
             f"→ tile ({r.get('x', '?')}, {r.get('y', '?')})")
+
+
+# ── Tool: drive_to_tile ───────────────────────────────────────────────────
+
+def _read_player_tile(inst: "Instance") -> tuple[int, int]:
+    """Read the player's current tile (x, y) from gObjectEvents[0].currentCoords.
+
+    Raw coords are stored at gObjectEvents + 0x10 (x:s16) and +0x12 (y:s16);
+    the on-screen tile is raw - 7.
+    """
+    base = inst.addrs.get("gObjectEvents")
+    if base is None:
+        raise RuntimeError("gObjectEvents symbol not in memory_map.lua")
+    r = inst.send_locked({"cmd": "read_range", "addr": base + 0x10, "count": 2, "width": 16})
+    if not r.get("ok"):
+        raise RuntimeError(f"failed to read player tile: {r.get('error')}")
+    rawx = int(r["values"][0], 16)
+    rawy = int(r["values"][1], 16)
+    if rawx >= 0x8000:
+        rawx -= 0x10000
+    if rawy >= 0x8000:
+        rawy -= 0x10000
+    return rawx - 7, rawy - 7
+
+
+@mcp.tool()
+def drive_to_tile(
+    target_x: int,
+    target_y: int,
+    instance_id: str = "p1",
+    max_presses: int = 40,
+) -> str:
+    """Walk the player to a target tile, routing around obstacles automatically.
+
+    Polls the player's tile position after each step and presses toward the
+    target.  When a press doesn't change position (blocked by a wall, NPC, or
+    the partner's collidable ghost), it tries the other axis instead.  This is
+    the resilient alternative to a fixed move_steps sequence, which breaks when
+    per-instance collision differs (e.g. a ghost occupying one tile).
+
+    Only uses press_button + memory reads (the safe primitives on headless
+    Windows mGBA), so it never triggers the synchronous-runFrame timeout.
+
+    Args:
+        target_x, target_y: Destination tile coordinates.
+        instance_id: Which instance to drive ('p1' or 'p2').
+        max_presses: Give up after this many tile steps.
+
+    Returns a summary including whether the target was reached and the final tile.
+    """
+    inst = _inst(instance_id)
+    DIRS = {"LEFT": (-1, 0), "RIGHT": (1, 0), "UP": (0, -1), "DOWN": (0, 1)}
+    MASKS = {"LEFT": 0x020, "RIGHT": 0x010, "UP": 0x040, "DOWN": 0x080}
+
+    try:
+        x, y = _read_player_tile(inst)
+    except Exception as e:
+        return f"drive_to_tile failed: {e}"
+
+    path = [(x, y)]
+    blocked_axis = None  # remember which axis was blocked to prefer the other
+
+    for _ in range(max_presses):
+        if (x, y) == (target_x, target_y):
+            return (f"{instance_id}: reached tile ({target_x},{target_y}) "
+                    f"in {len(path) - 1} steps. Path: {path}")
+
+        dx = target_x - x
+        dy = target_y - y
+
+        # Choose candidate directions, ordered to prefer the axis that isn't
+        # currently blocked and that has the larger remaining distance.
+        cands = []
+        if abs(dx) >= abs(dy):
+            if dx != 0:
+                cands.append("RIGHT" if dx > 0 else "LEFT")
+            if dy != 0:
+                cands.append("DOWN" if dy > 0 else "UP")
+        else:
+            if dy != 0:
+                cands.append("DOWN" if dy > 0 else "UP")
+            if dx != 0:
+                cands.append("RIGHT" if dx > 0 else "LEFT")
+        # If one axis was just blocked, try the other axis first.
+        if blocked_axis == "x" and any(d in ("UP", "DOWN") for d in cands):
+            cands.sort(key=lambda d: 0 if d in ("UP", "DOWN") else 1)
+        elif blocked_axis == "y" and any(d in ("LEFT", "RIGHT") for d in cands):
+            cands.sort(key=lambda d: 0 if d in ("LEFT", "RIGHT") else 1)
+
+        moved = False
+        for d in cands:
+            inst.send_locked({"cmd": "press", "mask": MASKS[d], "hold": 16, "release": 8})
+            nx, ny = _read_player_tile(inst)
+            if (nx, ny) != (x, y):
+                x, y = nx, ny
+                path.append((x, y))
+                blocked_axis = None
+                moved = True
+                break
+            # blocked on this direction; record axis so we try the other next
+            blocked_axis = "x" if d in ("LEFT", "RIGHT") else "y"
+        if not moved:
+            return (f"{instance_id}: STUCK at tile ({x},{y}) — could not reach "
+                    f"({target_x},{target_y}); all directions blocked. Path: {path}")
+
+    return (f"{instance_id}: gave up after {max_presses} presses at tile ({x},{y}); "
+            f"target ({target_x},{target_y}) not reached. Path: {path}")
 
 
 # ── Tool: read_memory ────────────────────────────────────────────────────
