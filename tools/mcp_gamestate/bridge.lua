@@ -220,8 +220,13 @@ callbacks:add("frame", function()
     local c = cmd.cmd
 
     -- screenshot: safe here — we're inside the frame callback.
+    -- On Windows, /tmp/ is not a real directory; redirect to the system TEMP dir.
     if c == "screenshot" then
         local path = cmd.path or "/tmp/mgba_screenshot.png"
+        if path:sub(1,5) == "/tmp/" then
+            local tmp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Temp"
+            path = tmp .. "\\" .. path:sub(6)
+        end
         local ok2, err = pcall(function() emu:screenshot(path) end)
         write_resp(ok2 and {ok=true, path=path} or {ok=false, error=tostring(err)})
 
