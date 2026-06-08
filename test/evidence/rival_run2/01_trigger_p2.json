@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-06-08T22:02:46.903019Z",
+  "claim": "P2 on trigger tile (5,8), ghost (P1) visible nearby",
+  "box_open": true,
+  "printing": true,
+  "waiting_for_input": false,
+  "in_native_script": true,
+  "text": "Aaaaaaa? Wait, Aaaaaaa!\nLet's check out our POK?MON!?Come on, I'll take you on!"
+}
