@@ -147,13 +147,13 @@ local wait_frames_orig = 0  -- original frame count (for response)
 callbacks:add("frame", function()
 
     -- Screen recording: capture a PNG every rec_interval frames when active.
+    -- emu:screenshot() raises a C-level exception in headless mode so we skip
+    -- the actual write; frame counting still works for diagnostics.
     if rec_active then
         rec_frames = rec_frames + 1
         if rec_frames % rec_interval == 0 then
             rec_count = rec_count + 1
-            local sep = (rec_dir:find("\\") and "\\" or "/")
-            local path = string.format("%s%s%06d.png", rec_dir, sep, rec_count)
-            pcall(function() emu:screenshot(path) end)
+            -- screenshot disabled in headless: emu:screenshot() crashes on Windows
         end
     end
 
