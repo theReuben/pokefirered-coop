@@ -278,6 +278,10 @@ PalletTown_ProfessorOaksLab_Movement_PlayerWalkUp::
 	walk_up
 	step_end
 
+PalletTown_ProfessorOaksLab_Movement_PlayerStepBack::
+	walk_down
+	step_end
+
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleTriggerLeft::
 	lockall
 	setvar VAR_TEMP_2, 1
@@ -314,7 +318,7 @@ PalletTown_ProfessorOaksLab_EventScript_RivalBattle::
 	specialvar VAR_RESULT, Multiplayer_IsPartnerWaitingForBoss_RivalOaksLab
 	goto_if_ne VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_RivalBattlePartnerAlreadyWaiting
 	message PalletTown_ProfessorOaksLab_Text_WaitingForPartner
-	waitmessage
+	@ No waitmessage — message stays on screen during the wait as a live status indicator.
 	waitbossstart
 	@ VAR_RESULT = 0 means the player pressed B to back out; return to overworld.
 	goto_if_eq VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_RivalBattleWaitCancelled
@@ -328,6 +332,10 @@ PalletTown_ProfessorOaksLab_EventScript_RivalBattlePartnerAlreadyWaiting::
 	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleWaitCancelled::
 	closemessage
+	@ Step the player back one tile (south) off the trigger so it can be re-entered.
+	applymovement LOCALID_PLAYER, PalletTown_ProfessorOaksLab_Movement_PlayerStepBack
+	waitmovement 0
+	fadedefaultbgm
 	releaseall
 	end
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch::
@@ -1437,7 +1445,7 @@ PalletTown_ProfessorOaksLab_Text_RivalLetsCheckOutMons::
 	.string "Come on, I'll take you on!$"
 
 PalletTown_ProfessorOaksLab_Text_WaitingForPartner::
-	.string "Waiting for partner...$"
+	.string "Waiting for partner...\nPress B to cancel.$"
 
 PalletTown_ProfessorOaksLab_Text_PartnerWaitingForYou::
 	.string "Your partner is waiting\n"
