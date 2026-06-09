@@ -69,8 +69,9 @@ H.log("Navigation: P1→(7,8), P2→(5,8) — use drive_to_tile from MCP harness
 -- After stepping onto trigger tiles the rival dialogue fires.
 -- Advance with A presses (3 boxes).
 waitFor(function()
-    -- sGlobalScriptContextStatus != 0 means a script is running
-    return H.read8(M.sGlobalScriptContextStatus) ~= 0
+    -- CONTEXT_RUNNING=0, CONTEXT_WAITING=1, CONTEXT_SHUTDOWN=2
+    -- WAITING (1) = native script active (e.g. waitbossstart holding in native mode)
+    return H.read8(M.sGlobalScriptContextStatus) == 1
 end, 300, "rival battle trigger script never started")
 
 for _ = 1, 5 do

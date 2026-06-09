@@ -4,6 +4,7 @@
 .equ RIVAL_STARTER_ID,        VAR_TEMP_4
 
 .equ SHOWED_OAK_COMPLETE_DEX, FLAG_TEMP_2
+.equ RIVAL_BATTLE_WAIT_CANCELLED, FLAG_TEMP_1
 
 PalletTown_ProfessorOaksLab_Frlg_MapScripts::
 	map_script MAP_SCRIPT_ON_TRANSITION, PalletTown_ProfessorOaksLab_OnTransition
@@ -284,20 +285,29 @@ PalletTown_ProfessorOaksLab_Movement_PlayerStepBack::
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleTriggerLeft::
 	lockall
+	@ One-shot bypass: player just cancelled a wait and is walking off the tile.
+	goto_if_set RIVAL_BATTLE_WAIT_CANCELLED, PalletTown_ProfessorOaksLab_EventScript_RivalBattleCancelBypass
 	setvar VAR_TEMP_2, 1
 	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattle
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleTriggerMid::
 	lockall
+	goto_if_set RIVAL_BATTLE_WAIT_CANCELLED, PalletTown_ProfessorOaksLab_EventScript_RivalBattleCancelBypass
 	setvar VAR_TEMP_2, 2
 	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattle
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleTriggerRight::
 	lockall
+	goto_if_set RIVAL_BATTLE_WAIT_CANCELLED, PalletTown_ProfessorOaksLab_EventScript_RivalBattleCancelBypass
 	setvar VAR_TEMP_2, 3
 	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattle
+	end
+
+PalletTown_ProfessorOaksLab_EventScript_RivalBattleCancelBypass::
+	clearflag RIVAL_BATTLE_WAIT_CANCELLED
+	releaseall
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattle::
@@ -332,9 +342,9 @@ PalletTown_ProfessorOaksLab_EventScript_RivalBattlePartnerAlreadyWaiting::
 	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleWaitCancelled::
 	closemessage
-	@ Player ends up one tile south of the trigger naturally (residual movement
-	@ momentum from walking into the trigger).  Turn them back north so they're
-	@ facing toward the rival area and can see the trigger is re-enterable.
+	@ Protect against immediate coord-event refire on the trigger tile.
+	@ The bypass handler clears this flag and releases without starting the battle.
+	setflag RIVAL_BATTLE_WAIT_CANCELLED
 	applymovement LOCALID_PLAYER, PalletTown_ProfessorOaksLab_Movement_PlayerStepBack
 	waitmovement 0
 	fadedefaultbgm
