@@ -279,7 +279,7 @@ PalletTown_ProfessorOaksLab_Movement_PlayerWalkUp::
 	step_end
 
 PalletTown_ProfessorOaksLab_Movement_PlayerStepBack::
-	walk_up
+	walk_in_place_faster_up
 	step_end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleTriggerLeft::
@@ -332,7 +332,9 @@ PalletTown_ProfessorOaksLab_EventScript_RivalBattlePartnerAlreadyWaiting::
 	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatch
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleWaitCancelled::
 	closemessage
-	@ Step the player back one tile (south) off the trigger so it can be re-entered.
+	@ Player ends up one tile south of the trigger naturally (residual movement
+	@ momentum from walking into the trigger).  Turn them back north so they're
+	@ facing toward the rival area and can see the trigger is re-enterable.
 	applymovement LOCALID_PLAYER, PalletTown_ProfessorOaksLab_Movement_PlayerStepBack
 	waitmovement 0
 	fadedefaultbgm

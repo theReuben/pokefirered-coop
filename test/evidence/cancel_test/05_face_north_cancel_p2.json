@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-06-09T01:32:25.182290Z",
+  "claim": "P2 after B-cancel facing north at y=9, one step south of trigger which is immediately north",
+  "box_open": false,
+  "printing": false,
+  "waiting_for_input": false,
+  "in_native_script": false,
+  "text": "Waiting for partner...\nPress B to cancel."
+}
