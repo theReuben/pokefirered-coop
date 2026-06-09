@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-06-09T00:34:48.597428Z",
+  "claim": "P1 retriggered rival battle after cancel, Waiting for partner message shown again",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": false,
+  "in_native_script": true,
+  "text": "Waiting for partner...\nPress B to cancel."
+}

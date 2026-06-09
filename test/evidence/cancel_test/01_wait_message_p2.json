@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-06-09T00:32:59.424694Z",
+  "claim": "P2 showing Waiting for partner message with B-cancel hint, no waitmessage required",
+  "box_open": true,
+  "printing": true,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

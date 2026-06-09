@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-06-09T00:33:54.061380Z",
+  "claim": "P1 waiting for partner with B-cancel hint visible, P2 has not triggered yet",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": false,
+  "in_native_script": true,
+  "text": "Waiting for partner...\nPress B to cancel."
+}
