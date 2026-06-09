@@ -882,11 +882,18 @@ void Multiplayer_Update(void)
         }
     }
     if (gMultiplayerState.connState == MP_STATE_CONNECTED &&
+        !gMultiplayerState.gotPartnerGender)
+    {
+        // Flood gender until partner's gender is confirmed — guards against the
+        // relay dropping the initial exchange when the connection is being set up.
+        Multiplayer_SendGender();
+    }
+    if (gMultiplayerState.connState == MP_STATE_CONNECTED &&
         gMultiplayerState.posFrameCounter == 0)
     {
         Multiplayer_SendPosition();
-        // Re-send gender with every position tick so the partner's ghost always
-        // uses the correct sprite even if the initial gender exchange was missed.
+        // Continue sending gender with every position tick after confirmation so
+        // a reconnecting partner can also learn our gender quickly.
         Multiplayer_SendGender();
 
         // Broadcast follower graphics ID when it changes so partner can show

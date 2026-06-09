@@ -15,6 +15,9 @@ PalletTown_ProfessorOaksLab_Frlg_MapScripts::
 PalletTown_ProfessorOaksLab_OnTransition::
 	setflag FLAG_VISITED_OAKS_LAB
 	call_if_eq VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, 1, PalletTown_ProfessorOaksLab_EventScript_ReadyOakForStarterScene
+	@ Also clear ball-hide flags at scene 2 — a save made during an active
+	@ co-op starter selection session lands here with flags already set.
+	call_if_eq VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, 2, PalletTown_ProfessorOaksLab_EventScript_ClearStarterBallFlags
 	call_if_eq VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, 7, PalletTown_ProfessorOaksLab_EventScript_ReadyOakForNationalDexScene
 	call_if_eq VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, 8, PalletTown_ProfessorOaksLab_EventScript_SetNationalDexSceneFinished
 	call_if_set FLAG_GOT_POKEBALLS_FROM_OAK_AFTER_22_RIVAL, PalletTown_ProfessorOaksLab_EventScript_SetSkipPokeBallCheck
@@ -32,8 +35,12 @@ PalletTown_ProfessorOaksLab_EventScript_ReadyOakForStarterScene::
 	setobjectxyperm LOCALID_OAKS_LAB_PROF_OAK, 6, 11
 	setobjectmovementtype LOCALID_OAKS_LAB_PROF_OAK, MOVEMENT_TYPE_FACE_UP
 	savebgm MUS_RG_OAK
-	@ Clear any ball-hide flags left over from a previous co-op session so all
-	@ three balls are visible at the start of fresh starter selection.
+	call PalletTown_ProfessorOaksLab_EventScript_ClearStarterBallFlags
+	return
+
+PalletTown_ProfessorOaksLab_EventScript_ClearStarterBallFlags::
+	@ Clear ball-hide flags left over from a previous co-op session.
+	@ Called at scene 1 (fresh entry) and scene 2 (reload mid-selection).
 	clearflag FLAG_HIDE_BULBASAUR_BALL
 	clearflag FLAG_HIDE_SQUIRTLE_BALL
 	clearflag FLAG_HIDE_CHARMANDER_BALL
