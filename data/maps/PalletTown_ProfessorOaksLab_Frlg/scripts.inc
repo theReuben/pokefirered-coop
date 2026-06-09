@@ -279,7 +279,7 @@ PalletTown_ProfessorOaksLab_Movement_PlayerWalkUp::
 	step_end
 
 PalletTown_ProfessorOaksLab_Movement_PlayerStepBack::
-	walk_down
+	walk_up
 	step_end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleTriggerLeft::
