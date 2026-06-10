@@ -254,6 +254,37 @@ static void Multiplayer_DespawnFollowerGhost(void);
 static void Multiplayer_UpdateFollowerGhostPosition(void);
 static void Multiplayer_PersistStarterOutcome(void);
 
+// Apply a partner starter species learned from any packet (one-shot pick or
+// state beacon).  Validates against the three legal starters, persists the
+// outcome, and hides the matching ball — persistently (flag) and immediately
+// on the current map (object event removal).  Idempotent.
+static void ApplyPartnerStarterPick(u16 received)
+{
+    static const u16 sBallFlags[3]    = { FLAG_HIDE_BULBASAUR_BALL,
+                                          FLAG_HIDE_SQUIRTLE_BALL,
+                                          FLAG_HIDE_CHARMANDER_BALL };
+    static const u8  sBallLocalIds[3] = { LOCALID_BULBASAUR_BALL,
+                                          LOCALID_SQUIRTLE_BALL,
+                                          LOCALID_CHARMANDER_BALL };
+    u8 s;
+    if (received == 0 || received == gMultiplayerState.partnerStarterSpecies)
+        return;
+    for (s = 0; s < 3; s++)
+    {
+        if (Multiplayer_GetRandomizedStarter(s) == received)
+        {
+            gMultiplayerState.partnerStarterSpecies = received;
+            Multiplayer_PersistStarterOutcome();
+            FlagSet(sBallFlags[s]);
+            RemoveObjectEventByLocalIdAndMap(
+                sBallLocalIds[s],
+                MAP_NUM(MAP_PALLET_TOWN_PROFESSOR_OAKS_LAB),
+                MAP_GROUP(MAP_PALLET_TOWN_PROFESSOR_OAKS_LAB));
+            return;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Read one complete packet from gMpRecvRing and dispatch it.
 // Returns TRUE if a packet was processed.
@@ -454,43 +485,32 @@ static bool8 ProcessOneRecvPacket(void)
         if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_STARTER_PICK - 1)
             return FALSE;
         {
-            static const u16 sBallFlags[3]   = { FLAG_HIDE_BULBASAUR_BALL,
-                                                  FLAG_HIDE_SQUIRTLE_BALL,
-                                                  FLAG_HIDE_CHARMANDER_BALL };
-            static const u8  sBallLocalIds[3] = { LOCALID_BULBASAUR_BALL,
-                                                   LOCALID_SQUIRTLE_BALL,
-                                                   LOCALID_CHARMANDER_BALL };
-            u8 hi = 0, lo = 0, s;
+            u8 hi = 0, lo = 0;
             Mp_Pop(&gMpRecvRing, &hi);
             Mp_Pop(&gMpRecvRing, &lo);
-            {
-                u16 received = ((u16)hi << 8) | lo;
-                // Validate: only store if species matches one of the three
-                // valid starters.  Rejects stale/corrupt packets.
-                for (s = 0; s < 3; s++)
-                {
-                    if (Multiplayer_GetRandomizedStarter(s) == received)
-                    {
-                        gMultiplayerState.partnerStarterSpecies = received;
-                        Multiplayer_PersistStarterOutcome();
-                        break;
-                    }
-                }
-            }
-            // Hide whichever ball the partner took — both persistently (flag) and
-            // immediately on the current map (object event removal).
-            for (s = 0; s < 3; s++)
-            {
-                if (Multiplayer_GetRandomizedStarter(s) == gMultiplayerState.partnerStarterSpecies)
-                {
-                    FlagSet(sBallFlags[s]);
-                    RemoveObjectEventByLocalIdAndMap(
-                        sBallLocalIds[s],
-                        MAP_NUM(MAP_PALLET_TOWN_PROFESSOR_OAKS_LAB),
-                        MAP_GROUP(MAP_PALLET_TOWN_PROFESSOR_OAKS_LAB));
-                    break;
-                }
-            }
+            ApplyPartnerStarterPick(((u16)hi << 8) | lo);
+        }
+        break;
+
+    case MP_PKT_STATE_BEACON:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_STATE_BEACON - 1)
+            return FALSE;
+        {
+            u8 gender = 0, hi = 0, lo = 0, bossId = 0;
+            Mp_Pop(&gMpRecvRing, &gender);
+            Mp_Pop(&gMpRecvRing, &hi);
+            Mp_Pop(&gMpRecvRing, &lo);
+            Mp_Pop(&gMpRecvRing, &bossId);
+            Multiplayer_HandleRemoteGender(gender);
+            // Starter is validated inside; 0 / unknown species are ignored.
+            ApplyPartnerStarterPick(((u16)hi << 8) | lo);
+            // Repair a dropped BOSS_READY only.  Never clear from a beacon:
+            // the drain loop can process a beacon built before the partner's
+            // ready in the same frame as the ready itself, and clearing here
+            // would undo it before the script poll observes it.  Clearing
+            // stays event-driven (BOSS_CANCEL / disconnect / mismatch reset).
+            if (bossId != 0)
+                gMultiplayerState.partnerBossId = bossId;
         }
         break;
 
@@ -829,15 +849,13 @@ void Multiplayer_Update(void)
     }
 
     // Recover the partner's pick from its persisted var so reloads/reconnects
-    // don't depend on the partner re-sending it.
+    // don't depend on the partner re-sending it.  Routed through
+    // ApplyPartnerStarterPick so the matching ball is hidden as well.
     if (gMultiplayerState.partnerStarterSpecies == 0)
     {
         u16 saved = VarGet(VAR_PARTNER_STARTER);
         if (saved != 0)
-        {
-            gMultiplayerState.partnerStarterSpecies = saved;
-            Multiplayer_PersistStarterOutcome();
-        }
+            ApplyPartnerStarterPick(saved);
     }
 
     // While disconnected, periodically send a ping so the partner's ROM can
@@ -871,20 +889,20 @@ void Multiplayer_Update(void)
             MpRing_Write(&gMpSendRing, &pingByte, MP_PKT_SIZE_PING);
         }
 
-        // Background starter-pick resend: guarantees partner sees our starter even
-        // when the save state was created after waitstarterpick already completed.
-        if (gMultiplayerState.partnerStarterSpecies == 0
-            && gMultiplayerState.myStarterSpecies != 0)
+        // Idempotent session-state beacon: gender + our starter pick + boss
+        // readiness, every MP_BEACON_INTERVAL_FRAMES.  Replaces the per-frame
+        // gender flood and the per-message starter/boss-ready resend timers —
+        // any dropped one-shot exchange converges on the next beacon.
+        if (++gMultiplayerState.starterResendTimer >= MP_BEACON_INTERVAL_FRAMES)
         {
-            if (++gMultiplayerState.starterResendTimer >= 60)
-            {
-                u8 pkt[MP_PKT_SIZE_STARTER_PICK];
-                gMultiplayerState.starterResendTimer = 0;
-                pkt[0] = MP_PKT_STARTER_PICK;
-                pkt[1] = (u8)(gMultiplayerState.myStarterSpecies >> 8);
-                pkt[2] = (u8)(gMultiplayerState.myStarterSpecies);
-                MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
-            }
+            u8 pkt[MP_PKT_SIZE_STATE_BEACON];
+            gMultiplayerState.starterResendTimer = 0;
+            pkt[0] = MP_PKT_STATE_BEACON;
+            pkt[1] = gSaveBlock2Ptr->playerGender;
+            pkt[2] = (u8)(gMultiplayerState.myStarterSpecies >> 8);
+            pkt[3] = (u8)(gMultiplayerState.myStarterSpecies);
+            pkt[4] = gMultiplayerState.bossReadyBossId;
+            MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STATE_BEACON);
         }
 
         // Auto-checkpoint: save on map change so progress isn't lost on disconnect.
@@ -903,19 +921,11 @@ void Multiplayer_Update(void)
         }
     }
     if (gMultiplayerState.connState == MP_STATE_CONNECTED &&
-        !gMultiplayerState.gotPartnerGender)
-    {
-        // Flood gender until partner's gender is confirmed — guards against the
-        // relay dropping the initial exchange when the connection is being set up.
-        Multiplayer_SendGender();
-    }
-    if (gMultiplayerState.connState == MP_STATE_CONNECTED &&
         gMultiplayerState.posFrameCounter == 0)
     {
         Multiplayer_SendPosition();
-        // Continue sending gender with every position tick after confirmation so
-        // a reconnecting partner can also learn our gender quickly.
-        Multiplayer_SendGender();
+        // Gender travels in the state beacon (and the connect-time exchange);
+        // the per-frame flood and per-position piggyback are gone.
 
         // Broadcast follower graphics ID when it changes so partner can show
         // our follower Pokémon ghost.
@@ -1334,25 +1344,9 @@ bool8 Multiplayer_NativePollPartnerStarterPick(void)
 {
     // Drain the recv ring each poll frame — CB2_ReturnToFieldContinueScript may
     // be the active callback (not CB2_Overworld) immediately after starter pick,
-    // same situation as NativePollPartySync.
+    // same situation as NativePollPartySync.  A dropped initial pick exchange
+    // is repaired by the state beacon, which Update also keeps sending here.
     Multiplayer_Update();
-    // Resend our own pick every 60 frames while connected and still waiting.
-    // Guards against packet loss or relay contention dropping the initial send.
-    if (gMultiplayerState.connState == MP_STATE_CONNECTED
-        && gMultiplayerState.partnerStarterSpecies == 0
-        && gMultiplayerState.myStarterSpecies != 0)
-    {
-        gMultiplayerState.starterResendTimer++;
-        if (gMultiplayerState.starterResendTimer >= 60)
-        {
-            u8 pkt[MP_PKT_SIZE_STARTER_PICK];
-            gMultiplayerState.starterResendTimer = 0;
-            pkt[0] = MP_PKT_STARTER_PICK;
-            pkt[1] = (u8)(gMultiplayerState.myStarterSpecies >> 8);
-            pkt[2] = (u8)(gMultiplayerState.myStarterSpecies);
-            MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
-        }
-    }
     return (bool8)(gMultiplayerState.connState != MP_STATE_CONNECTED
                 || gMultiplayerState.partnerStarterSpecies != 0);
 }
@@ -1739,19 +1733,8 @@ bool8 Multiplayer_NativePollBossStart(void)
         return TRUE;
     }
 
-    // Resend BOSS_READY every 60 frames while waiting for partner, to recover
-    // from the initial send being silently dropped (ring full or relay contention).
-    if (gMultiplayerState.bossReadyBossId != 0
-        && gMultiplayerState.partnerBossId == 0
-        && gMultiplayerState.connState == MP_STATE_CONNECTED)
-    {
-        gMultiplayerState.bossResendTimer++;
-        if (gMultiplayerState.bossResendTimer >= 60)
-        {
-            gMultiplayerState.bossResendTimer = 0;
-            Multiplayer_SendBossReady(gMultiplayerState.bossReadyBossId);
-        }
-    }
+    // A dropped BOSS_READY is repaired by the state beacon (sent from the
+    // Multiplayer_Update call above), which carries bossReadyBossId.
 
     if (Multiplayer_ScriptCheckBossStart())
     {

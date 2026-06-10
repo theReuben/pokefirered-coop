@@ -31,9 +31,12 @@ extern u8  gTestNextSpawnSlot;
 
 static struct SaveBlock1 sTestSave;
 
+void TestResetGameVars(void);          // from stubs.c
+
 static void ResetAll(void)
 {
     Multiplayer_Init();
+    TestResetGameVars();                   // wipe persisted VAR_* outcomes
     // Pre-set CONNECTED so ProcessOneRecvPacket's auto-connect block does not
     // fire and write gender+name packets to the send ring. Tests that need
     // DISCONNECTED override this immediately after calling ResetAll().
@@ -342,6 +345,55 @@ static void TestRemoteUpdateClearedNextFrame(void)
     ASSERT_EQ(gMultiplayerState.remoteUpdateThisFrame, FALSE);
 }
 
+// ---- State beacon dispatch ---------------------------------------------------
+
+static void PushBeacon(u8 gender, u16 starter, u8 bossId)
+{
+    Mp_Push(&gMpRecvRing, MP_PKT_STATE_BEACON);
+    Mp_Push(&gMpRecvRing, gender);
+    Mp_Push(&gMpRecvRing, (u8)(starter >> 8));
+    Mp_Push(&gMpRecvRing, (u8)(starter & 0xFF));
+    Mp_Push(&gMpRecvRing, bossId);
+}
+
+static void TestBeaconAppliesGenderStarterAndBossReady(void)
+{
+    ResetAll();
+    gMultiplayerState.gotPartnerGender = FALSE;
+
+    PushBeacon(1 /*FEMALE*/, 7 /*Squirtle (canonical, seed 0)*/, 14);
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.gotPartnerGender, TRUE);
+    ASSERT_EQ(gMultiplayerState.partnerGender, 1);
+    ASSERT_EQ(gMultiplayerState.partnerStarterSpecies, 7);
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 14);
+}
+
+static void TestBeaconZeroBossIdDoesNotClearReady(void)
+{
+    // A beacon assembled before the partner's BOSS_READY can be drained in
+    // the same frame as the ready itself; bossId 0 must never clear state.
+    ResetAll();
+    gMultiplayerState.partnerBossId = 14;
+
+    PushBeacon(0, 0, 0);
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 14);
+}
+
+static void TestBeaconInvalidStarterIgnored(void)
+{
+    // Garbage species (not one of the three starters) must not be stored.
+    ResetAll();
+
+    PushBeacon(0, 0x1234, 0);
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.partnerStarterSpecies, 0);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -362,5 +414,8 @@ int main(void)
     TestUnknownPacketTypeDrainsRing();
     TestGenderPacketDispatch();
     TestRemoteUpdateClearedNextFrame();
+    TestBeaconAppliesGenderStarterAndBossReady();
+    TestBeaconZeroBossIdDoesNotClearReady();
+    TestBeaconInvalidStarterIgnored();
     TEST_SUMMARY();
 }

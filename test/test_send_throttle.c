@@ -59,8 +59,8 @@ static void TestPositionEmittedOnFourthFrame(void)
     Multiplayer_Update();
     Multiplayer_Update(); // 4th frame: SendPosition fires
 
-    // Position tick also sends a gender re-sync packet alongside position.
-    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)(MP_PKT_SIZE_POSITION + MP_PKT_SIZE_GENDER));
+    // Gender no longer piggybacks on position; it rides the 16-frame beacon.
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_POSITION);
     Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, MP_PKT_POSITION);
     Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 0);   // mapGroup
     Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 1);   // mapNum
@@ -76,11 +76,39 @@ static void TestPositionRepeatsEveryFourFrames(void)
 
     SetUpConnectedPlayer();
     for (i = 0; i < 4; i++) Multiplayer_Update();
-    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)(MP_PKT_SIZE_POSITION + MP_PKT_SIZE_GENDER));
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_POSITION);
     while (Mp_Pop(&gMpSendRing, &b)) {}
 
     for (i = 0; i < 4; i++) Multiplayer_Update();
-    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)(MP_PKT_SIZE_POSITION + MP_PKT_SIZE_GENDER));
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_POSITION);
+}
+
+// ---- State beacon cadence ---------------------------------------------------
+
+static void TestStateBeaconEverySixteenFrames(void)
+{
+    // The beacon fires on the 16th connected frame carrying gender, our
+    // starter species, and boss readiness.
+    u8 i, b;
+    SetUpConnectedPlayer();
+    gMultiplayerState.myStarterSpecies = 7;   // Squirtle
+    gMultiplayerState.bossReadyBossId  = 14;  // BOSS_ID_RIVAL_OAKS_LAB
+
+    for (i = 0; i < 15; i++) Multiplayer_Update();
+    // Drain position packets; no beacon may be present yet.
+    while (Mp_Pop(&gMpSendRing, &b))
+        ASSERT_NE(b, MP_PKT_STATE_BEACON);
+
+    Multiplayer_Update(); // 16th frame
+    // 16 is a position frame too (16 % 4 == 0); the beacon block runs first
+    // in Update, so the ring holds beacon then position.
+    ASSERT_EQ(Mp_Available(&gMpSendRing),
+              (u8)(MP_PKT_SIZE_POSITION + MP_PKT_SIZE_STATE_BEACON));
+    Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, MP_PKT_STATE_BEACON);
+    Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 0);  // gender (stub save: MALE)
+    Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 0);  // starter hi
+    Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 7);  // starter lo
+    Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, 14); // boss ready id
 }
 
 // ---- Suppression while disconnected ----------------------------------------
@@ -128,6 +156,7 @@ int main(void)
     TestNoPositionForFirstThreeFrames();
     TestPositionEmittedOnFourthFrame();
     TestPositionRepeatsEveryFourFrames();
+    TestStateBeaconEverySixteenFrames();
     TestNoPositionWhenDisconnected();
     TestPosFrameCounterFrozenWhileDisconnected();
     TestNoPositionWhileConnecting();
