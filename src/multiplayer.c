@@ -827,10 +827,14 @@ void Multiplayer_PollPackets(void)
 // Only the first call per VBlank frame does work.
 void Multiplayer_UpdateOncePerFrame(void)
 {
-    static u32 sLastUpdateFrame = 0xFFFFFFFFu;
-    if (gMain.vblankCounter1 == sLastUpdateFrame)
+    // Zero-initialized (.bss): the GBA link script discards .data, so a
+    // nonzero static initializer here fails to link ("defined in discarded
+    // section").  Stores frame+1 so 0 means "never ran" and the first call
+    // always proceeds.
+    static u32 sLastUpdateFramePlus1;
+    if (gMain.vblankCounter1 + 1 == sLastUpdateFramePlus1)
         return;
-    sLastUpdateFrame = gMain.vblankCounter1;
+    sLastUpdateFramePlus1 = gMain.vblankCounter1 + 1;
     Multiplayer_Update();
 }
 
