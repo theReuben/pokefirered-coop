@@ -8,6 +8,7 @@
 #include "global.h"
 #include "multiplayer.h"
 #include "constants/multiplayer.h"
+#include "main.h"
 #include <string.h>
 
 static struct SaveBlock1 sTestSave;
@@ -149,6 +150,24 @@ static void TestNoPositionWhileConnecting(void)
     ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
 }
 
+// ---- Frame-guarded wrapper ---------------------------------------------------
+
+static void TestUpdateOncePerFrameGuard(void)
+{
+    // Two calls in the same VBlank frame: only the first does work (one
+    // posFrameCounter tick).  Advancing the frame counter re-arms it.
+    SetUpConnectedPlayer();
+    gMain.vblankCounter1 = 100;
+
+    Multiplayer_UpdateOncePerFrame();
+    Multiplayer_UpdateOncePerFrame();
+    ASSERT_EQ(gMultiplayerState.posFrameCounter, 1);
+
+    gMain.vblankCounter1 = 101;
+    Multiplayer_UpdateOncePerFrame();
+    ASSERT_EQ(gMultiplayerState.posFrameCounter, 2);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -160,5 +179,6 @@ int main(void)
     TestNoPositionWhenDisconnected();
     TestPosFrameCounterFrozenWhileDisconnected();
     TestNoPositionWhileConnecting();
+    TestUpdateOncePerFrameGuard();
     TEST_SUMMARY();
 }

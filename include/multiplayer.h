@@ -232,6 +232,8 @@ extern struct CoopSettings gCoopSettings;
 void Multiplayer_Init(void);
 void Multiplayer_PollPackets(void);
 void Multiplayer_Update(void);
+// Frame-guarded wrapper — safe to call from multiple engine hooks per frame.
+void Multiplayer_UpdateOncePerFrame(void);
 
 // Ghost NPC
 void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);

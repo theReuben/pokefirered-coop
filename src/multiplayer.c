@@ -820,6 +820,20 @@ void Multiplayer_PollPackets(void)
     while (ProcessOneRecvPacket()) {}
 }
 
+// Frame-guarded wrapper around Multiplayer_Update.  Multiple engine hooks
+// call this — CB2_Overworld and the script engine's native step — so that
+// packet draining never depends on which main callback happens to be active
+// (the root cause of three separate 'wait command hangs during fade' bugs).
+// Only the first call per VBlank frame does work.
+void Multiplayer_UpdateOncePerFrame(void)
+{
+    static u32 sLastUpdateFrame = 0xFFFFFFFFu;
+    if (gMain.vblankCounter1 == sLastUpdateFrame)
+        return;
+    sLastUpdateFrame = gMain.vblankCounter1;
+    Multiplayer_Update();
+}
+
 // Overworld-only update: ghost NPC management and outbound position send.
 // Called from the overworld game loop, after Multiplayer_PollPackets has
 // already consumed incoming packets for this frame.
@@ -1342,11 +1356,10 @@ void Multiplayer_RederiveStarterBallFlags(void)
 
 bool8 Multiplayer_NativePollPartnerStarterPick(void)
 {
-    // Drain the recv ring each poll frame — CB2_ReturnToFieldContinueScript may
-    // be the active callback (not CB2_Overworld) immediately after starter pick,
-    // same situation as NativePollPartySync.  A dropped initial pick exchange
-    // is repaired by the state beacon, which Update also keeps sending here.
-    Multiplayer_Update();
+    // Packet draining is handled by the script engine's native step
+    // (RunScriptCommand calls Multiplayer_UpdateOncePerFrame before every
+    // native poll), so this runs even when CB2_Overworld isn't active.
+    // A dropped initial pick exchange is repaired by the state beacon.
     return (bool8)(gMultiplayerState.connState != MP_STATE_CONNECTED
                 || gMultiplayerState.partnerStarterSpecies != 0);
 }
@@ -1719,9 +1732,8 @@ u16 Multiplayer_IsPartnerWaitingForBoss_RivalOaksLab(void)
 // Returns FALSE (stay in NATIVE mode, yield) while still waiting.
 bool8 Multiplayer_NativePollBossStart(void)
 {
-    // Drain recv ring each poll frame so packets arrive even when CB2_Overworld
-    // isn't active (e.g. during fade-in after a menu closes).
-    Multiplayer_Update();
+    // Packet draining is handled by the script engine's native step before
+    // this poll runs, regardless of the active main callback.
 
     // B button cancels the wait so the player can back out if the partner is
     // stuck at a different event.  VAR_RESULT = 0 signals cancellation to the
@@ -1733,8 +1745,8 @@ bool8 Multiplayer_NativePollBossStart(void)
         return TRUE;
     }
 
-    // A dropped BOSS_READY is repaired by the state beacon (sent from the
-    // Multiplayer_Update call above), which carries bossReadyBossId.
+    // A dropped BOSS_READY is repaired by the state beacon, which carries
+    // bossReadyBossId.
 
     if (Multiplayer_ScriptCheckBossStart())
     {
@@ -1807,11 +1819,8 @@ void Multiplayer_HandleRemotePartySync(const u8 *data, u8 n_mons)
 
 bool8 Multiplayer_NativePollPartySync(void)
 {
-    // Drain the recv ring each poll frame.  CB2_Overworld normally does this,
-    // but CB2_ReturnToFieldContinueScript (running after the party menu closes)
-    // may still be executing its fade-in when the native poll starts, leaving
-    // party-sync packets unprocessed.
-    Multiplayer_Update();
+    // Packet draining is handled by the script engine's native step before
+    // this poll runs, regardless of the active main callback.
     if (gMultiplayerState.connState != MP_STATE_CONNECTED
         || gMultiplayerState.partnerPartySelectDone)
     {
