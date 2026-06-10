@@ -110,6 +110,14 @@ survived "verified" for days.
   for six commits (broken by `69822bae`, repaired in `06ad530c`) while
   "verified" fixes landed on a red CI, and five stale assertions never ran
   against the features they covered.
+- **check-native is a host build; it cannot see GBA constraints.** The
+  native suite compiles multiplayer.c with host gcc, which happily accepts
+  things the ARM target rejects — a nonzero-initialized static landed in
+  `.data` (a section the GBA link script discards) and broke every ROM
+  build while check-native stayed green (`b2a48b95`). In ROM-side code:
+  statics must be zero-initialized or `const`; use `EWRAM_DATA` for
+  NULL-initialized pointers. If you cannot run `make firered` locally,
+  state that in the commit and treat CI's ROM build as the gate.
 - **Fixed-role fixtures prove less than they appear to.** The save-state
   catalogue hard-codes P1 at the Bulbasaur ball and P2 at Charmander; that
   symmetry masked the phantom-pick bug completely. For any
