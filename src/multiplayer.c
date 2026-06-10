@@ -1199,20 +1199,26 @@ u16 Multiplayer_GetStarterForBall2(void) { return Multiplayer_GetRandomizedStart
 
 void Multiplayer_SendStarterPick(void)
 {
-    u16 species = VarGet(VAR_TEMP_2); // PLAYER_STARTER_SPECIES alias
+    // Derive the species from VAR_STARTER_MON (the ball slot, written by the
+    // pick script just before this special runs) rather than VAR_TEMP_2:
+    // the rival battle triggers reuse VAR_TEMP_2 for the player's column, so
+    // reading it here broadcasts garbage if call order ever changes.  The
+    // FLAG_SYS_POKEMON_GET gate disambiguates slot 0 from "no pick yet".
+    u16 species = 0;
+    u16 slot = VarGet(VAR_STARTER_MON);
     u8 pkt[MP_PKT_SIZE_STARTER_PICK];
+    if (FlagGet(FLAG_SYS_POKEMON_GET) && slot <= 2)
+        species = Multiplayer_GetRandomizedStarter((u8)slot);
+    if (species == 0)
+        return; // nothing valid to announce
+    gMultiplayerState.myStarterSpecies   = species;
+    gMultiplayerState.starterResendTimer = 0;
+    Multiplayer_PersistStarterOutcome();
+    if (gMultiplayerState.connState == MP_STATE_DISCONNECTED)
+        return;
     pkt[0] = MP_PKT_STARTER_PICK;
     pkt[1] = (u8)(species >> 8);
     pkt[2] = (u8)(species);
-    // Save for periodic resend from the waitstarterpick poll.
-    if (species != 0)
-    {
-        gMultiplayerState.myStarterSpecies   = species;
-        gMultiplayerState.starterResendTimer = 0;
-        Multiplayer_PersistStarterOutcome();
-    }
-    if (gMultiplayerState.connState == MP_STATE_DISCONNECTED)
-        return;
     MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
 }
 

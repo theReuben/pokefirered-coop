@@ -59,7 +59,11 @@ static void TestSendStarterPickWritesPacketWhenConnected(void)
     u8 b;
     ResetForStarterTest();
     gMultiplayerState.connState = MP_STATE_CONNECTED;
-    VarSet(PLAYER_STARTER_SPECIES, SPECIES_CHARMANDER);
+    // The pick script sets FLAG_SYS_POKEMON_GET and VAR_STARTER_MON (slot)
+    // before calling the special; SendStarterPick derives the species from
+    // those instead of the trigger-shared VAR_TEMP_2.
+    FlagSet(FLAG_SYS_POKEMON_GET);
+    VarSet(VAR_STARTER_MON, 2); // Charmander ball
 
     Multiplayer_SendStarterPick();
 
@@ -74,11 +78,27 @@ static void TestSendStarterPickSuppressedWhenDisconnected(void)
     // Solo mode: must not write anything to the ring (no relay to flush to).
     ResetForStarterTest();
     gMultiplayerState.connState = MP_STATE_DISCONNECTED;
-    VarSet(PLAYER_STARTER_SPECIES, SPECIES_BULBASAUR);
+    FlagSet(FLAG_SYS_POKEMON_GET);
+    VarSet(VAR_STARTER_MON, 0); // Bulbasaur ball
 
     Multiplayer_SendStarterPick();
 
     ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
+    // The pick is still cached for the session even though nothing was sent.
+    ASSERT_EQ(gMultiplayerState.myStarterSpecies, SPECIES_BULBASAUR);
+}
+
+static void TestSendStarterPickNoOpWithoutStarter(void)
+{
+    // Without FLAG_SYS_POKEMON_GET the special must not fabricate a pick from
+    // VAR_STARTER_MON's default 0 (which is also the Bulbasaur slot).
+    ResetForStarterTest();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+
+    Multiplayer_SendStarterPick();
+
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
+    ASSERT_EQ(gMultiplayerState.myStarterSpecies, 0);
 }
 
 // ---- Inbound MP_PKT_STARTER_PICK dispatch ----------------------------------
@@ -308,6 +328,7 @@ int main(void)
 {
     TestSendStarterPickWritesPacketWhenConnected();
     TestSendStarterPickSuppressedWhenDisconnected();
+    TestSendStarterPickNoOpWithoutStarter();
     TestPartnerStarterPickRecvUpdatesState();
     TestPartnerStarterPickRecvTruncated();
     TestRivalStarterUnchosenAllPermutations();
