@@ -15,6 +15,7 @@
 #include "global.h"
 #include "multiplayer.h"
 #include "constants/multiplayer.h"
+#include "constants/vars.h"   // VAR_STARTER_MON
 #include <string.h>
 
 // VAR_TEMP_2 holds the local player's chosen starter species when the picker
@@ -27,9 +28,12 @@
 // so every test that runs a frame must have a valid save block.
 static struct SaveBlock1 sTestSave;
 
+void TestResetGameVars(void);          // from stubs.c
+
 static void ResetForStarterTest(void)
 {
     Multiplayer_Init();                    // resets ring buffers and state
+    TestResetGameVars();                   // wipe persisted VAR_* outcomes
     // Pre-set CONNECTED so ProcessOneRecvPacket's auto-connect block does not
     // fire and write gender+name packets to the send ring when tests push
     // inbound packets while simulating the already-connected state.
@@ -114,36 +118,30 @@ static void TestPartnerStarterPickRecvTruncated(void)
 
 // All six (player, partner) permutations of the three canonical starters.
 // The rival must take whichever species neither player chose.
+static void CheckRivalForPicks(u16 mine, u16 partner, u16 expectedRival)
+{
+    // Fresh state per permutation: once both picks are known the result is
+    // persisted to VAR_RIVAL_STARTER and later calls return the saved value.
+    ResetForStarterTest();
+    gMultiplayerState.myStarterSpecies      = mine;
+    gMultiplayerState.partnerStarterSpecies = partner;
+    ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), expectedRival);
+    // The derivation must also have been persisted.
+    ASSERT_EQ(VarGet(VAR_RIVAL_STARTER), expectedRival);
+    // Persisted value survives the session state being wiped.
+    gMultiplayerState.myStarterSpecies      = 0;
+    gMultiplayerState.partnerStarterSpecies = 0;
+    ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), expectedRival);
+}
+
 static void TestRivalStarterUnchosenAllPermutations(void)
 {
-    ResetForStarterTest();
-
-    // Player picks Bulbasaur, partner picks Charmander → rival = Squirtle
-    gMultiplayerState.myStarterSpecies      = SPECIES_BULBASAUR;
-    gMultiplayerState.partnerStarterSpecies = SPECIES_CHARMANDER;
-    ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_SQUIRTLE);
-
-    // Player picks Bulbasaur, partner picks Squirtle → rival = Charmander
-    gMultiplayerState.partnerStarterSpecies = SPECIES_SQUIRTLE;
-    ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_CHARMANDER);
-
-    // Player picks Charmander, partner picks Bulbasaur → rival = Squirtle
-    gMultiplayerState.myStarterSpecies      = SPECIES_CHARMANDER;
-    gMultiplayerState.partnerStarterSpecies = SPECIES_BULBASAUR;
-    ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_SQUIRTLE);
-
-    // Player picks Charmander, partner picks Squirtle → rival = Bulbasaur
-    gMultiplayerState.partnerStarterSpecies = SPECIES_SQUIRTLE;
-    ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_BULBASAUR);
-
-    // Player picks Squirtle, partner picks Bulbasaur → rival = Charmander
-    gMultiplayerState.myStarterSpecies      = SPECIES_SQUIRTLE;
-    gMultiplayerState.partnerStarterSpecies = SPECIES_BULBASAUR;
-    ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_CHARMANDER);
-
-    // Player picks Squirtle, partner picks Charmander → rival = Bulbasaur
-    gMultiplayerState.partnerStarterSpecies = SPECIES_CHARMANDER;
-    ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_BULBASAUR);
+    CheckRivalForPicks(SPECIES_BULBASAUR,  SPECIES_CHARMANDER, SPECIES_SQUIRTLE);
+    CheckRivalForPicks(SPECIES_BULBASAUR,  SPECIES_SQUIRTLE,   SPECIES_CHARMANDER);
+    CheckRivalForPicks(SPECIES_CHARMANDER, SPECIES_BULBASAUR,  SPECIES_SQUIRTLE);
+    CheckRivalForPicks(SPECIES_CHARMANDER, SPECIES_SQUIRTLE,   SPECIES_BULBASAUR);
+    CheckRivalForPicks(SPECIES_SQUIRTLE,   SPECIES_BULBASAUR,  SPECIES_CHARMANDER);
+    CheckRivalForPicks(SPECIES_SQUIRTLE,   SPECIES_CHARMANDER, SPECIES_BULBASAUR);
 }
 
 static void TestRivalStarterFallbackWhenPartnerUnknown(void)
@@ -172,10 +170,13 @@ static void TestRivalStarterSlotMatchesSpecies(void)
     gMultiplayerState.partnerStarterSpecies = SPECIES_CHARMANDER;
     ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 1); // Squirtle is in slot 1
 
+    // Result persists per save; reset before checking a different pick pair.
+    ResetForStarterTest();
     gMultiplayerState.myStarterSpecies      = SPECIES_BULBASAUR;
     gMultiplayerState.partnerStarterSpecies = SPECIES_SQUIRTLE;
     ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 2); // Charmander is in slot 2
 
+    ResetForStarterTest();
     gMultiplayerState.myStarterSpecies      = SPECIES_CHARMANDER;
     gMultiplayerState.partnerStarterSpecies = SPECIES_SQUIRTLE;
     ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 0); // Bulbasaur is in slot 0
@@ -209,6 +210,98 @@ static void TestPollConnectedAfterPickReturnsTrue(void)
     ASSERT_EQ(Multiplayer_NativePollPartnerStarterPick(), TRUE);
 }
 
+// ---- Persistence: VAR_PARTNER_STARTER / VAR_RIVAL_STARTER -------------------
+
+static void TestPartnerPickReceiptPersistsVar(void)
+{
+    // Receiving the partner's pick must persist it to VAR_PARTNER_STARTER so
+    // a save made afterwards carries the pick across reload/reconnect.
+    ResetForStarterTest();
+
+    Mp_Push(&gMpRecvRing, MP_PKT_STARTER_PICK);
+    Mp_Push(&gMpRecvRing, (u8)(SPECIES_SQUIRTLE >> 8));
+    Mp_Push(&gMpRecvRing, (u8)(SPECIES_SQUIRTLE & 0xFF));
+
+    Multiplayer_Update();
+
+    ASSERT_EQ(VarGet(VAR_PARTNER_STARTER), SPECIES_SQUIRTLE);
+    // Rival var stays undetermined until our own pick is known too.
+    ASSERT_EQ(VarGet(VAR_RIVAL_STARTER), 0);
+}
+
+static void TestBothPicksKnownPersistsRivalVar(void)
+{
+    // Once both picks are known the rival species is persisted exactly once.
+    ResetForStarterTest();
+
+    gMultiplayerState.myStarterSpecies = SPECIES_BULBASAUR;
+    Mp_Push(&gMpRecvRing, MP_PKT_STARTER_PICK);
+    Mp_Push(&gMpRecvRing, (u8)(SPECIES_CHARMANDER >> 8));
+    Mp_Push(&gMpRecvRing, (u8)(SPECIES_CHARMANDER & 0xFF));
+
+    Multiplayer_Update();
+
+    ASSERT_EQ(VarGet(VAR_PARTNER_STARTER), SPECIES_CHARMANDER);
+    ASSERT_EQ(VarGet(VAR_RIVAL_STARTER),   SPECIES_SQUIRTLE);
+}
+
+static void TestReloadRecoversFromPersistedVars(void)
+{
+    // Simulated save-state reload: IWRAM session state zeroed, persisted vars
+    // intact.  GetRivalStarterSpecies must serve the saved answer immediately
+    // and Update must restore the partner pick cache without any packet.
+    ResetForStarterTest();
+    VarSet(VAR_PARTNER_STARTER, SPECIES_CHARMANDER);
+    VarSet(VAR_RIVAL_STARTER,   SPECIES_SQUIRTLE);
+
+    ASSERT_EQ(Multiplayer_GetRivalStarterSpecies(), SPECIES_SQUIRTLE);
+    ASSERT_EQ(Multiplayer_GetRivalStarterSlot(), 1);
+
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerStarterSpecies, SPECIES_CHARMANDER);
+}
+
+// ---- Phantom-pick guard ------------------------------------------------------
+
+static void TestNoPhantomPickBeforeStarterObtained(void)
+{
+    // VAR_STARTER_MON defaults to 0, which is also slot 0 (Bulbasaur).  With
+    // FLAG_SYS_POKEMON_GET clear, Update must NOT fabricate a pick from it,
+    // and the background resend must stay silent — previously this broadcast
+    // a phantom Bulbasaur pick that hid the partner's Bulbasaur ball.
+    int i;
+    ResetForStarterTest();
+
+    for (i = 0; i < 130; i++)
+        Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.myStarterSpecies, 0);
+    // Only heartbeat pings may be in the ring — no MP_PKT_STARTER_PICK.
+    {
+        u8 b;
+        while (Mp_Available(&gMpSendRing))
+        {
+            Mp_Pop(&gMpSendRing, &b);
+            ASSERT_NE(b, MP_PKT_STARTER_PICK);
+        }
+    }
+}
+
+static void TestRecoveryAfterStarterObtained(void)
+{
+    // With FLAG_SYS_POKEMON_GET set, the recovery path restores the pick from
+    // VAR_STARTER_MON (here slot 2 = Charmander) and persists the outcome.
+    ResetForStarterTest();
+    FlagSet(FLAG_SYS_POKEMON_GET);
+    VarSet(VAR_STARTER_MON, 2);
+    VarSet(VAR_PARTNER_STARTER, SPECIES_BULBASAUR);
+
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.myStarterSpecies, SPECIES_CHARMANDER);
+    ASSERT_EQ(VarGet(VAR_RIVAL_STARTER), SPECIES_SQUIRTLE);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -223,5 +316,10 @@ int main(void)
     TestPollOfflineReturnsTrue();
     TestPollConnectedNoPickReturnsFalse();
     TestPollConnectedAfterPickReturnsTrue();
+    TestPartnerPickReceiptPersistsVar();
+    TestBothPicksKnownPersistsRivalVar();
+    TestReloadRecoversFromPersistedVars();
+    TestNoPhantomPickBeforeStarterObtained();
+    TestRecoveryAfterStarterObtained();
     TEST_SUMMARY();
 }

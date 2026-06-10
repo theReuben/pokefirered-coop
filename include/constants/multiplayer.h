@@ -58,6 +58,15 @@
 #define VAR_COOP_CONNECTED      0x40F7
 #define VAR_BOSS_BATTLE_STATE   0x40F8
 
+// Persistent starter-selection outcome (saved vars; survive reload/reconnect).
+// VAR_PARTNER_STARTER — species the partner picked; 0 = not yet known
+// VAR_RIVAL_STARTER   — species the rival ends up with (the starter neither
+//                       player picked); 0 = not yet determined.  This is the
+//                       single source of truth for rival battle dispatch; the
+//                       IWRAM fields in gMultiplayerState are session caches.
+#define VAR_PARTNER_STARTER     0x40F9
+#define VAR_RIVAL_STARTER       0x40FA
+
 // Ring buffer constants
 #define MP_RING_SIZE        256    // power-of-2; u8 head/tail wrap naturally
 #define MP_RING_MAGIC       0xC0   // sanity sentinel for Tauri to locate buffer
@@ -210,7 +219,9 @@
 //   0x408C–0x40F6  Frontier/daily/Quest-Log state; all per-player
 //   0x40F7          VAR_COOP_CONNECTED — local co-op flag; do not echo
 //   0x40F8          VAR_BOSS_BATTLE_STATE — local readiness flag; do not echo
-//   0x40F9–0x40FF  Reserved / unused
+//   0x40F9          VAR_PARTNER_STARTER — persisted partner pick; do not echo
+//   0x40FA          VAR_RIVAL_STARTER — persisted rival species; do not echo
+//   0x40FB–0x40FF  Reserved / unused
 //   0x8000–0x8014  Special in-RAM vars (RESULT, FACING, etc.) — transient
 // ---------------------------------------------------------------------------
 #define SYNC_VAR_MAP_SCENE_START    0x4050   // VAR_MAP_SCENE_PALLET_TOWN_OAK

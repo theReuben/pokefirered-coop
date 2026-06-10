@@ -252,6 +252,7 @@ static void MpRing_Write(struct MpRingBuf *ring, const u8 *data, u8 len)
 static void Multiplayer_SpawnFollowerGhost(void);
 static void Multiplayer_DespawnFollowerGhost(void);
 static void Multiplayer_UpdateFollowerGhostPosition(void);
+static void Multiplayer_PersistStarterOutcome(void);
 
 // ---------------------------------------------------------------------------
 // Read one complete packet from gMpRecvRing and dispatch it.
@@ -471,6 +472,7 @@ static bool8 ProcessOneRecvPacket(void)
                     if (Multiplayer_GetRandomizedStarter(s) == received)
                     {
                         gMultiplayerState.partnerStarterSpecies = received;
+                        Multiplayer_PersistStarterOutcome();
                         break;
                     }
                 }
@@ -812,11 +814,30 @@ void Multiplayer_Update(void)
     // Auto-recover myStarterSpecies from VAR_STARTER_MON when it's been cleared
     // (e.g., save-state reload after Multiplayer_Init zeroed the field).
     // VAR_STARTER_MON lives in the save block and survives reloads.
-    if (gMultiplayerState.myStarterSpecies == 0)
+    // Gated on FLAG_SYS_POKEMON_GET: VAR_STARTER_MON defaults to 0, which is
+    // also a valid slot (Bulbasaur), so recovering before the player actually
+    // owns a starter fabricates a phantom Bulbasaur pick that the background
+    // resend then broadcasts — hiding the partner's Bulbasaur ball.
+    if (gMultiplayerState.myStarterSpecies == 0 && FlagGet(FLAG_SYS_POKEMON_GET))
     {
         u16 slot = VarGet(VAR_STARTER_MON);
         if (slot <= 2)
+        {
             gMultiplayerState.myStarterSpecies = Multiplayer_GetRandomizedStarter(slot);
+            Multiplayer_PersistStarterOutcome();
+        }
+    }
+
+    // Recover the partner's pick from its persisted var so reloads/reconnects
+    // don't depend on the partner re-sending it.
+    if (gMultiplayerState.partnerStarterSpecies == 0)
+    {
+        u16 saved = VarGet(VAR_PARTNER_STARTER);
+        if (saved != 0)
+        {
+            gMultiplayerState.partnerStarterSpecies = saved;
+            Multiplayer_PersistStarterOutcome();
+        }
     }
 
     // While disconnected, periodically send a ping so the partner's ROM can
@@ -1188,24 +1209,59 @@ void Multiplayer_SendStarterPick(void)
     {
         gMultiplayerState.myStarterSpecies   = species;
         gMultiplayerState.starterResendTimer = 0;
+        Multiplayer_PersistStarterOutcome();
     }
     if (gMultiplayerState.connState == MP_STATE_DISCONNECTED)
         return;
     MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
 }
 
-u16 Multiplayer_GetRivalStarterSpecies(void)
+// Persist the partner's pick and, once both picks are known, the rival's
+// species into saved game vars.  The saved vars are the durable source of
+// truth: they survive save/reload and reconnects, unlike the IWRAM mirrors
+// in gMultiplayerState which Multiplayer_Init zeroes.
+static void Multiplayer_PersistStarterOutcome(void)
 {
-    // Use myStarterSpecies (set at pick time) not VAR_TEMP_2: the RivalBattleTrigger
-    // scripts overwrite VAR_TEMP_2 with ball position (1/2/3) before this is called.
     u16 mine    = gMultiplayerState.myStarterSpecies;
     u16 partner = gMultiplayerState.partnerStarterSpecies;
     u8 i;
+    if (partner != 0 && VarGet(VAR_PARTNER_STARTER) != partner)
+        VarSet(VAR_PARTNER_STARTER, partner);
+    if (mine == 0 || partner == 0 || VarGet(VAR_RIVAL_STARTER) != 0)
+        return;
     for (i = 0; i < 3; i++)
     {
         u16 s = Multiplayer_GetRandomizedStarter(i);
         if (s != mine && s != partner)
+        {
+            VarSet(VAR_RIVAL_STARTER, s);
+            return;
+        }
+    }
+}
+
+u16 Multiplayer_GetRivalStarterSpecies(void)
+{
+    // The persisted result wins — it survives save/reload and reconnects.
+    u16 saved = VarGet(VAR_RIVAL_STARTER);
+    u16 mine, partner;
+    u8 i;
+    if (saved != 0)
+        return saved;
+    // Not yet persisted: derive from the session picks.  Use myStarterSpecies
+    // (set at pick time) not VAR_TEMP_2: the RivalBattleTrigger scripts
+    // overwrite VAR_TEMP_2 with ball position (1/2/3) before this is called.
+    mine    = gMultiplayerState.myStarterSpecies;
+    partner = gMultiplayerState.partnerStarterSpecies;
+    for (i = 0; i < 3; i++)
+    {
+        u16 s = Multiplayer_GetRandomizedStarter(i);
+        if (s != mine && s != partner)
+        {
+            if (mine != 0 && partner != 0)
+                VarSet(VAR_RIVAL_STARTER, s);
             return s;
+        }
     }
     return Multiplayer_GetRandomizedStarter(0); // fallback
 }
