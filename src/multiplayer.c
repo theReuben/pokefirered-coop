@@ -1302,6 +1302,34 @@ u16 Multiplayer_IsBall0TakenByPartner(void) { return IsBallTakenByPartner(0); }
 u16 Multiplayer_IsBall1TakenByPartner(void) { return IsBallTakenByPartner(1); }
 u16 Multiplayer_IsBall2TakenByPartner(void) { return IsBallTakenByPartner(2); }
 
+// Re-derive the three starter-ball hide flags from durable state instead of
+// trusting whatever an earlier session left in the save.  A ball is hidden
+// iff its starter is already taken: ours via VAR_STARTER_MON (gated on
+// FLAG_SYS_POKEMON_GET so slot 0's default isn't a pick), the partner's via
+// VAR_PARTNER_STARTER.  Called from the lab OnTransition during the
+// selection scenes; from scene 3 onward the vanilla removeobject-set flags
+// are final and are left untouched.
+void Multiplayer_RederiveStarterBallFlags(void)
+{
+    static const u16 sBallFlags[3] = { FLAG_HIDE_BULBASAUR_BALL,
+                                       FLAG_HIDE_SQUIRTLE_BALL,
+                                       FLAG_HIDE_CHARMANDER_BALL };
+    u16 partner = VarGet(VAR_PARTNER_STARTER);
+    u8 i;
+    for (i = 0; i < 3; i++)
+    {
+        FlagClear(sBallFlags[i]);
+        if (partner != 0 && Multiplayer_GetRandomizedStarter(i) == partner)
+            FlagSet(sBallFlags[i]);
+    }
+    if (FlagGet(FLAG_SYS_POKEMON_GET))
+    {
+        u16 slot = VarGet(VAR_STARTER_MON);
+        if (slot <= 2)
+            FlagSet(sBallFlags[slot]);
+    }
+}
+
 bool8 Multiplayer_NativePollPartnerStarterPick(void)
 {
     // Drain the recv ring each poll frame — CB2_ReturnToFieldContinueScript may

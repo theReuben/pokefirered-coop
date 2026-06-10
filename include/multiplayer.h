@@ -398,6 +398,8 @@ u16 Multiplayer_GetRivalStarterSlot(void);
 u16 Multiplayer_GetRivalBattleKey(void);
 // Returns 1 if the partner has already taken ball slot 0/1/2.
 u16 Multiplayer_IsBall0TakenByPartner(void);
+// Re-derives the three FLAG_HIDE_*_BALL flags from durable pick state.
+void Multiplayer_RederiveStarterBallFlags(void);
 u16 Multiplayer_IsBall1TakenByPartner(void);
 u16 Multiplayer_IsBall2TakenByPartner(void);
 // Returns TRUE if partner has picked (or we're offline) — used by waitstarterpick.

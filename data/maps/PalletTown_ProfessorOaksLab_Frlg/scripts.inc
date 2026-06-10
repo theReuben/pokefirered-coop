@@ -44,11 +44,11 @@ PalletTown_ProfessorOaksLab_EventScript_ReadyOakForStarterScene::
 	return
 
 PalletTown_ProfessorOaksLab_EventScript_ClearStarterBallFlags::
-	@ Clear ball-hide flags left over from a previous co-op session.
+	@ Re-derive ball-hide flags from durable pick state (VAR_STARTER_MON +
+	@ VAR_PARTNER_STARTER) instead of blanket-clearing: a blanket clear made
+	@ the player's own taken ball reappear after a mid-selection reload.
 	@ Called at scene 1 (fresh entry) and scene 2 (reload mid-selection).
-	clearflag FLAG_HIDE_BULBASAUR_BALL
-	clearflag FLAG_HIDE_SQUIRTLE_BALL
-	clearflag FLAG_HIDE_CHARMANDER_BALL
+	special Multiplayer_RederiveStarterBallFlags
 	return
 
 PalletTown_ProfessorOaksLab_EventScript_ReadyOakForNationalDexScene::

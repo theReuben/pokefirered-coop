@@ -322,6 +322,55 @@ static void TestRecoveryAfterStarterObtained(void)
     ASSERT_EQ(VarGet(VAR_RIVAL_STARTER), SPECIES_SQUIRTLE);
 }
 
+// ---- Ball-hide flag derivation ----------------------------------------------
+
+static bool8 BallFlagSet(u16 flag) { return FlagGet(flag); }
+
+static void TestRederiveBallFlagsFreshState(void)
+{
+    // Stale flags from an earlier session, no durable picks → all cleared.
+    ResetForStarterTest();
+    FlagSet(FLAG_HIDE_BULBASAUR_BALL);
+    FlagSet(FLAG_HIDE_SQUIRTLE_BALL);
+    FlagSet(FLAG_HIDE_CHARMANDER_BALL);
+
+    Multiplayer_RederiveStarterBallFlags();
+
+    ASSERT_EQ(BallFlagSet(FLAG_HIDE_BULBASAUR_BALL),  FALSE);
+    ASSERT_EQ(BallFlagSet(FLAG_HIDE_SQUIRTLE_BALL),   FALSE);
+    ASSERT_EQ(BallFlagSet(FLAG_HIDE_CHARMANDER_BALL), FALSE);
+}
+
+static void TestRederiveBallFlagsPartnerPickPersists(void)
+{
+    // Partner's persisted pick must stay hidden across a reload even though
+    // the stale-looking flag is cleared first.
+    ResetForStarterTest();
+    VarSet(VAR_PARTNER_STARTER, SPECIES_SQUIRTLE);
+
+    Multiplayer_RederiveStarterBallFlags();
+
+    ASSERT_EQ(BallFlagSet(FLAG_HIDE_BULBASAUR_BALL),  FALSE);
+    ASSERT_EQ(BallFlagSet(FLAG_HIDE_SQUIRTLE_BALL),   TRUE);
+    ASSERT_EQ(BallFlagSet(FLAG_HIDE_CHARMANDER_BALL), FALSE);
+}
+
+static void TestRederiveBallFlagsOwnPickPersists(void)
+{
+    // Reload after taking our own starter mid-selection: our ball must NOT
+    // reappear (regression in the previous blanket-clear approach).
+    ResetForStarterTest();
+    FlagSet(FLAG_SYS_POKEMON_GET);
+    VarSet(VAR_STARTER_MON, 2); // Charmander ball
+    VarSet(VAR_PARTNER_STARTER, SPECIES_BULBASAUR);
+
+    Multiplayer_RederiveStarterBallFlags();
+
+    ASSERT_EQ(BallFlagSet(FLAG_HIDE_BULBASAUR_BALL),  TRUE);
+    ASSERT_EQ(BallFlagSet(FLAG_HIDE_SQUIRTLE_BALL),   FALSE);
+    ASSERT_EQ(BallFlagSet(FLAG_HIDE_CHARMANDER_BALL), TRUE);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -342,5 +391,8 @@ int main(void)
     TestReloadRecoversFromPersistedVars();
     TestNoPhantomPickBeforeStarterObtained();
     TestRecoveryAfterStarterObtained();
+    TestRederiveBallFlagsFreshState();
+    TestRederiveBallFlagsPartnerPickPersists();
+    TestRederiveBallFlagsOwnPickPersists();
     TEST_SUMMARY();
 }

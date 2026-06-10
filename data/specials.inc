@@ -675,3 +675,4 @@ gSpecials::
 	def_special Multiplayer_IsBall0TakenByPartner
 	def_special Multiplayer_IsBall1TakenByPartner
 	def_special Multiplayer_IsBall2TakenByPartner
+	def_special Multiplayer_RederiveStarterBallFlags
