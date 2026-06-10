@@ -6,6 +6,6 @@
 // quoted includes inside include/*.h, which resolve relative to include/);
 // a divergent stub here would give stubs.c a different gMain layout and
 // out-of-bounds field accesses at run time.
-#include "../../include/main.h"
+#include "../../../include/main.h"
 
 #endif
