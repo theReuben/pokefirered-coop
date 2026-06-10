@@ -27,6 +27,9 @@
 #define MP_PKT_TRAINER_FREE         0x19   // 1 byte — player's trainer battle ended (win or loss)
 #define MP_PKT_HOST_MIGRATE         0x17   // 1 byte — relay→ROM: you are now host
 #define MP_PKT_EVENT_LOG            0x18   // variable — async event log batch
+#define MP_PKT_STATE_BEACON         0x1A   // 5 bytes — periodic idempotent session state
+                                           // (gender + my starter species + boss-ready id);
+                                           // converges any dropped one-shot exchange
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -58,6 +61,15 @@
 #define VAR_COOP_CONNECTED      0x40F7
 #define VAR_BOSS_BATTLE_STATE   0x40F8
 
+// Persistent starter-selection outcome (saved vars; survive reload/reconnect).
+// VAR_PARTNER_STARTER — species the partner picked; 0 = not yet known
+// VAR_RIVAL_STARTER   — species the rival ends up with (the starter neither
+//                       player picked); 0 = not yet determined.  This is the
+//                       single source of truth for rival battle dispatch; the
+//                       IWRAM fields in gMultiplayerState are session caches.
+#define VAR_PARTNER_STARTER     0x40F9
+#define VAR_RIVAL_STARTER       0x40FA
+
 // Ring buffer constants
 #define MP_RING_SIZE        256    // power-of-2; u8 head/tail wrap naturally
 #define MP_RING_MAGIC       0xC0   // sanity sentinel for Tauri to locate buffer
@@ -87,6 +99,12 @@
 #define MP_PKT_SIZE_PING                    1  // type only
 #define MP_PKT_SIZE_HOST_MIGRATE            1  // type only
 #define MP_PKT_SIZE_TRAINER_FREE            1  // type only
+#define MP_PKT_SIZE_STATE_BEACON            5  // type + gender + starter_hi + starter_lo + boss_ready_id
+
+// Beacon cadence: 16 frames ≈ 267 ms.  Cheap (5 bytes) and idempotent, it
+// replaces the per-frame gender flood and the per-message starter/boss-ready
+// resend timers: any dropped one-shot exchange converges on the next beacon.
+#define MP_BEACON_INTERVAL_FRAMES           16
 
 // Event log packet constants
 #define MPEVENT_TRAINER_BEATEN  0x01  // data[0..1] = trainerNum (u16 lo/hi), data[2] unused
@@ -210,7 +228,9 @@
 //   0x408C–0x40F6  Frontier/daily/Quest-Log state; all per-player
 //   0x40F7          VAR_COOP_CONNECTED — local co-op flag; do not echo
 //   0x40F8          VAR_BOSS_BATTLE_STATE — local readiness flag; do not echo
-//   0x40F9–0x40FF  Reserved / unused
+//   0x40F9          VAR_PARTNER_STARTER — persisted partner pick; do not echo
+//   0x40FA          VAR_RIVAL_STARTER — persisted rival species; do not echo
+//   0x40FB–0x40FF  Reserved / unused
 //   0x8000–0x8014  Special in-RAM vars (RESULT, FACING, etc.) — transient
 // ---------------------------------------------------------------------------
 #define SYNC_VAR_MAP_SCENE_START    0x4050   // VAR_MAP_SCENE_PALLET_TOWN_OAK

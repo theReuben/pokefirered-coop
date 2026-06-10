@@ -1830,7 +1830,7 @@ void CB2_Overworld(void)
     bool32 fading = (gPaletteFade.active != 0);
     if (fading)
         SetVBlankCallback(NULL);
-    Multiplayer_Update();
+    Multiplayer_UpdateOncePerFrame();
     OverworldBasic();
     if (fading)
     {

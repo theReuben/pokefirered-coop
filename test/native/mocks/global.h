@@ -57,10 +57,19 @@ typedef u32 bool32;
 // read/write oam fields, so an opaque fixed-size placeholder is sufficient.
 struct OamData { u32 attr[2]; };
 
+// Key-input macros from the real global.h, plus the one button constant
+// multiplayer.c uses (real value from gba/io_reg.h, which isn't mocked).
+// Tests drive input by writing gMain.newKeys directly.
+#define TEST_BUTTON(field, button) ((field) & (button))
+#define JOY_NEW(button)  TEST_BUTTON(gMain.newKeys,  button)
+#define JOY_HELD(button) TEST_BUTTON(gMain.heldKeys, button)
+#define B_BUTTON 0x0002
+
 // Starter ball hide-flags (FRLG values from include/constants/flags_frlg.h).
 #define FLAG_HIDE_BULBASAUR_BALL   0x028
 #define FLAG_HIDE_SQUIRTLE_BALL    0x029
 #define FLAG_HIDE_CHARMANDER_BALL  0x02A
+#define FLAG_SYS_POKEMON_GET       0x828  // SYS_FLAGS + 0x28 (FRLG)
 
 // Forward declarations for pointer-only uses in headers we'll include later.
 struct Sprite;

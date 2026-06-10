@@ -139,18 +139,35 @@ void FlagClear(u16 flagId)
 // TrySavingData stub — native tests don't exercise real save; just no-op.
 u8 TrySavingData(u8 saveType) { (void)saveType; return 0; }
 
-// VarGet/VarSet stub — backed by a small array indexed from TEMP_VARS_START.
+// VarGet/VarSet stub — temp/special vars (0x8000+) plus the saved game var
+// range (0x4000–0x40FF) used by VAR_STARTER_MON / VAR_PARTNER_STARTER /
+// VAR_RIVAL_STARTER.
 static u16 sVars[16];
+static u16 sGameVars[256];
 u16 VarGet(u16 varId)
 {
     u16 idx = varId - TEMP_VARS_START;
-    return (idx < 16) ? sVars[idx] : 0;
+    if (idx < 16)
+        return sVars[idx];
+    if (varId >= 0x4000 && varId <= 0x40FF)
+        return sGameVars[varId - 0x4000];
+    return 0;
 }
 bool8 VarSet(u16 varId, u16 value)
 {
     u16 idx = varId - TEMP_VARS_START;
     if (idx < 16) { sVars[idx] = value; return TRUE; }
+    if (varId >= 0x4000 && varId <= 0x40FF)
+    {
+        sGameVars[varId - 0x4000] = value;
+        return TRUE;
+    }
     return FALSE;
+}
+// Test helper: wipe the saved game var range between cases.
+void TestResetGameVars(void)
+{
+    memset(sGameVars, 0, sizeof(sGameVars));
 }
 
 // AddBagItem stub — records the last call for test assertions.

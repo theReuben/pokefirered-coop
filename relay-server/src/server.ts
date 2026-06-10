@@ -38,6 +38,7 @@ export type ClientMessage =
   | { type: "starter_pick"; speciesId: number }
   | { type: "item_give"; itemId: number; quantity: number }
   | { type: "flag_clear"; flagId: number }
+  | { type: "raw"; bytes: string }                  // hex-encoded opaque ROM packet
   | { type: "session_settings"; randomizeEncounters: boolean; encounterSeed?: number };
 
 // Server → Client (received by Tauri app, forwarded to ROM serial buffer)
@@ -59,6 +60,7 @@ export type ServerMessage =
   | { type: "starter_denied"; speciesId: number }
   | { type: "item_give"; itemId: number; quantity: number }
   | { type: "flag_clear"; flagId: number }
+  | { type: "raw"; bytes: string }                  // hex-encoded opaque ROM packet
   | { type: "session_settings"; randomizeEncounters: boolean; encounterSeed: number };
 
 // ─── Server ───────────────────────────────────────────────────────────────────
@@ -257,6 +259,12 @@ export default class PokemonCoopServer implements Party.Server {
       case "flag_clear":
         this.state.flags.delete(msg.flagId);
         this.broadcast(sender, { type: "flag_clear", flagId: msg.flagId });
+        break;
+
+      case "raw":
+        // Opaque peer-to-peer ROM packet (gender, name, follower gfx, state
+        // beacon, ...) — forward untouched; no server-side state involved.
+        this.broadcast(sender, { type: "raw", bytes: msg.bytes });
         break;
 
       case "session_settings":

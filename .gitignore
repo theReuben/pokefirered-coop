@@ -49,16 +49,16 @@ include/constants/heal_locations.h
 include/constants/script_commands.h
 
 # Native test build artifacts
-test/test_smoke
-test/test_smoke.dSYM/
-test/test_packets
-test/test_packets.dSYM/
-test/test_starter
-test/test_starter.dSYM/
-test/test_dispatch
-test/test_dispatch.dSYM/
-test/test_send_throttle
-test/test_send_throttle.dSYM/
+test/native/test_smoke
+test/native/test_smoke.dSYM/
+test/native/test_packets
+test/native/test_packets.dSYM/
+test/native/test_starter
+test/native/test_starter.dSYM/
+test/native/test_dispatch
+test/native/test_dispatch.dSYM/
+test/native/test_send_throttle
+test/native/test_send_throttle.dSYM/
 node_modules/
 tools/trainerproc/trainerproc
 src/data/battle_partners.h

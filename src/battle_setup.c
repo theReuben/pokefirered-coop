@@ -1588,6 +1588,15 @@ void ShowTrainerIntroSpeech(void)
     }
 }
 
+// Explicit override for battle entry points that bypass TrainerBattleLoadArgs
+// (standalone docooptrainerbattle).  Without this, gotopostbattlescript after
+// such a battle jumps to a stale end script — or the signpost fallback, which
+// never releases the player.
+void BattleSetup_SetTrainerBattleEndScript(const u8 *script)
+{
+    sTrainerBattleEndScript = (u8 *)script;
+}
+
 const u8 *BattleSetup_GetScriptAddrAfterBattle(void)
 {
     if (sTrainerBattleEndScript != NULL)

@@ -183,7 +183,8 @@ struct MultiplayerState {
     u8  posFrameCounter;    // counts frames; send position every 4 frames
     u16 partnerStarterSpecies; // 0 until partner sends MP_PKT_STARTER_PICK
     u16 myStarterSpecies;     // saved species from Multiplayer_SendStarterPick for resend
-    u8  starterResendTimer;   // counts frames; resend myStarterSpecies every 60 frames
+    u8  starterResendTimer;   // state-beacon cadence counter (name kept for layout
+                              // stability — tools/mcp_gamestate hardcodes offsets)
     u8  remoteUpdateThisFrame; // set when any remote flag/var applied; cleared next Multiplayer_Update
     u8  partnerGender;         // MALE/FEMALE; meaningful only when gotPartnerGender is TRUE
     u8  gotPartnerGender;      // TRUE once partner has sent MP_PKT_GENDER
@@ -205,7 +206,7 @@ struct MultiplayerState {
     u8  battleTurnSentMoveSlot;
     u8  battleTurnSentTarget;
     u8  battleTurnSentFlags;
-    u8  bossResendTimer;        // counts frames; resend BOSS_READY every 60 frames while waiting
+    u8  bossResendTimer;        // retired — BOSS_READY repair now rides the state beacon
     u8  partySyncResendTimer;   // counts frames; resend MP_PKT_PARTY_SYNC every 60 frames while waiting
     // Heartbeat / disconnect resilience (features added in co-op v0.2)
     u8  pingTimer;              // counts frames; sends MP_PKT_PING every 120 frames (2s) when connected
@@ -231,6 +232,8 @@ extern struct CoopSettings gCoopSettings;
 void Multiplayer_Init(void);
 void Multiplayer_PollPackets(void);
 void Multiplayer_Update(void);
+// Frame-guarded wrapper — safe to call from multiple engine hooks per frame.
+void Multiplayer_UpdateOncePerFrame(void);
 
 // Ghost NPC
 void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);
@@ -398,6 +401,8 @@ u16 Multiplayer_GetRivalStarterSlot(void);
 u16 Multiplayer_GetRivalBattleKey(void);
 // Returns 1 if the partner has already taken ball slot 0/1/2.
 u16 Multiplayer_IsBall0TakenByPartner(void);
+// Re-derives the three FLAG_HIDE_*_BALL flags from durable pick state.
+void Multiplayer_RederiveStarterBallFlags(void);
 u16 Multiplayer_IsBall1TakenByPartner(void);
 u16 Multiplayer_IsBall2TakenByPartner(void);
 // Returns TRUE if partner has picked (or we're offline) — used by waitstarterpick.

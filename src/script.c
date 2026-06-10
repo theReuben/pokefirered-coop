@@ -93,6 +93,13 @@ bool8 RunScriptCommand(struct ScriptContext *ctx)
     case SCRIPT_MODE_STOPPED:
         return FALSE;
     case SCRIPT_MODE_NATIVE:
+        // Drain co-op packets before the native poll runs.  Native scripts are
+        // the multiplayer wait commands (waitbossstart, waitstarterpick,
+        // waitpartysync, ...); they must see fresh packets even when the active
+        // main callback is a fade/menu-return that never calls
+        // Multiplayer_Update.  Frame-guarded, so overworld frames that already
+        // updated are not double-ticked.
+        Multiplayer_UpdateOncePerFrame();
         // Try to call a function in C
         // Continue to bytecode if no function or it returns TRUE
         if (ctx->nativePtr)

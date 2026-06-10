@@ -2478,10 +2478,18 @@ bool8 ScrCmd_docooptrainerbattle(struct ScriptContext *ctx)
     Script_RequestEffects(SCREFF_V1 | SCREFF_SAVE | SCREFF_HARDWARE);
 
     // 0xFFFF = sentinel "use existing opponentA" — set by a preceding
-    // trainerbattle opcode (the EARLY_RIVAL → DoNoIntroCoopTrainerBattle path).
-    // Any other value is a standalone usage that writes opponentA inline.
+    // trainerbattle opcode (the EARLY_RIVAL → DoNoIntroCoopTrainerBattle path),
+    // which also loaded sTrainerBattleEndScript via TrainerBattleLoadArgs.
+    // Any other value is a standalone usage that writes opponentA inline and
+    // bypasses TrainerBattleLoadArgs entirely, so point the post-battle script
+    // at the next instruction: gotopostbattlescript then behaves like a plain
+    // fall-through instead of jumping to a stale end script or the signpost
+    // fallback (which soft-locks the overworld — the 0.1.15 freeze).
     if (trainerId != 0xFFFF)
+    {
         TRAINER_BATTLE_PARAM.opponentA = trainerId;
+        BattleSetup_SetTrainerBattleEndScript(ctx->scriptPtr);
+    }
     // BattleSetup_StartCoopBattle copies opponentA into opponentB internally so
     // both partner trainer slots resolve to the same trainer's roster.
     BattleSetup_StartCoopBattle();
@@ -3411,7 +3419,7 @@ bool8 ScrCmd_waitpartysync(struct ScriptContext *ctx)
     Script_RequestEffects(SCREFF_V1);
     // Drain any packets that accumulated in the recv ring while the party
     // selection menu was open (Multiplayer_Update was not running then).
-    Multiplayer_Update();
+    Multiplayer_UpdateOncePerFrame();
     SetupNativeScript(ctx, Multiplayer_NativePollPartySync);
     return TRUE;
 }

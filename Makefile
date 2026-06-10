@@ -308,6 +308,10 @@ C_OBJS := $(patsubst $(C_SUBDIR)/%.c,$(C_BUILDDIR)/%.o,$(C_SRCS))
 
 TEST_SRCS_IN := $(wildcard $(TEST_SUBDIR)/*.c $(TEST_SUBDIR)/*/*.c $(TEST_SUBDIR)/*/*/*.c)
 TEST_SRCS := $(foreach src,$(TEST_SRCS_IN),$(if $(findstring .inc.c,$(src)),,$(src)))
+# test/native/ holds host-compiled co-op unit tests (run via `make check-native`).
+# They mock GBA headers and redefine engine symbols, so they must never be
+# swept into the GBA test ELF that `make check` links.
+TEST_SRCS := $(filter-out $(TEST_SUBDIR)/native/%,$(TEST_SRCS))
 TEST_OBJS := $(patsubst $(TEST_SUBDIR)/%.c,$(TEST_BUILDDIR)/%.o,$(TEST_SRCS))
 TEST_OBJS_REL := $(patsubst $(OBJ_DIR)/%,%,$(TEST_OBJS))
 
@@ -364,7 +368,7 @@ check: $(TESTELF)
 	$(ROMTESTHYDRA) $(ROMTEST) $(OBJCOPY) $(HEADLESSELF)
 
 check-native:
-	$(MAKE) -C test all
+	$(MAKE) -C test/native all
 
 check-relay:
 	npm install --prefix relay-server

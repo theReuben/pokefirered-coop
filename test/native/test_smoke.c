@@ -316,6 +316,7 @@ static void TestRemoteFlagSetRouting(void)
     // Pre-set CONNECTED so the auto-connect block in ProcessOneRecvPacket
     // does not fire and write gender+name packets to the send ring.
     gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gMultiplayerState.gotPartnerGender = TRUE; // suppress gender flood — ring must stay empty
 
     Mp_EncodeFlagSet(pkt, SYNC_FLAG_TRAINERS_START + 5);
     for (i = 0; i < MP_PKT_SIZE_FLAG_SET; i++)
@@ -337,6 +338,7 @@ static void TestRemoteVarSetRouting(void)
     Multiplayer_Init();
     ResetDispatch();
     gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gMultiplayerState.gotPartnerGender = TRUE; // suppress gender flood — ring must stay empty
 
     Mp_EncodeVarSet(pkt, 0x4001, 0x0007);
     for (i = 0; i < MP_PKT_SIZE_VAR_SET; i++)
@@ -359,6 +361,7 @@ static void TestMultipleFlagSetsRouted(void)
     Multiplayer_Init();
     ResetDispatch();
     gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gMultiplayerState.gotPartnerGender = TRUE; // suppress gender flood — ring must stay empty
 
     Mp_EncodeFlagSet(pkt, SYNC_FLAG_BOSSES_START);
     for (i = 0; i < MP_PKT_SIZE_FLAG_SET; i++) Mp_Push(&gMpRecvRing, pkt[i]);
@@ -501,6 +504,7 @@ static void TestFullSyncRoundTrip(void)
     gSaveBlock1Ptr = &applyBlock;
     // Pre-set CONNECTED so auto-connect doesn't send gender+name to send ring.
     gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gMultiplayerState.gotPartnerGender = TRUE; // suppress gender flood — ring must stay empty
 
     Multiplayer_Update(); // dispatches FULL_SYNC via ProcessOneRecvPacket
 
@@ -748,6 +752,7 @@ static void TestSeedSyncRoundTrip(void)
 
     // Pre-set CONNECTED so auto-connect doesn't send gender+name to send ring.
     gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gMultiplayerState.gotPartnerGender = TRUE; // suppress gender flood — ring must stay empty
 
     Multiplayer_Update();
     ASSERT_EQ(gCoopSettings.encounterSeed, 0x12345678u);

@@ -2,6 +2,11 @@
 .equ PLAYER_STARTER_SPECIES,  VAR_TEMP_2
 .equ RIVAL_STARTER_SPECIES,   VAR_TEMP_3
 .equ RIVAL_STARTER_ID,        VAR_TEMP_4
+@ Player's trigger column for the rival battle (1=left, 2=mid, 3=right).
+@ Deliberately NOT VAR_TEMP_2: that's PLAYER_STARTER_SPECIES, and sharing it
+@ caused the rival battle desync where the trigger's column overwrote the
+@ species before dispatch read it.
+.equ PLAYER_BATTLE_COLUMN,    VAR_TEMP_5
 
 .equ SHOWED_OAK_COMPLETE_DEX, FLAG_TEMP_2
 .equ RIVAL_BATTLE_WAIT_CANCELLED, FLAG_TEMP_1
@@ -39,11 +44,11 @@ PalletTown_ProfessorOaksLab_EventScript_ReadyOakForStarterScene::
 	return
 
 PalletTown_ProfessorOaksLab_EventScript_ClearStarterBallFlags::
-	@ Clear ball-hide flags left over from a previous co-op session.
+	@ Re-derive ball-hide flags from durable pick state (VAR_STARTER_MON +
+	@ VAR_PARTNER_STARTER) instead of blanket-clearing: a blanket clear made
+	@ the player's own taken ball reappear after a mid-selection reload.
 	@ Called at scene 1 (fresh entry) and scene 2 (reload mid-selection).
-	clearflag FLAG_HIDE_BULBASAUR_BALL
-	clearflag FLAG_HIDE_SQUIRTLE_BALL
-	clearflag FLAG_HIDE_CHARMANDER_BALL
+	special Multiplayer_RederiveStarterBallFlags
 	return
 
 PalletTown_ProfessorOaksLab_EventScript_ReadyOakForNationalDexScene::
@@ -294,21 +299,21 @@ PalletTown_ProfessorOaksLab_EventScript_RivalBattleTriggerLeft::
 	lockall
 	@ One-shot bypass: player just cancelled a wait and is walking off the tile.
 	goto_if_set RIVAL_BATTLE_WAIT_CANCELLED, PalletTown_ProfessorOaksLab_EventScript_RivalBattleCancelBypass
-	setvar VAR_TEMP_2, 1
+	setvar PLAYER_BATTLE_COLUMN, 1
 	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattle
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleTriggerMid::
 	lockall
 	goto_if_set RIVAL_BATTLE_WAIT_CANCELLED, PalletTown_ProfessorOaksLab_EventScript_RivalBattleCancelBypass
-	setvar VAR_TEMP_2, 2
+	setvar PLAYER_BATTLE_COLUMN, 2
 	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattle
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalBattleTriggerRight::
 	lockall
 	goto_if_set RIVAL_BATTLE_WAIT_CANCELLED, PalletTown_ProfessorOaksLab_EventScript_RivalBattleCancelBypass
-	setvar VAR_TEMP_2, 3
+	setvar PLAYER_BATTLE_COLUMN, 3
 	goto PalletTown_ProfessorOaksLab_EventScript_RivalBattle
 	end
 
@@ -377,9 +382,9 @@ PalletTown_ProfessorOaksLab_EventScript_RivalBattleDispatchSolo::
 @ NOTE: Names below refer to the Rival's mon (e.g. for RivalBattleSquirtle, player has Charmander)
 
 PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtle::
-	goto_if_eq VAR_TEMP_2, 1, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtleLeft
-	goto_if_eq VAR_TEMP_2, 2, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtleMid
-	goto_if_eq VAR_TEMP_2, 3, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtleRight
+	goto_if_eq PLAYER_BATTLE_COLUMN, 1, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtleLeft
+	goto_if_eq PLAYER_BATTLE_COLUMN, 2, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtleMid
+	goto_if_eq PLAYER_BATTLE_COLUMN, 3, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtleRight
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleSquirtleLeft::
@@ -439,9 +444,9 @@ PalletTown_ProfessorOaksLab_Movement_RivalApproachForBattleSquirtleRight::
 	step_end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmander::
-	goto_if_eq VAR_TEMP_2, 1, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmanderLeft
-	goto_if_eq VAR_TEMP_2, 2, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmanderMid
-	goto_if_eq VAR_TEMP_2, 3, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmanderRight
+	goto_if_eq PLAYER_BATTLE_COLUMN, 1, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmanderLeft
+	goto_if_eq PLAYER_BATTLE_COLUMN, 2, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmanderMid
+	goto_if_eq PLAYER_BATTLE_COLUMN, 3, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmanderRight
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleCharmanderLeft::
@@ -504,9 +509,9 @@ PalletTown_ProfessorOaksLab_Movement_ApproachForBattleCharmanderRight::
 	step_end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaur::
-	goto_if_eq VAR_TEMP_2, 1, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaurLeft
-	goto_if_eq VAR_TEMP_2, 2, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaurMid
-	goto_if_eq VAR_TEMP_2, 3, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaurRight
+	goto_if_eq PLAYER_BATTLE_COLUMN, 1, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaurLeft
+	goto_if_eq PLAYER_BATTLE_COLUMN, 2, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaurMid
+	goto_if_eq PLAYER_BATTLE_COLUMN, 3, PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaurRight
 	end
 
 PalletTown_ProfessorOaksLab_EventScript_RivalApproachForBattleBulbasaurLeft::
@@ -567,9 +572,9 @@ PalletTown_ProfessorOaksLab_EventScript_EndRivalBattle::
 	msgbox PalletTown_ProfessorOaksLab_Text_RivalGoToughenMyMon
 	closemessage
 	playbgm MUS_RG_RIVAL_EXIT, 0
-	call_if_eq VAR_TEMP_2, 1, PalletTown_ProfessorOaksLab_EventScript_RivalExitAfterBattleLeft
-	call_if_eq VAR_TEMP_2, 2, PalletTown_ProfessorOaksLab_EventScript_RivalExitAfterBattleMid
-	call_if_eq VAR_TEMP_2, 3, PalletTown_ProfessorOaksLab_EventScript_RivalExitAfterBattleRight
+	call_if_eq PLAYER_BATTLE_COLUMN, 1, PalletTown_ProfessorOaksLab_EventScript_RivalExitAfterBattleLeft
+	call_if_eq PLAYER_BATTLE_COLUMN, 2, PalletTown_ProfessorOaksLab_EventScript_RivalExitAfterBattleMid
+	call_if_eq PLAYER_BATTLE_COLUMN, 3, PalletTown_ProfessorOaksLab_EventScript_RivalExitAfterBattleRight
 	removeobject LOCALID_OAKS_LAB_RIVAL
 	playse SE_EXIT
 	fadedefaultbgm

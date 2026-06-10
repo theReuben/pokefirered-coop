@@ -1,8 +1,8 @@
 CC      := gcc
 CFLAGS  := -Wall -Wextra -std=gnu17 -g -DFIRERED
 # test/mocks shadows GBA-specific headers; include/ provides the real headers
-INCLUDE := -I mocks -I ../include
-SRCDIR  := ../src
+INCLUDE := -I mocks -I ../../include
+SRCDIR  := ../../src
 TESTDIR := .
 
 TESTS   := test_smoke test_packets test_starter test_dispatch test_send_throttle
