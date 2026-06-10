@@ -38,6 +38,8 @@ static void ResetAll(void)
     // fire and write gender+name packets to the send ring. Tests that need
     // DISCONNECTED override this immediately after calling ResetAll().
     gMultiplayerState.connState = MP_STATE_CONNECTED;
+    // Suppress the gotPartnerGender flood so 'send ring stays empty' asserts hold.
+    gMultiplayerState.gotPartnerGender = TRUE;
     memset(gObjectEvents, 0, sizeof(gObjectEvents));
     memset(&sTestSave, 0, sizeof(sTestSave));
     sTestSave.location.mapGroup = 0;

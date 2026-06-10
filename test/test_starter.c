@@ -34,6 +34,8 @@ static void ResetForStarterTest(void)
     // fire and write gender+name packets to the send ring when tests push
     // inbound packets while simulating the already-connected state.
     gMultiplayerState.connState = MP_STATE_CONNECTED;
+    // Suppress the gotPartnerGender flood so 'send ring stays empty' asserts hold.
+    gMultiplayerState.gotPartnerGender = TRUE;
     // Multiplayer_Init does not zero partnerStarterSpecies (BSS-zero on real
     // hardware where Init runs once at boot). Reset it manually so test
     // ordering can't leak state between cases.

@@ -30,6 +30,9 @@ static void SetUpConnectedPlayer(void)
     gObjectEvents[0].facingDirection = DIR_SOUTH;
 
     gMultiplayerState.connState = MP_STATE_CONNECTED;
+    // Suppress the gotPartnerGender flood so cadence asserts see only the
+    // 4-frame position throttle (plus its piggybacked gender re-sync).
+    gMultiplayerState.gotPartnerGender = TRUE;
 }
 
 // ---- Throttling cadence ----------------------------------------------------

@@ -1,20 +1,11 @@
-#ifndef GUARD_MAIN_H
-#define GUARD_MAIN_H
+#ifndef GUARD_MOCKS_MAIN_H
+#define GUARD_MOCKS_MAIN_H
 
-typedef void (*MainCallback)(void);
-typedef void (*IntrCallback)(void);
-typedef void (*IntrFunc)(void);
-
-// Minimal stub — only the fields used by multiplayer.c are present.
-struct Main
-{
-    u8 inBattle : 1;
-    u8 _pad     : 7;
-};
-
-extern struct Main gMain;
-
-void SetMainCallback2(MainCallback callback);
-void SetVBlankCallback(IntrCallback callback);
+// Re-export the real header so struct Main has the same layout in every TU.
+// multiplayer.c already pulls in the real include/main.h transitively (via
+// quoted includes inside include/*.h, which resolve relative to include/);
+// a divergent stub here would give stubs.c a different gMain layout and
+// out-of-bounds field accesses at run time.
+#include "../../include/main.h"
 
 #endif
