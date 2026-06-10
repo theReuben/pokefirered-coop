@@ -1,5 +1,17 @@
 # Pokémon FireRed Co-Op Multiplayer Mod
 
+## Engineering discipline — read before changing anything
+
+@docs/ENGINEERING_DISCIPLINE.md
+
+The imported rules above are binding, same as the DO NOTs below. They were
+written from this repo's own commit history; each cites the incident it
+prevents. The short version: diagnose mechanisms not symptoms, fix the layer
+on the second occurrence of any patch, put state in the right persistence
+tier, update every layer of the packet stack together, run `make
+check-native` before every commit, and test sync features role-swapped and
+under `set_link_chaos`.
+
 ## Project Overview
 
 This is a networked 2-player co-op mod built on top of `rh-hideout/pokeemerald-expansion` with FireRed/LeafGreen mode enabled. Two players play through Kanto simultaneously in a shared world with randomized encounters from all generations.
