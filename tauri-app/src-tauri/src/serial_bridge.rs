@@ -163,6 +163,20 @@ const PKT_PARTNER_DISCONNECTED: u8 = 0x0C;
 const PKT_ITEM_GIVE:            u8 = 0x0D; // 4 bytes: type + item_hi + item_lo + quantity
 const PKT_FLAG_CLEAR:           u8 = 0x0E; // 3 bytes: type + flagId_hi + flagId_lo
 const PKT_STARTER_PICK:         u8 = 0x0F; // 3 bytes: type + species_hi + species_lo
+const PKT_GENDER:               u8 = 0x10; // 2 bytes: type + gender
+const PKT_NAME:                 u8 = 0x11; // 8 bytes: type + 7 name bytes
+const PKT_PARTY_SYNC:           u8 = 0x12; // 2 + n_mons*30 bytes
+const PKT_FOLLOWER_GFX:         u8 = 0x13; // 3 bytes: type + gfx_hi + gfx_lo
+const PKT_BATTLE_TURN:          u8 = 0x14; // 4 bytes: type + move_slot + target + flags
+const PKT_TRAINER_BUSY:         u8 = 0x15; // 4 bytes: type + localId + mapGroup + mapNum
+const PKT_PING:                 u8 = 0x16; // 1 byte heartbeat (ROM -> relay only)
+const PKT_HOST_MIGRATE:         u8 = 0x17; // 1 byte (relay -> ROM only)
+const PKT_EVENT_LOG:            u8 = 0x18; // 2 + count*4 bytes
+const PKT_TRAINER_FREE:         u8 = 0x19; // 1 byte
+const PKT_STATE_BEACON:         u8 = 0x1A; // 5 bytes: type + gender + starter_hi + starter_lo + boss_ready_id
+
+const PARTY_SYNC_MON_SIZE:   usize = 30; // sizeof(struct MultiPartnerMenuPokemon)
+const EVENT_LOG_ENTRY_SIZE:  usize = 4;  // event_type(1) + data[3]
 
 // FULL_SYNC payload is exactly this many bytes (must match FULL_SYNC_PAYLOAD_SIZE in ROM).
 // Layout: story(92) + items(24) + bosses(2) + trainers(96) + badges(2) = 216 bytes.
@@ -452,8 +466,45 @@ fn packet_size(raw: &[u8], pos: usize) -> usize {
         PKT_ITEM_GIVE            => 4,
         PKT_FLAG_CLEAR           => 3,
         PKT_STARTER_PICK         => 3,
+        PKT_GENDER               => 2,
+        PKT_NAME                 => 8,
+        PKT_PARTY_SYNC           => {
+            if pos + 2 > raw.len() {
+                return 0;
+            }
+            2 + raw[pos + 1] as usize * PARTY_SYNC_MON_SIZE
+        }
+        PKT_FOLLOWER_GFX         => 3,
+        PKT_BATTLE_TURN          => 4,
+        PKT_TRAINER_BUSY         => 4,
+        PKT_PING                 => 1,
+        PKT_HOST_MIGRATE         => 1,
+        PKT_EVENT_LOG            => {
+            if pos + 2 > raw.len() {
+                return 0;
+            }
+            2 + raw[pos + 1] as usize * EVENT_LOG_ENTRY_SIZE
+        }
+        PKT_TRAINER_FREE         => 1,
+        PKT_STATE_BEACON         => 5,
         _ => 0,
     }
+}
+
+// ── Hex helpers for opaque packet payloads ────────────────────────────────────
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn from_hex(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
 }
 
 // ── Packet → JSON (ROM → relay) ───────────────────────────────────────────────
@@ -544,6 +595,27 @@ fn packet_to_json(pkt: &[u8]) -> Option<Value> {
             Some(json!({ "type": "starter_pick", "speciesId": species_id }))
         }
 
+        // Heartbeat is consumed by the bridge (the WebSocket layer has its own
+        // keep-alive); never forwarded.
+        PKT_PING => None,
+
+        // Battle turn / party sync use their existing relay message types with
+        // the full raw packet (type byte included) hex-encoded as payload.
+        PKT_BATTLE_TURN if pkt.len() == 4 => {
+            Some(json!({ "type": "battle_turn", "turnData": to_hex(pkt) }))
+        }
+        PKT_PARTY_SYNC => {
+            Some(json!({ "type": "party_sync", "partyData": to_hex(pkt) }))
+        }
+
+        // Peer-to-peer packets with no relay-side logic travel as opaque raw
+        // bytes; the relay forwards them untouched and the partner bridge
+        // writes them straight into the recv ring.
+        PKT_GENDER | PKT_NAME | PKT_FOLLOWER_GFX | PKT_TRAINER_BUSY
+        | PKT_TRAINER_FREE | PKT_EVENT_LOG | PKT_STATE_BEACON => {
+            Some(json!({ "type": "raw", "bytes": to_hex(pkt) }))
+        }
+
         _ => {
             log::warn!("serial_bridge: unknown outbound packet type 0x{:02X}", pkt[0]);
             None
@@ -630,11 +702,18 @@ fn json_to_packet(msg: &Value) -> Option<Vec<u8>> {
             Some(vec![PKT_STARTER_PICK, (species_id >> 8) as u8, species_id as u8])
         }
 
+        // Opaque raw packet from the partner bridge — full ROM packet bytes.
+        "raw" => from_hex(msg.get("bytes")?.as_str()?),
+
+        // Battle turn / party sync carry the full raw packet hex-encoded.
+        "battle_turn" => from_hex(msg.get("turnData")?.as_str()?),
+        "party_sync"  => from_hex(msg.get("partyData")?.as_str()?),
+
         // boss_waiting is server telling us to wait — ROM already polls bossReadyBossId.
         // role is handled by the Tauri app state, not the ROM.
         // room_full / session_mismatch are handled by the frontend.
         "boss_waiting" | "role" | "room_full" | "session_mismatch"
-        | "starter_denied" | "party_sync" | "battle_turn" => None,
+        | "starter_denied" => None,
 
         other => {
             log::debug!("serial_bridge: unhandled inbound message type: {other}");
@@ -701,6 +780,59 @@ mod tests {
         assert_eq!(packet_size(&[PKT_BOSS_START],                 0), 1);
         assert_eq!(packet_size(&[PKT_PARTNER_CONNECTED],          0), 1);
         assert_eq!(packet_size(&[PKT_PARTNER_DISCONNECTED],       0), 1);
+    }
+
+    #[test]
+    fn packet_size_extended_types() {
+        // Every type >= 0x10 previously fell into `_ => 0` and corrupted the
+        // stream framing.  Each must report its real size.
+        assert_eq!(packet_size(&[PKT_GENDER, 0],                          0), 2);
+        assert_eq!(packet_size(&[PKT_NAME, 0, 0, 0, 0, 0, 0, 0],          0), 8);
+        assert_eq!(packet_size(&[PKT_FOLLOWER_GFX, 0, 0],                 0), 3);
+        assert_eq!(packet_size(&[PKT_BATTLE_TURN, 0, 0, 0],               0), 4);
+        assert_eq!(packet_size(&[PKT_TRAINER_BUSY, 0, 0, 0],              0), 4);
+        assert_eq!(packet_size(&[PKT_PING],                               0), 1);
+        assert_eq!(packet_size(&[PKT_HOST_MIGRATE],                       0), 1);
+        assert_eq!(packet_size(&[PKT_TRAINER_FREE],                       0), 1);
+        assert_eq!(packet_size(&[PKT_STATE_BEACON, 0, 0, 0, 0],           0), 5);
+        // Variable: party sync with 2 mons = 2 + 2*30
+        let mut ps = vec![PKT_PARTY_SYNC, 2];
+        ps.resize(62, 0);
+        assert_eq!(packet_size(&ps, 0), 62);
+        // Variable: event log with 3 entries = 2 + 3*4
+        let mut ev = vec![PKT_EVENT_LOG, 3];
+        ev.resize(14, 0);
+        assert_eq!(packet_size(&ev, 0), 14);
+    }
+
+    #[test]
+    fn raw_roundtrip_via_json() {
+        // Outbound: a state beacon becomes a raw message; inbound: it decodes
+        // back to the identical packet bytes.
+        let pkt = vec![PKT_STATE_BEACON, 1, 0x00, 0x07, 14];
+        let msg = packet_to_json(&pkt).expect("beacon must map to JSON");
+        assert_eq!(msg.get("type").unwrap().as_str().unwrap(), "raw");
+        let back = json_to_packet(&msg).expect("raw must decode");
+        assert_eq!(back, pkt);
+    }
+
+    #[test]
+    fn battle_turn_and_party_sync_roundtrip() {
+        let turn = vec![PKT_BATTLE_TURN, 2, 1, 0];
+        let msg = packet_to_json(&turn).unwrap();
+        assert_eq!(msg.get("type").unwrap().as_str().unwrap(), "battle_turn");
+        assert_eq!(json_to_packet(&msg).unwrap(), turn);
+
+        let mut party = vec![PKT_PARTY_SYNC, 1];
+        party.resize(32, 0xAB);
+        let msg = packet_to_json(&party).unwrap();
+        assert_eq!(msg.get("type").unwrap().as_str().unwrap(), "party_sync");
+        assert_eq!(json_to_packet(&msg).unwrap(), party);
+    }
+
+    #[test]
+    fn ping_is_consumed_silently() {
+        assert!(packet_to_json(&[PKT_PING]).is_none());
     }
 
     #[test]

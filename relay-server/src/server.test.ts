@@ -277,6 +277,19 @@ describe("Position relay", () => {
   });
 });
 
+describe("Raw packet relay", () => {
+  it("forwards raw bytes to partner only (no echo, no state)", () => {
+    const { server, room } = makeServer();
+    const host = connect(server, room, new MockConnection("c1"));
+    const guest = connect(server, room, new MockConnection("c2"));
+    const inboxBefore = host.inbox.length;
+    // 0x1A state beacon: gender=1, starter=0x0007, bossReady=0x0e
+    send(server, host, { type: "raw", bytes: "1a0100070e" });
+    expect(host.inbox.length).toBe(inboxBefore); // not echoed to sender
+    expect(guest.last("raw")).toEqual({ type: "raw", bytes: "1a0100070e" });
+  });
+});
+
 describe("Flag sync", () => {
   it("broadcasts flag_set to partner only (not back to sender)", () => {
     const { server, room } = makeServer();
