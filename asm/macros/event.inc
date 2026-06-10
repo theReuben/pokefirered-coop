@@ -843,7 +843,9 @@
 	@      EARLY_RIVAL → EventScript_DoNoIntroCoopTrainerBattle dispatch path.
 	@   2. Standalone: `docooptrainerbattle TRAINER_X` — sets opponentA inline.
 	@      Useful in gym/boss scripts that want to skip trainerbattle's solo path
-	@      after a waitbossstart handshake.
+	@      after a waitbossstart handshake.  This form also points the post-battle
+	@      script at the next instruction, so a following `gotopostbattlescript`
+	@      simply continues the script instead of jumping to a stale end script.
 	@ The opponent id is duplicated into opponentB internally so one trainer drives
 	@ both partner trainer slots.
 	.macro docooptrainerbattle trainer=0xFFFF
