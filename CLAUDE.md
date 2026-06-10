@@ -363,7 +363,24 @@ claude mcp add --scope project gamestate -- python3 tools/mcp_gamestate/server.p
 make build-states
 ```
 
-MCP tools available: `start_emulator`, `stop_emulator`, `list_instances`, `screenshot`, `press_button`, `wait`, `load_savestate`, `save_savestate`, `advance_text`, `move_steps`, `get_text_state`, `read_memory`, `write_memory`, `battle_diag`, `check_battle_sync`, `start_recording`, `stop_recording`, `stop_recording_side_by_side`.
+MCP tools available: `start_emulator`, `stop_emulator`, `list_instances`, `screenshot`, `press_button`, `wait`, `load_savestate`, `save_savestate`, `advance_text`, `move_steps`, `get_text_state`, `read_memory`, `write_memory`, `battle_diag`, `check_battle_sync`, `start_recording`, `stop_recording`, `stop_recording_side_by_side`, `set_link_chaos`.
+
+#### Link chaos mode — test like the real relay
+
+The in-process MCP relay delivers every packet, in order, every cycle — the
+real Tauri/PartyKit WebSocket path does not.  Several shipped bugs (ghost
+gender, starter sync) only reproduced on the real relay because tests never
+exercised packet loss or reordering.  Use `set_link_chaos(drop, delay, seed)`
+to make the MCP relay drop each ROM packet with probability `drop` and hold
+each packet one relay cycle (delivering it after newer packets — a reorder)
+with probability `delay`.  Pass a nonzero `seed` for reproducible runs;
+call with defaults to disable.  Env equivalents: `COOP_CHAOS_DROP`,
+`COOP_CHAOS_DELAY`, `COOP_CHAOS_SEED`.
+
+Recommended for any new sync feature: re-run the relevant co-op scenario with
+`set_link_chaos(drop=0.3, seed=1)` — the session-state beacon should converge
+gender/starter/boss-ready state despite the losses.  Relay-injected control
+packets (`PARTNER_CONNECTED`/`DISCONNECTED`, `HOST_MIGRATE`) bypass chaos.
 
 #### Save state catalogue — always load DIFFERENT states for p1 and p2
 

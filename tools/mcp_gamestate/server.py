@@ -25,6 +25,7 @@ Add to Claude Code:
 import base64
 import json
 import os
+import random
 import subprocess
 import tempfile
 import threading
@@ -199,6 +200,90 @@ _host_instance: str = "p1"
 _HEARTBEAT_TIMEOUT = float(os.environ.get("COOP_HEARTBEAT_TIMEOUT", "3600"))
 
 
+
+# ── Link chaos (packet drop / reorder) ────────────────────────────────────────
+#
+# The real relay path (Tauri + PartyKit over WebSocket) can drop or delay
+# whole packets in ways the in-process MCP relay never does, which let
+# ordering assumptions (gender-before-position, one-shot starter exchange)
+# survive until manual testing.  Chaos mode makes the MCP relay exercise
+# those failure modes deterministically: each ROM packet may be dropped or
+# held one relay cycle (delivered after newer packets — a reorder).
+#
+# Configure via env (COOP_CHAOS_DROP / COOP_CHAOS_DELAY / COOP_CHAOS_SEED)
+# or at runtime with the set_link_chaos MCP tool.  Control packets injected
+# by the relay itself (PARTNER_CONNECTED/DISCONNECTED, HOST_MIGRATE) bypass
+# this layer entirely.
+
+_chaos_drop  = float(os.environ.get("COOP_CHAOS_DROP",  "0"))
+_chaos_delay = float(os.environ.get("COOP_CHAOS_DELAY", "0"))
+_chaos_rng   = random.Random(int(os.environ.get("COOP_CHAOS_SEED", "0")) or None)
+_chaos_held: dict[str, list[str]] = {}   # dst_id -> held packet hex strings
+_chaos_stats = {"dropped": 0, "delayed": 0, "passed": 0}
+
+# Packet sizes, mirroring include/constants/multiplayer.h.  Value is the total
+# size in bytes, or a callable(payload_bytes, offset) -> size for variable
+# types.  Unknown types abort splitting (bytes pass through unfiltered) so a
+# table drift can never corrupt the stream.
+_PKT_SIZES = {
+    0x01: 6, 0x02: 3, 0x03: 5, 0x04: 2, 0x05: 1, 0x06: 5,
+    0x07: lambda b, i: 3 + ((b[i+1] << 8) | b[i+2]) if i + 3 <= len(b) else None,
+    0x08: 1, 0x09: 1, 0x0A: 1, 0x0B: 1, 0x0C: 1, 0x0D: 4, 0x0E: 3, 0x0F: 3,
+    0x10: 2, 0x11: 8,
+    0x12: lambda b, i: 2 + b[i+1] * 30 if i + 2 <= len(b) else None,
+    0x13: 3, 0x14: 4, 0x15: 4, 0x16: 1, 0x17: 1,
+    0x18: lambda b, i: 2 + b[i+1] * 4 if i + 2 <= len(b) else None,
+    0x19: 1, 0x1A: 5,
+}
+
+
+def _split_packets(hexstr: str) -> "list[str] | None":
+    """Split a drained hex string into whole-packet hex strings.
+
+    Returns None if any packet type is unknown or truncated — caller must
+    pass the original bytes through untouched in that case.
+    """
+    raw = bytes.fromhex(hexstr.replace(" ", ""))
+    out, i = [], 0
+    while i < len(raw):
+        size = _PKT_SIZES.get(raw[i])
+        if callable(size):
+            size = size(raw, i)
+        if not size or i + size > len(raw):
+            return None
+        out.append(raw[i:i + size].hex())
+        i += size
+    return out
+
+
+def _chaos_filter(dst_id: str, hexstr: str) -> str:
+    """Apply drop/delay chaos to newly drained packets bound for dst_id."""
+    if _chaos_drop <= 0 and _chaos_delay <= 0 and not _chaos_held.get(dst_id):
+        return hexstr
+    packets = _split_packets(hexstr) if hexstr else []
+    if packets is None:
+        return hexstr  # unknown framing — never corrupt, just pass through
+    # Capture packets held on PREVIOUS cycles before processing this batch,
+    # so a packet held below is not released in the same call.
+    held = _chaos_held.pop(dst_id, [])
+    out = []
+    for pkt in packets:
+        roll = _chaos_rng.random()
+        if roll < _chaos_drop:
+            _chaos_stats["dropped"] += 1
+            continue
+        if roll < _chaos_drop + _chaos_delay:
+            _chaos_stats["delayed"] += 1
+            _chaos_held.setdefault(dst_id, []).append(pkt)
+            continue
+        _chaos_stats["passed"] += 1
+        out.append(pkt)
+    # Earlier-cycle packets are appended AFTER this cycle's survivors,
+    # producing genuine reordering.
+    out.extend(held)
+    return "".join(out)
+
+
 def _relay_loop() -> None:
     """Continuously relay multiplayer packets and coop battle blocks between p1 and p2."""
     global _connected_pair, _host_instance
@@ -265,6 +350,9 @@ def _relay_loop() -> None:
                         _disconnect_injected.discard(src_id)
                         # Notify the current host that the partner reconnected.
                         dst.inject_bytes("0B")
+                # Chaos applies to newly drained packets only; pending bytes
+                # already passed the filter on a previous cycle.
+                new_bytes = _chaos_filter(dst_id, new_bytes)
                 combined = (pending + (" " if pending and new_bytes else "") + new_bytes).strip()
                 if combined:
                     result = dst.try_send_locked({"cmd": "inject", "bytes": combined})
@@ -405,6 +493,40 @@ def start_emulator(instance_id: str = "p1", rom: str = "", savestate: str = "") 
         f"Instance '{instance_id}' running (pid {inst.process.pid}).\n"
         f"ROM: {rom_path}\n"
         f"Addresses: {addrs_str}"
+    )
+
+# ── Tool: set_link_chaos ──────────────────────────────────────────────────
+
+@mcp.tool()
+def set_link_chaos(drop: float = 0.0, delay: float = 0.0, seed: int = 0) -> str:
+    """Configure packet-level chaos on the inter-instance relay.
+
+    Simulates the real WebSocket relay's failure modes that the in-process
+    MCP relay otherwise never exhibits:
+      drop:  probability (0..1) each ROM packet is silently discarded.
+      delay: probability (0..1) each packet is held one relay cycle and
+             delivered AFTER newer packets (a reorder).
+      seed:  RNG seed for reproducible runs (0 = nondeterministic).
+
+    Relay-injected control packets (PARTNER_CONNECTED/DISCONNECTED,
+    HOST_MIGRATE) are never affected.  Returns current settings and
+    cumulative drop/delay/pass counters.  Call with defaults to disable.
+    """
+    global _chaos_drop, _chaos_delay, _chaos_rng
+    _chaos_drop  = max(0.0, min(1.0, drop))
+    _chaos_delay = max(0.0, min(1.0, delay))
+    _chaos_rng   = random.Random(seed or None)
+    if _chaos_drop == 0 and _chaos_delay == 0:
+        # Flush anything still held so disabling chaos can't strand packets.
+        for dst_id, held in list(_chaos_held.items()):
+            if held:
+                _pending_inject[dst_id] = (
+                    (_pending_inject.get(dst_id, "") + "".join(held)).strip())
+        _chaos_held.clear()
+    return (
+        f"chaos: drop={_chaos_drop} delay={_chaos_delay} seed={seed} | "
+        f"stats: dropped={_chaos_stats['dropped']} "
+        f"delayed={_chaos_stats['delayed']} passed={_chaos_stats['passed']}"
     )
 
 # ── Tool: stop_emulator ───────────────────────────────────────────────────
