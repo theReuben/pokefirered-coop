@@ -291,9 +291,17 @@ bool8 FlagGet(u16 id)
 // Remote update handlers — called by ProcessOneRecvPacket when a FLAG_SET or
 // VAR_SET arrives from the partner.  sIsRemoteUpdate suppresses the outgoing
 // broadcast that FlagSet/VarSet would normally emit, preventing echo loops.
+//
+// gSaveBlock1Ptr is NULL from boot until SetSaveBlocksPointers runs during
+// the intro; flag/var storage lives behind it, so applying a remote update
+// in that window writes through NULL (silently lost on hardware). Drop the
+// packet instead — the state beacon / full_sync reconciles it once a game
+// is actually loaded.
 // ---------------------------------------------------------------------------
 void Multiplayer_HandleRemoteFlagSet(u16 flagId)
 {
+    if (gSaveBlock1Ptr == NULL)
+        return;
     sIsRemoteUpdate = TRUE;
     FlagSet(flagId);
     sIsRemoteUpdate = FALSE;
@@ -301,6 +309,8 @@ void Multiplayer_HandleRemoteFlagSet(u16 flagId)
 
 void Multiplayer_HandleRemoteFlagClear(u16 flagId)
 {
+    if (gSaveBlock1Ptr == NULL)
+        return;
     sIsRemoteUpdate = TRUE;
     FlagClear(flagId);
     sIsRemoteUpdate = FALSE;
@@ -308,6 +318,8 @@ void Multiplayer_HandleRemoteFlagClear(u16 flagId)
 
 void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value)
 {
+    if (gSaveBlock1Ptr == NULL)
+        return;
     sIsRemoteUpdate = TRUE;
     VarSet(varId, value);
     sIsRemoteUpdate = FALSE;

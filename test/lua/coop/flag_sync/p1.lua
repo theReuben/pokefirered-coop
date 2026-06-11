@@ -26,6 +26,11 @@ D.run("flag_sync_p1", function(d)
         "p1 connState == CONNECTED"
     )
 
+    -- p2's save block pointers are NULL until its intro runs; a FLAG_SET
+    -- delivered before then is dropped (see the NULL-saveblock guard in
+    -- event_data.c). Wait for p2's explicit go-ahead.
+    if not d.waitSignal("p2", "saveblock_ready") then return end
+
     -- Inject FLAG_SET(0x4B0) into our own sendRing to be bridged to p2.
     -- Layout: [MP_PKT_FLAG_SET][flagId_hi=0x04][flagId_lo=0xB0]
     H.recvPush(mm.gMpSendRing, H.MP_PKT_FLAG_SET)

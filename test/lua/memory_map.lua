@@ -3,40 +3,40 @@
 
 local M = {}
 
-M.BeginBattleIntro = 0x080879F8
-M.HandleChooseMoveAfterDma3 = 0x0805B2B0
-M.HandleInputChooseMove = 0x0805C9AC
-M.PlayerHandleChooseMove = 0x0805DF40
-M.SetControllerToOpponent = 0x08059F04
-M.SetControllerToPlayer = 0x0805C1FC
-M.SetControllerToPlayerPartner = 0x0805EA60
-M.Task_HandleYesNoInput = 0x081FE9BC
+M.BeginBattleIntro = 0x08087C58
+M.HandleChooseMoveAfterDma3 = 0x0805B524
+M.HandleInputChooseMove = 0x0805CC20
+M.PlayerHandleChooseMove = 0x0805E1B4
+M.SetControllerToOpponent = 0x0805A178
+M.SetControllerToPlayer = 0x0805C470
+M.SetControllerToPlayerPartner = 0x0805ECD4
+M.Task_HandleYesNoInput = 0x081FECEC
 M.gAbsentBattlerFlags = 0x0200030A
 M.gBattleCommunication = 0x020001BC
-M.gBattleMainFunc = 0x03002570
+M.gBattleMainFunc = 0x03002574
 M.gBattleStruct = 0x020000B4
 M.gBattleTypeFlags = 0x020000AC
-M.gBattlerControllerFuncs = 0x03002550
+M.gBattlerControllerFuncs = 0x03002554
 M.gBattlerPartyIndexes = 0x02000144
 M.gBattlerPositions = 0x02000238
 M.gBattlersCount = 0x020000B0
 M.gChosenActionByBattler = 0x020002E4
 M.gCoopSettings = 0x030015B8
 M.gDisableTextPrinters = 0x02037480
-M.gMpAddrTable = 0x030015C4
+M.gMpAddrTable = 0x030015C8
 M.gMpBlockExchange = 0x02031384
 M.gMpRecvRing = 0x02031488
 M.gMpSendRing = 0x0203158C
 M.gMultiplayerState = 0x0300157C
 M.gObjectEvents = 0x020015C0
 M.gPlayerParty = 0x020322B0
-M.gSaveBlock1Ptr = 0x03005328
-M.gSaveBlock2Ptr = 0x03005324
+M.gSaveBlock1Ptr = 0x0300532C
+M.gSaveBlock2Ptr = 0x03005328
 M.gSaveblock1 = 0x0200FF9C
 M.gStringVar4 = 0x02036D90
-M.gTasks = 0x03006D88
+M.gTasks = 0x03006D8C
 M.sFirstTextPrinter = 0x02037478
-M.sGlobalScriptContextStatus = 0x03001825
-M.sLockFieldControls = 0x03001824
+M.sGlobalScriptContextStatus = 0x03001829
+M.sLockFieldControls = 0x03001828
 
 return M
