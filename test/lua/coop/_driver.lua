@@ -81,6 +81,34 @@ function D.flushOutbox()
 end
 
 -- ------------------------------------------------------------------ --
+-- Cross-instance signaling. The two instances share the orchestrator
+-- workdir (instance dirs are siblings), so a marker file is the only
+-- ordering primitive that doesn't depend on ROM state. Use this when
+-- one side must not act until the other has booted far enough (e.g.
+-- save block pointers are set during the intro, hundreds of frames
+-- after Multiplayer_Init).
+-- ------------------------------------------------------------------ --
+
+local function signalPath(who, name)
+    -- workdir root is the parent of the instance dir.
+    local root = instDir():match("^(.*)/[^/]+$") or instDir()
+    return root .. "/" .. who .. "_" .. name .. ".signal"
+end
+
+function D.signal(name)
+    local f = io.open(signalPath(instId(), name), "w")
+    if f then f:write("1") f:close() end
+end
+
+function D.waitSignal(otherId, name, maxFrames)
+    return D.waitFor(function()
+        local f = io.open(signalPath(otherId, name), "r")
+        if f then f:close() return true end
+        return false
+    end, maxFrames or 1800, otherId .. " signal '" .. name .. "'")
+end
+
+-- ------------------------------------------------------------------ --
 -- Result reporting.
 -- ------------------------------------------------------------------ --
 
