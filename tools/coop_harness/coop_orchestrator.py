@@ -68,6 +68,51 @@ def needs_display(mgba: str) -> bool:
     return "headless" not in os.path.basename(mgba).lower()
 
 
+def detect_script_flag(mgba: str, xvfb: str | None, rom: Path) -> str:
+    """Probe which CLI flag attaches a Lua script to this mGBA build.
+
+    SDL/Qt builds use `-S FILE`; the headless build uses `--script FILE`
+    (its `-S` means "run until SWI"). Same probe as tools/run_lua_tests.sh:
+    run a trivial script that writes a sentinel file, and use the first
+    flag for which the sentinel appears — proving Lua actually executed.
+    """
+    with tempfile.TemporaryDirectory(prefix="mgba_probe_") as td:
+        sentinel = Path(td) / "probe_ok"
+        probe = Path(td) / "probe.lua"
+        probe.write_text(
+            'local f = io.open(os.getenv("_MGBA_PROBE"), "w")\n'
+            'if f then f:write("ok") f:close() end\n'
+            'if emu and emu.quit then emu:quit() end\n'
+        )
+        env = os.environ.copy()
+        env["_MGBA_PROBE"] = str(sentinel)
+        for flag in ("-S", "--script"):
+            cmd = [mgba, flag, str(probe), str(rom)]
+            if xvfb and needs_display(mgba):
+                cmd = [xvfb, "-a"] + cmd
+            proc = subprocess.Popen(
+                cmd, env=env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                preexec_fn=os.setsid,
+            )
+            found = False
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                if sentinel.exists():
+                    found = True
+                    break
+                if proc.poll() is not None:
+                    found = sentinel.exists()
+                    break
+                time.sleep(0.1)
+            kill_tree(proc)
+            sentinel.unlink(missing_ok=True)
+            if found:
+                return flag
+    sys.exit(f"error: {mgba} ran Lua with neither -S nor --script — "
+             "build it with USE_LUA=ON (see docs/dev/lua-tests.md)")
+
+
 def find_xvfb() -> str | None:
     """Returns xvfb-run path, or None on macOS/non-Linux where it isn't needed."""
     return shutil.which("xvfb-run")
@@ -76,6 +121,7 @@ def find_xvfb() -> str | None:
 def spawn_instance(
     *,
     mgba: str,
+    script_flag: str,
     xvfb: str | None,
     rom: Path,
     workdir: Path,
@@ -110,9 +156,9 @@ def spawn_instance(
     # race under xvfb-run -a, making both processes fail immediately.
     use_xvfb = xvfb and needs_display(mgba)
     if use_xvfb:
-        cmd = [xvfb, "-a", mgba, "-S", str(script), str(rom)]
+        cmd = [xvfb, "-a", mgba, script_flag, str(script), str(rom)]
     else:
-        cmd = [mgba, "-S", str(script), str(rom)]
+        cmd = [mgba, script_flag, str(script), str(rom)]
     print(f"  spawning {instance_id}: {' '.join(cmd)}")
     return subprocess.Popen(
         cmd,
@@ -220,14 +266,16 @@ def main() -> int:
 
     mgba = find_mgba()
     xvfb = find_xvfb()  # None on macOS
+    script_flag = detect_script_flag(mgba, xvfb, args.rom)
     workdir = Path(tempfile.mkdtemp(prefix=f"coop_{args.scenario_dir.name}_"))
     print(f"==> Workdir: {workdir}")
+    print(f"==> mGBA: {mgba} (script flag: {script_flag})")
 
     procs: list[subprocess.Popen] = []
     try:
         for inst in ("p1", "p2"):
             procs.append(spawn_instance(
-                mgba=mgba, xvfb=xvfb, rom=args.rom,
+                mgba=mgba, script_flag=script_flag, xvfb=xvfb, rom=args.rom,
                 workdir=workdir, instance_id=inst,
                 scenario_dir=args.scenario_dir,
             ))
