@@ -230,10 +230,10 @@ _PKT_SIZES = {
     0x07: lambda b, i: 3 + ((b[i+1] << 8) | b[i+2]) if i + 3 <= len(b) else None,
     0x08: 1, 0x09: 1, 0x0A: 1, 0x0B: 1, 0x0C: 1, 0x0D: 4, 0x0E: 3, 0x0F: 3,
     0x10: 2, 0x11: 8,
-    0x12: lambda b, i: 2 + b[i+1] * 58 if i + 2 <= len(b) else None,
-    0x13: 3, 0x14: 4, 0x15: 4, 0x16: 1, 0x17: 1,
+    0x12: lambda b, i: 2 + b[i+1] * 58 + 4 if i + 2 <= len(b) else None,  # + trailing RNG seed
+    0x13: 3, 0x14: 5, 0x15: 4, 0x16: 1, 0x17: 1,
     0x18: lambda b, i: 2 + b[i+1] * 4 if i + 2 <= len(b) else None,
-    0x19: 1, 0x1A: 5, 0x1B: 2,
+    0x19: 1, 0x1A: 9, 0x1B: 2,
 }
 
 

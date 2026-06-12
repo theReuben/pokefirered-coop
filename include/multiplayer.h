@@ -258,6 +258,20 @@ struct MultiplayerState {
     u8  partnerBusyTrainerMapGroup;
     u8  partnerBusyTrainerMapNum;
     u8  sentBusyTrainer;             // TRUE after we sent TRAINER_BUSY; cleared when battle ends
+    // --- Append new fields below this line ONLY: tools/mcp_gamestate/server.py
+    // battle_diag hardcodes byte offsets of the fields above. ---
+    // Battle turn reliability: each logical turn gets a sequence number (1-255,
+    // never 0) so the state beacon can re-carry the cached turn idempotently.
+    u8  battleTurnSeqOut;       // seq assigned to our last-sent turn; 0 = none this battle
+    u8  battleTurnSeqApplied;   // seq of the last partner turn we applied (dedup/ordering)
+    u8  _pad3[2];
+    // Coop battle RNG lockstep: host generates coopBattleSeed per battle and
+    // ships it in MP_PKT_PARTY_SYNC; both sides seed coopRngState from it in
+    // Multiplayer_SetupCoopBattle.  Tagged battle-logic rolls (RandomUniform
+    // et al.) draw from this stream during BATTLE_TYPE_COOP battles so damage
+    // rolls / crits / AI choices stay identical across the mirrored sims.
+    u32 coopBattleSeed;         // 0 = none adopted; both-zero still converges (fixed fallback)
+    u32 coopRngState;           // xorshift32 state; advanced only by coop battle rolls
 };
 
 extern struct MultiplayerState gMultiplayerState;
@@ -271,6 +285,9 @@ void Multiplayer_PollPackets(void);
 void Multiplayer_Update(void);
 // Frame-guarded wrapper — safe to call from multiple engine hooks per frame.
 void Multiplayer_UpdateOncePerFrame(void);
+// Battle-safe transport pump (poll + ping + state beacon, none of the
+// overworld work).  Hooked into BattleMainCB2; no-op outside coop battles.
+void Multiplayer_BattleTick(void);
 
 // Ghost NPC
 void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);
@@ -348,10 +365,18 @@ void Multiplayer_SetupCoopBattle(void);
 // Call Multiplayer_SendBattleTurn from the player controller when the local player
 // confirms their move selection; the partner controller polls Multiplayer_PollPackets
 // each frame and calls Multiplayer_HandleBattleTurn when the packet arrives.
+// SendBattleTurn assigns a fresh sequence number per logical turn; ResendBattleTurn
+// re-emits the cached turn unchanged (reconnect path — must NOT bump the seq).
+// HandleBattleTurn drops duplicates and stale (reordered) turns by seq, so it is
+// safe to feed it from both the direct packet and the repeating state beacon.
 void Multiplayer_SendBattleTurn(u8 moveSlot, u8 target, u8 flags);
-void Multiplayer_HandleBattleTurn(u8 moveSlot, u8 target, u8 flags);
+void Multiplayer_ResendBattleTurn(void);
+void Multiplayer_HandleBattleTurn(u8 seq, u8 moveSlot, u8 target, u8 flags);
 // Returns TRUE when running a BATTLE_TYPE_COOP battle.
 bool32 Multiplayer_IsCoopBattle(void);
+// Coop battle lockstep RNG: next 16-bit draw from the dedicated xorshift32
+// stream (seeded from coopBattleSeed in Multiplayer_SetupCoopBattle).
+u16 Multiplayer_CoopBattleRandom16(void);
 
 // Follower ghost: partner's lead follower Pokémon displayed 1 tile behind the partner ghost.
 void Multiplayer_SendFollowerGfx(u16 gfxId);

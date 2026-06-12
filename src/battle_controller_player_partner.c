@@ -329,7 +329,10 @@ static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
         }
 
         gMultiplayerState.battleTurnReceived = FALSE;
-        gMultiplayerState.battleTurnSent     = FALSE;
+        // battleTurnSent intentionally NOT cleared here: receiving the
+        // partner's turn says nothing about whether OUR turn reached them.
+        // The cache stays live so the state beacon keeps re-carrying it (seq
+        // dedup makes repeats no-ops); the next SendBattleTurn overwrites it.
         chosenMoveIndex = gMultiplayerState.battleTurnMoveSlot;
         gBattlerTarget  = gMultiplayerState.battleTurnTarget;
         BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT,

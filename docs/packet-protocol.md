@@ -157,10 +157,10 @@ Maximum payload ≈ 172 bytes (trainer flag bitmap), well within the
 Packet types `0x08`–`0x1B` were added after this document was first
 written; the constants header is the authoritative size table (mirrored
 in `serial_bridge.rs`, `relay-server/src/server.ts`, and the MCP
-server's `_PKT_SIZES`).  Two are documented here because their layouts
-are non-obvious:
+server's `_PKT_SIZES`).  Several are documented here because their
+layouts are non-obvious:
 
-### PARTY_SYNC (0x12) — 2 + n×58 bytes
+### PARTY_SYNC (0x12) — 2 + n×58 + 4 bytes
 
 ```
 Byte 0: type = 0x12
@@ -173,6 +173,7 @@ Then n_mons × 58-byte wire mons (struct MpWirePartyMon, big-endian):
   +6  personality u32                            +38 spDef  u16
   +10 otId        u32                            +40 status u32
   +44 friendship u8   +45 gender u8   +46 language u8   +47 nickname[11]
+Then a trailing u32 (big-endian): coop battle RNG seed.
 ```
 
 The receiving ROM rebuilds a battle-identical mon in the partner half of
@@ -181,6 +182,43 @@ The receiving ROM rebuilds a battle-identical mon in the partner half of
 reconstructed mon left at 0 HP is flagged absent by
 `TryDoEventsBeforeFirstTurn` — battler 2 then silently drops out of the
 co-op battle.
+
+The trailing seed feeds the coop battle RNG lockstep stream: the host
+mints a fresh nonzero seed per battle (`CB2_CoopPartySelected`), guests
+always send 0, and the receiver adopts any nonzero value.  Resends of
+the same battle's PARTY_SYNC carry the same seed.
+
+### BATTLE_TURN (0x14) — 5 bytes
+
+```
+Byte 0: type = 0x14
+Byte 1: seq       (1-255, never 0; +1 per logical turn, reset per battle)
+Byte 2: move slot (0-3)
+Byte 3: target battler (sender's index space; ally 0↔2 mirrored on receipt)
+Byte 4: flags     (bit 0 = gimmick)
+```
+
+The receiver applies a turn only if its seq is strictly newer than the
+last applied seq (wraparound-aware), so duplicates and reordered stale
+turns are no-ops.  Loss recovery: the sender's STATE_BEACON re-carries
+the cached turn (same seq) every beacon interval while in a coop battle.
+
+### STATE_BEACON (0x1A) — 9 bytes
+
+```
+Byte 0: type = 0x1A
+Byte 1: gender              Byte 5: turn_seq  (0 = no cached battle turn)
+Byte 2: starter species hi  Byte 6: move slot
+Byte 3: starter species lo  Byte 7: target battler
+Byte 4: boss-ready id       Byte 8: flags
+```
+
+Sent every 16 frames while connected.  Idempotent repair channel for all
+dropped one-shot exchanges (gender, starter pick, boss readiness, battle
+turn).  Bytes 5-8 are zero unless the sender is in a coop battle with an
+unconsumed cached turn; the receiver feeds them through the same seq
+dedup as a direct BATTLE_TURN and ignores them when not in a coop battle
+itself.
 
 ### ROLE_ASSIGN (0x1B) — 2 bytes
 

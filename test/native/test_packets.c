@@ -2,7 +2,10 @@
 #include "global.h"
 #include "multiplayer.h"
 #include "constants/multiplayer.h"
+#include "constants/battle.h"
 #include "pokemon.h"
+#include "battle.h"
+#include "random.h"
 #include <string.h>
 
 // ---- Ring buffer helpers --------------------------------------------------
@@ -533,13 +536,429 @@ static void TestPartyMonWireRoundTrip(void)
 
 static void TestSendPartySyncPacketSize(void)
 {
-    // 2 mons → header(2) + 2*58 bytes in the send ring.
+    // 2 mons → header(2) + 2*58 + 4 (trailing battle RNG seed) in the send ring.
     Multiplayer_Init();
     gPlayerPartyCount = 2;
     Multiplayer_SendPartySync();
     ASSERT_EQ(Mp_Available(&gMpSendRing),
-              MP_PKT_PARTY_SYNC_HDR + 2 * MP_PKT_PARTY_SYNC_MON_SIZE);
+              MP_PKT_PARTY_SYNC_HDR + 2 * MP_PKT_PARTY_SYNC_MON_SIZE
+              + MP_PKT_PARTY_SYNC_SEED_SIZE);
     gPlayerPartyCount = 0;
+}
+
+static void TestPartySyncSeedHostSendsGuestZeroes(void)
+{
+    u8 out = 0;
+    u16 i;
+    u32 tail;
+
+    // Host with a minted seed → trailing 4 bytes carry it (big-endian).
+    Multiplayer_Init();
+    gPlayerPartyCount = 1;
+    gMultiplayerState.role = MP_ROLE_HOST;
+    gMultiplayerState.coopBattleSeed = 0xCAFEF00Du;
+    Multiplayer_SendPartySync();
+    for (i = 0; i < MP_PKT_PARTY_SYNC_HDR + MP_PKT_PARTY_SYNC_MON_SIZE; i++)
+        Mp_Pop(&gMpSendRing, &out); // skip header + mon
+    tail = 0;
+    for (i = 0; i < MP_PKT_PARTY_SYNC_SEED_SIZE; i++)
+    {
+        Mp_Pop(&gMpSendRing, &out);
+        tail = (tail << 8) | out;
+    }
+    ASSERT_EQ(tail, 0xCAFEF00Du);
+
+    // Guest always transmits 0 even if it has adopted a seed, so the host can
+    // never be talked onto a stream it didn't mint.
+    Multiplayer_Init();
+    gPlayerPartyCount = 1;
+    gMultiplayerState.role = MP_ROLE_GUEST;
+    gMultiplayerState.coopBattleSeed = 0xCAFEF00Du;
+    Multiplayer_SendPartySync();
+    for (i = 0; i < MP_PKT_PARTY_SYNC_HDR + MP_PKT_PARTY_SYNC_MON_SIZE; i++)
+        Mp_Pop(&gMpSendRing, &out);
+    tail = 0;
+    for (i = 0; i < MP_PKT_PARTY_SYNC_SEED_SIZE; i++)
+    {
+        Mp_Pop(&gMpSendRing, &out);
+        tail = (tail << 8) | out;
+    }
+    ASSERT_EQ(tail, 0u);
+    gPlayerPartyCount = 0;
+}
+
+static void TestRecvPartySyncAdoptsNonzeroSeed(void)
+{
+    u8 pkt[MP_PKT_PARTY_SYNC_HDR + MP_PKT_PARTY_SYNC_MON_SIZE + MP_PKT_PARTY_SYNC_SEED_SIZE];
+    u16 i;
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    memset(pkt, 0, sizeof(pkt));
+    pkt[0] = MP_PKT_PARTY_SYNC;
+    pkt[1] = 1; // one mon (all-zero wire mon decodes fine; stubs ignore it)
+    pkt[sizeof(pkt) - 4] = 0xDE;
+    pkt[sizeof(pkt) - 3] = 0xAD;
+    pkt[sizeof(pkt) - 2] = 0xBE;
+    pkt[sizeof(pkt) - 1] = 0xEF;
+
+    Multiplayer_Init();
+    for (i = 0; i < sizeof(pkt); i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.coopBattleSeed, 0xDEADBEEFu);
+    ASSERT_EQ(gMultiplayerState.partnerPartySelectDone, TRUE);
+
+    // A zero seed (guest's packet) must NOT overwrite an adopted one.
+    gMultiplayerState.partnerPartySelectDone = FALSE;
+    memset(&pkt[sizeof(pkt) - 4], 0, 4);
+    for (i = 0; i < sizeof(pkt); i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.coopBattleSeed, 0xDEADBEEFu);
+    ASSERT_EQ(gMultiplayerState.partnerPartySelectDone, TRUE);
+}
+
+// ---- BATTLE_TURN sequencing -------------------------------------------------
+
+static void TestSendBattleTurnAssignsSeq(void)
+{
+    u8 b[MP_PKT_SIZE_BATTLE_TURN];
+    u8 i;
+
+    Multiplayer_Init();
+    Multiplayer_SendBattleTurn(2, 1, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqOut, 1);
+    ASSERT_EQ(gMultiplayerState.battleTurnSent, TRUE);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), MP_PKT_SIZE_BATTLE_TURN);
+    for (i = 0; i < MP_PKT_SIZE_BATTLE_TURN; i++)
+        Mp_Pop(&gMpSendRing, &b[i]);
+    ASSERT_EQ(b[0], MP_PKT_BATTLE_TURN);
+    ASSERT_EQ(b[1], 1); // seq
+    ASSERT_EQ(b[2], 2); // moveSlot
+    ASSERT_EQ(b[3], 1); // target
+    ASSERT_EQ(b[4], 0); // flags
+
+    // Second logical turn gets the next seq.
+    Multiplayer_SendBattleTurn(0, 3, 1);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqOut, 2);
+    for (i = 0; i < MP_PKT_SIZE_BATTLE_TURN; i++)
+        Mp_Pop(&gMpSendRing, &b[i]);
+    ASSERT_EQ(b[1], 2);
+    ASSERT_EQ(b[2], 0);
+}
+
+static void TestResendBattleTurnKeepsSeq(void)
+{
+    u8 b[MP_PKT_SIZE_BATTLE_TURN];
+    u8 i, out;
+
+    Multiplayer_Init();
+    Multiplayer_SendBattleTurn(1, 0, 0);
+    while (Mp_Pop(&gMpSendRing, &out)) {} // drain the original send
+
+    // Reconnect-path replay: same seq, same payload, no bump.
+    Multiplayer_ResendBattleTurn();
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqOut, 1);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), MP_PKT_SIZE_BATTLE_TURN);
+    for (i = 0; i < MP_PKT_SIZE_BATTLE_TURN; i++)
+        Mp_Pop(&gMpSendRing, &b[i]);
+    ASSERT_EQ(b[1], 1);
+    ASSERT_EQ(b[2], 1);
+
+    // No cached turn → no packet.
+    gMultiplayerState.battleTurnSent = FALSE;
+    Multiplayer_ResendBattleTurn();
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
+}
+
+static void TestHandleBattleTurnDedupAndOrdering(void)
+{
+    Multiplayer_Init();
+
+    // seq 0 is "no turn" on the wire — never applied.
+    Multiplayer_HandleBattleTurn(0, 1, 1, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, FALSE);
+
+    // First real turn applies; ally target 0 mirrors to 2.
+    Multiplayer_HandleBattleTurn(1, 2, 0, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnMoveSlot, 2);
+    ASSERT_EQ(gMultiplayerState.battleTurnTarget, 2);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 1);
+
+    // Exact duplicate (beacon re-carry / reconnect resend) is a no-op.
+    gMultiplayerState.battleTurnReceived = FALSE;
+    Multiplayer_HandleBattleTurn(1, 2, 0, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, FALSE);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 1);
+
+    // Newer seq applies (gaps fine); ally target 2 mirrors to 0.
+    Multiplayer_HandleBattleTurn(3, 1, 2, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnTarget, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 3);
+
+    // Stale (reordered) older turn is rejected and doesn't regress seq.
+    gMultiplayerState.battleTurnReceived = FALSE;
+    Multiplayer_HandleBattleTurn(2, 0, 1, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, FALSE);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 3);
+
+    // Wraparound: applied=255, next turn seq=1 (sender skips 0) is "newer".
+    gMultiplayerState.battleTurnSeqApplied = 255;
+    Multiplayer_HandleBattleTurn(1, 0, 1, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 1);
+}
+
+static void TestSetupCoopBattleResetsTurnStateAndSeedsRng(void)
+{
+    Multiplayer_Init();
+    gMultiplayerState.battleTurnSeqOut     = 9;
+    gMultiplayerState.battleTurnSeqApplied = 7;
+    gMultiplayerState.battleTurnSent       = TRUE;
+    gMultiplayerState.battleTurnReceived   = TRUE;
+    gMultiplayerState.coopBattleSeed       = 0xCAFEF00Du;
+
+    Multiplayer_SetupCoopBattle();
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqOut, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnSent, FALSE);
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, FALSE);
+    ASSERT_EQ(gMultiplayerState.coopRngState, 0xCAFEF00Du);
+}
+
+// ---- STATE_BEACON battle-turn repair ----------------------------------------
+
+static void PushBeacon(u8 turnSeq, u8 moveSlot, u8 target, u8 flags)
+{
+    u8 pkt[MP_PKT_SIZE_STATE_BEACON];
+    u8 i;
+    pkt[0] = MP_PKT_STATE_BEACON;
+    pkt[1] = 0; // gender MALE
+    pkt[2] = 0; // starter hi
+    pkt[3] = 0; // starter lo (0 = no pick; ignored)
+    pkt[4] = 0; // no boss readiness
+    pkt[5] = turnSeq;
+    pkt[6] = moveSlot;
+    pkt[7] = target;
+    pkt[8] = flags;
+    for (i = 0; i < MP_PKT_SIZE_STATE_BEACON; i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+}
+
+static void TestBeaconRepairsDroppedBattleTurn(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gBattleTypeFlags = BATTLE_TYPE_COOP;
+
+    // The direct BATTLE_TURN was "dropped"; the partner's beacon re-carries it.
+    PushBeacon(1, 2, 1, 0);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnMoveSlot, 2);
+    ASSERT_EQ(gMultiplayerState.battleTurnTarget, 1);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 1);
+
+    // The beacon repeats every interval — repeats must not re-arm the flag
+    // after the controller consumed the turn.
+    gMultiplayerState.battleTurnReceived = FALSE;
+    PushBeacon(1, 2, 1, 0);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, FALSE);
+
+    // Next turn's beacon (newer seq) applies.
+    PushBeacon(2, 3, 0, 0);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnMoveSlot, 3);
+    ASSERT_EQ(gMultiplayerState.battleTurnTarget, 2); // ally 0 mirrored
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 2);
+
+    // Outside a coop battle the turn payload is ignored — an overworld
+    // instance must never buffer a stale turn for a future battle.
+    gBattleTypeFlags = 0;
+    gMultiplayerState.battleTurnReceived = FALSE;
+    PushBeacon(3, 1, 1, 0);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, FALSE);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 2);
+}
+
+static void TestBeaconSenderCarriesCachedTurnOnlyInCoopBattle(void)
+{
+    u8 pkt[MP_PKT_SIZE_STATE_BEACON];
+    u8 i, frame;
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    // In a coop battle with a cached turn: beacon bytes 5-8 carry it.
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gBattleTypeFlags = BATTLE_TYPE_COOP;
+    Multiplayer_SendBattleTurn(2, 1, 1);
+    { u8 out; while (Mp_Pop(&gMpSendRing, &out)) {} } // drain the turn packet
+
+    for (frame = 0; frame < MP_BEACON_INTERVAL_FRAMES; frame++)
+        Multiplayer_Update();
+    // Skip anything that isn't the beacon (position packets etc.).
+    for (;;)
+    {
+        ASSERT_EQ(Mp_Pop(&gMpSendRing, &pkt[0]), TRUE);
+        if (pkt[0] == MP_PKT_STATE_BEACON)
+            break;
+    }
+    for (i = 1; i < MP_PKT_SIZE_STATE_BEACON; i++)
+        Mp_Pop(&gMpSendRing, &pkt[i]);
+    ASSERT_EQ(pkt[5], 1); // seq
+    ASSERT_EQ(pkt[6], 2); // moveSlot
+    ASSERT_EQ(pkt[7], 1); // target
+    ASSERT_EQ(pkt[8], 1); // flags
+
+    // Outside battle the same cached turn must NOT ride the beacon.
+    gBattleTypeFlags = 0;
+    { u8 out; while (Mp_Pop(&gMpSendRing, &out)) {} }
+    for (frame = 0; frame < MP_BEACON_INTERVAL_FRAMES; frame++)
+        Multiplayer_Update();
+    for (;;)
+    {
+        ASSERT_EQ(Mp_Pop(&gMpSendRing, &pkt[0]), TRUE);
+        if (pkt[0] == MP_PKT_STATE_BEACON)
+            break;
+    }
+    for (i = 1; i < MP_PKT_SIZE_STATE_BEACON; i++)
+        Mp_Pop(&gMpSendRing, &pkt[i]);
+    ASSERT_EQ(pkt[5], 0);
+    ASSERT_EQ(pkt[6], 0);
+    ASSERT_EQ(pkt[7], 0);
+    ASSERT_EQ(pkt[8], 0);
+}
+
+static void TestBattleTickPumpsBeaconAndRecv(void)
+{
+    u8 pkt[MP_PKT_SIZE_STATE_BEACON];
+    u8 i, frame;
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gBattleTypeFlags = BATTLE_TYPE_COOP;
+
+    // Disconnected: inert — nothing written.
+    for (frame = 0; frame < 2 * MP_BEACON_INTERVAL_FRAMES; frame++)
+        Multiplayer_BattleTick();
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
+
+    // Connected, in a coop battle, with a cached turn: the beacon (with the
+    // turn payload) must flow from BattleTick alone — Multiplayer_Update
+    // never runs during a battle (BattleTick is hooked in BattleMainCB2),
+    // which is exactly the gap that left the repair channel dark.
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    Multiplayer_SendBattleTurn(1, 1, 0);
+    { u8 out; while (Mp_Pop(&gMpSendRing, &out)) {} } // drain the turn packet
+    for (frame = 0; frame < MP_BEACON_INTERVAL_FRAMES; frame++)
+        Multiplayer_BattleTick();
+    for (;;)
+    {
+        ASSERT_EQ(Mp_Pop(&gMpSendRing, &pkt[0]), TRUE);
+        if (pkt[0] == MP_PKT_STATE_BEACON)
+            break;
+    }
+    for (i = 1; i < MP_PKT_SIZE_STATE_BEACON; i++)
+        Mp_Pop(&gMpSendRing, &pkt[i]);
+    ASSERT_EQ(pkt[5], 1); // cached turn seq
+    ASSERT_EQ(pkt[6], 1); // moveSlot
+
+    // BattleTick also drains the recv ring (the partner controller only
+    // polls inside its ChooseMove window).
+    PushBeacon(2, 3, 1, 0);
+    Multiplayer_BattleTick();
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnMoveSlot, 3);
+
+    gBattleTypeFlags = 0;
+}
+
+// ---- Coop battle RNG lockstep -------------------------------------------------
+
+static bool32 RejectNothing(u32 v) { (void)v; return FALSE; }
+
+static void TestCoopRngDeterministicStream(void)
+{
+    u16 a[8], b[8];
+    u32 i;
+
+    Multiplayer_Init();
+    gBattleTypeFlags = BATTLE_TYPE_COOP;
+
+    // Two "instances" seeded identically draw identical sequences.
+    gMultiplayerState.coopRngState = 0xA5A5A5A5u;
+    for (i = 0; i < 8; i++)
+        a[i] = (u16)RandomUniform(RNG_NONE, 0, 0xFFFF);
+    gMultiplayerState.coopRngState = 0xA5A5A5A5u;
+    for (i = 0; i < 8; i++)
+        b[i] = (u16)RandomUniform(RNG_NONE, 0, 0xFFFF);
+    for (i = 0; i < 8; i++)
+        ASSERT_EQ(a[i], b[i]);
+    // ...and the stream actually moves.
+    ASSERT_EQ(a[0] == a[1] && a[1] == a[2], FALSE);
+
+    // Range contract matches RandomUniformDefault: lo..hi inclusive.
+    gMultiplayerState.coopRngState = 1;
+    for (i = 0; i < 200; i++)
+    {
+        u32 v = RandomUniform(RNG_NONE, 3, 7);
+        ASSERT_EQ(v >= 3 && v <= 7, TRUE);
+    }
+
+    // Zero state never sticks (xorshift32 fixpoint) — remapped internally.
+    gMultiplayerState.coopRngState = 0;
+    (void)RandomUniform(RNG_NONE, 0, 0xFFFF);
+    ASSERT_EQ(gMultiplayerState.coopRngState != 0, TRUE);
+
+    gBattleTypeFlags = 0;
+}
+
+static void TestRandomOverridesRouteByBattleType(void)
+{
+    static const u16 weights[2] = { 1, 1 };
+    u16 elems[4] = { 10, 20, 30, 40 };
+
+    Multiplayer_Init();
+
+    // Not in a coop battle: all four overrides fall through to *Default.
+    gBattleTypeFlags = 0;
+    gTestRandomDefaultCalls = 0;
+    (void)RandomUniform(RNG_NONE, 0, 10);
+    (void)RandomUniformExcept(RNG_NONE, 0, 10, RejectNothing);
+    (void)RandomWeightedArray(RNG_NONE, 2, 2, weights);
+    (void)RandomElementArray(RNG_NONE, elems, sizeof(elems[0]), 4);
+    ASSERT_EQ(gTestRandomDefaultCalls, 4);
+
+    // In a coop battle: none touch *Default; all draw from the lockstep stream.
+    gBattleTypeFlags = BATTLE_TYPE_COOP;
+    gMultiplayerState.coopRngState = 0xBEEF1234u;
+    gTestRandomDefaultCalls = 0;
+    (void)RandomUniform(RNG_NONE, 0, 10);
+    (void)RandomUniformExcept(RNG_NONE, 0, 10, RejectNothing);
+    (void)RandomWeightedArray(RNG_NONE, 2, 2, weights);
+    {
+        const void *e = RandomElementArray(RNG_NONE, elems, sizeof(elems[0]), 4);
+        // Must point at one of the 4 elements.
+        ASSERT_EQ(e >= (const void *)&elems[0] && e <= (const void *)&elems[3], TRUE);
+    }
+    ASSERT_EQ(gTestRandomDefaultCalls, 0);
+    ASSERT_EQ(gMultiplayerState.coopRngState != 0xBEEF1234u, TRUE);
+
+    gBattleTypeFlags = 0;
 }
 
 // ---- ROLE_ASSIGN ------------------------------------------------------------
@@ -626,7 +1045,22 @@ int main(void)
     // PARTY_SYNC wire mon + ROLE_ASSIGN
     TestPartyMonWireRoundTrip();
     TestSendPartySyncPacketSize();
+    TestPartySyncSeedHostSendsGuestZeroes();
+    TestRecvPartySyncAdoptsNonzeroSeed();
     TestRecvRoleAssignSetsRole();
+
+    // BATTLE_TURN sequencing + beacon repair
+    TestSendBattleTurnAssignsSeq();
+    TestResendBattleTurnKeepsSeq();
+    TestHandleBattleTurnDedupAndOrdering();
+    TestSetupCoopBattleResetsTurnStateAndSeedsRng();
+    TestBeaconRepairsDroppedBattleTurn();
+    TestBeaconSenderCarriesCachedTurnOnlyInCoopBattle();
+    TestBattleTickPumpsBeaconAndRecv();
+
+    // Coop battle RNG lockstep
+    TestCoopRngDeterministicStream();
+    TestRandomOverridesRouteByBattleType();
 
     TEST_SUMMARY();
 }

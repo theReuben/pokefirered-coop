@@ -1802,6 +1802,11 @@ void BattleMainCB2(void)
     RunTextPrinters();
     UpdatePaletteFade();
     RunTasks();
+    // Co-op: transport pump (poll + ping + state beacon).  The overworld
+    // loop and script engine don't run during battles, and battle init's
+    // ResetTasks() kills any task created before it — this is the only
+    // reliable per-battle-frame hook.  No-op outside coop battles.
+    Multiplayer_BattleTick();
 
     if (JOY_HELD(B_BUTTON) && gBattleTypeFlags & BATTLE_TYPE_RECORDED && RecordedBattle_CanStopPlayback())
     {

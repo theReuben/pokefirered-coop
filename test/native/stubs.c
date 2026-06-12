@@ -19,6 +19,41 @@
 // a zero seed in tests that don't care about the specific value.
 u32 gTestRandom32Value = 0x11223344u;
 
+// ---------------------------------------------------------------------------
+// Structured RNG *Default stubs.  multiplayer.c's strong RandomUniform etc.
+// fall through to these when not in a coop battle; the call counter lets
+// tests assert which path was taken.
+// ---------------------------------------------------------------------------
+u32 gTestRandomDefaultCalls = 0;
+
+u32 RandomUniformDefault(enum RandomTag tag, u32 lo, u32 hi)
+{
+    (void)tag; (void)hi;
+    gTestRandomDefaultCalls++;
+    return lo;
+}
+
+u32 RandomUniformExceptDefault(enum RandomTag tag, u32 lo, u32 hi, bool32 (*reject)(u32))
+{
+    (void)tag; (void)hi; (void)reject;
+    gTestRandomDefaultCalls++;
+    return lo;
+}
+
+u32 RandomWeightedArrayDefault(enum RandomTag tag, u32 sum, u32 n, const u16 *weights)
+{
+    (void)tag; (void)sum; (void)n; (void)weights;
+    gTestRandomDefaultCalls++;
+    return 0;
+}
+
+const void *RandomElementArrayDefault(enum RandomTag tag, const void *array, size_t size, size_t count)
+{
+    (void)tag; (void)size; (void)count;
+    gTestRandomDefaultCalls++;
+    return array;
+}
+
 // Global arrays / pointers referenced by multiplayer.c
 struct ObjectEvent gObjectEvents[16];
 struct SaveBlock1 *gSaveBlock1Ptr;

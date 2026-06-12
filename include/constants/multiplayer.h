@@ -19,16 +19,18 @@
 #define MP_PKT_STARTER_PICK         0x0F   // 3 bytes — player chose a starter (species hi + lo)
 #define MP_PKT_GENDER               0x10   // 2 bytes — partner's player gender (MALE/FEMALE)
 #define MP_PKT_NAME                 0x11   // 1+PLAYER_NAME_LENGTH bytes — partner's player name
-#define MP_PKT_PARTY_SYNC           0x12   // 2+n*58 bytes — partner's selected party (MpWirePartyMon * n)
+#define MP_PKT_PARTY_SYNC           0x12   // 2+n*58+4 bytes — partner's selected party (MpWirePartyMon * n)
+                                           // + 4-byte battle RNG seed (host-generated; guests send 0)
 #define MP_PKT_FOLLOWER_GFX         0x13   // 3 bytes — partner's follower OBJ_EVENT_GFX id (0 = no follower)
-#define MP_PKT_BATTLE_TURN          0x14   // 4 bytes — co-op turn: move slot + target + flags
+#define MP_PKT_BATTLE_TURN          0x14   // 5 bytes — co-op turn: seq + move slot + target + flags
 #define MP_PKT_TRAINER_BUSY         0x15   // 4 bytes — player started a trainer battle (localId + mapGroup + mapNum)
 #define MP_PKT_PING                 0x16   // 1 byte — heartbeat keep-alive (ROM→relay)
 #define MP_PKT_TRAINER_FREE         0x19   // 1 byte — player's trainer battle ended (win or loss)
 #define MP_PKT_HOST_MIGRATE         0x17   // 1 byte — relay→ROM: you are now host
 #define MP_PKT_EVENT_LOG            0x18   // variable — async event log batch
-#define MP_PKT_STATE_BEACON         0x1A   // 5 bytes — periodic idempotent session state
-                                           // (gender + my starter species + boss-ready id);
+#define MP_PKT_STATE_BEACON         0x1A   // 9 bytes — periodic idempotent session state
+                                           // (gender + my starter species + boss-ready id
+                                           // + cached battle turn: seq/move/target/flags);
                                            // converges any dropped one-shot exchange
 #define MP_PKT_ROLE_ASSIGN          0x1B   // 2 bytes — relay→ROM: session role (MP_ROLE_HOST/GUEST).
                                            // Without it both ROMs sit at MP_ROLE_NONE, so
@@ -96,13 +98,17 @@
 #define MP_PKT_SIZE_GENDER                  2  // type + gender
 #define MP_PKT_SIZE_NAME                    (1 + PLAYER_NAME_LENGTH)  // type + 7 name bytes
 #define MP_PKT_SIZE_FOLLOWER_GFX            3  // type + gfx_hi + gfx_lo
-#define MP_PKT_SIZE_BATTLE_TURN             4  // type + move_slot + target + flags
+#define MP_PKT_SIZE_BATTLE_TURN             5  // type + seq + move_slot + target + flags
+                                               // seq: 1-255 (never 0), +1 per logical turn;
+                                               // receiver dedups so beacon repeats are harmless
 #define MP_PKT_SIZE_TRAINER_BUSY            4  // type + localId + mapGroup + mapNum
 // Fixed sizes for new packets
 #define MP_PKT_SIZE_PING                    1  // type only
 #define MP_PKT_SIZE_HOST_MIGRATE            1  // type only
 #define MP_PKT_SIZE_TRAINER_FREE            1  // type only
-#define MP_PKT_SIZE_STATE_BEACON            5  // type + gender + starter_hi + starter_lo + boss_ready_id
+#define MP_PKT_SIZE_STATE_BEACON            9  // type + gender + starter_hi + starter_lo + boss_ready_id
+                                               // + turn_seq + move_slot + target + flags (turn_seq 0 = no
+                                               // cached battle turn; repairs a dropped MP_PKT_BATTLE_TURN)
 #define MP_PKT_SIZE_ROLE_ASSIGN             2  // type + role (MP_ROLE_HOST/GUEST)
 
 // Beacon cadence: 16 frames ≈ 267 ms.  Cheap (5 bytes) and idempotent, it
@@ -119,15 +125,22 @@
 #define MP_PKT_EVENT_ENTRY_SIZE 4     // event_type(1) + data[3]
 #define MP_PKT_SIZE_EVENT_LOG_MAX (MP_PKT_EVENT_LOG_HDR + MP_EVENT_LOG_SIZE * MP_PKT_EVENT_ENTRY_SIZE)
 
-// PARTY_SYNC: type(1) + n_mons(1) + n * 58-byte wire mon; max n=3 → 176 bytes.
+// PARTY_SYNC: type(1) + n_mons(1) + n * 58-byte wire mon + 4-byte battle RNG
+// seed; max n=3 → 180 bytes.
 // The wire mon (struct MpWirePartyMon) carries every field the battle engine
 // reads for battler 2 — moves, PP, stats, ability slot, OT id, status — so the
 // receiving ROM can reconstruct a battle-identical copy of the partner's mon.
 // The old 30-byte MultiPartnerMenuPokemon payload was display-only; rebuilding
 // a mon from it left hp/stats at 0 and the battler was flagged absent.
+// The trailing seed feeds the coop battle RNG lockstep stream: the host sends
+// a fresh nonzero seed each battle, guests send 0, and the receiver adopts any
+// nonzero value.  If neither side has a role (no relay role assignment), both
+// seeds stay 0 and both streams fall back to the same fixed constant — still
+// lockstep, just not per-battle fresh.
 #define MP_PKT_PARTY_SYNC_HDR               2   // type + n_mons
 #define MP_PKT_PARTY_SYNC_MON_SIZE          58  // serialized MpWirePartyMon (see multiplayer.h)
-#define MP_PKT_SIZE_PARTY_SYNC_MAX          (MP_PKT_PARTY_SYNC_HDR + MULTI_PARTY_SIZE * MP_PKT_PARTY_SYNC_MON_SIZE)
+#define MP_PKT_PARTY_SYNC_SEED_SIZE         4   // trailing u32 battle RNG seed (big-endian)
+#define MP_PKT_SIZE_PARTY_SYNC_MAX          (MP_PKT_PARTY_SYNC_HDR + MULTI_PARTY_SIZE * MP_PKT_PARTY_SYNC_MON_SIZE + MP_PKT_PARTY_SYNC_SEED_SIZE)
 
 // Player roles assigned by relay server
 #define MP_ROLE_NONE        0

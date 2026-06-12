@@ -397,12 +397,11 @@ static bool8 ProcessOneRecvPacket(void)
         Multiplayer_SendGender();
         Multiplayer_SendName();
         // If we're mid-battle and already sent our turn, resend it — partner
-        // missed it while disconnected and is now waiting for it.
+        // missed it while disconnected and is now waiting for it.  Resend, not
+        // Send: the cached turn keeps its sequence number, otherwise the
+        // partner would treat the replay as a brand-new turn.
         if (Multiplayer_IsCoopBattle() && gMultiplayerState.battleTurnSent)
-            Multiplayer_SendBattleTurn(
-                gMultiplayerState.battleTurnSentMoveSlot,
-                gMultiplayerState.battleTurnSentTarget,
-                gMultiplayerState.battleTurnSentFlags);
+            Multiplayer_ResendBattleTurn();
         // Send accumulated event log to bring the reconnecting partner up to date.
         // Host authority rule: on reconnect the host sends full_sync; the guest's
         // locally-set flags are preserved because Multiplayer_ApplyFullSync ORs flags.
@@ -497,10 +496,15 @@ static bool8 ProcessOneRecvPacket(void)
             return FALSE;
         {
             u8 gender = 0, hi = 0, lo = 0, bossId = 0;
+            u8 turnSeq = 0, moveSlot = 0, target = 0, flags = 0;
             Mp_Pop(&gMpRecvRing, &gender);
             Mp_Pop(&gMpRecvRing, &hi);
             Mp_Pop(&gMpRecvRing, &lo);
             Mp_Pop(&gMpRecvRing, &bossId);
+            Mp_Pop(&gMpRecvRing, &turnSeq);
+            Mp_Pop(&gMpRecvRing, &moveSlot);
+            Mp_Pop(&gMpRecvRing, &target);
+            Mp_Pop(&gMpRecvRing, &flags);
             Multiplayer_HandleRemoteGender(gender);
             // Starter is validated inside; 0 / unknown species are ignored.
             ApplyPartnerStarterPick(((u16)hi << 8) | lo);
@@ -511,6 +515,13 @@ static bool8 ProcessOneRecvPacket(void)
             // stays event-driven (BOSS_CANCEL / disconnect / mismatch reset).
             if (bossId != 0)
                 gMultiplayerState.partnerBossId = bossId;
+            // Repair a dropped MP_PKT_BATTLE_TURN: the sender re-carries its
+            // cached turn in every beacon while in a coop battle.  The seq
+            // dedup inside HandleBattleTurn makes repeats and reordered stale
+            // beacons no-ops.  Gate on our own battle state so an overworld
+            // instance never buffers a stale turn for a future battle.
+            if (turnSeq != 0 && Multiplayer_IsCoopBattle())
+                Multiplayer_HandleBattleTurn(turnSeq, moveSlot, target, flags);
         }
         break;
 
@@ -540,11 +551,12 @@ static bool8 ProcessOneRecvPacket(void)
         if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_BATTLE_TURN - 1)
             return FALSE;
         {
-            u8 moveSlot = 0, target = 0, flags = 0;
+            u8 seq = 0, moveSlot = 0, target = 0, flags = 0;
+            Mp_Pop(&gMpRecvRing, &seq);
             Mp_Pop(&gMpRecvRing, &moveSlot);
             Mp_Pop(&gMpRecvRing, &target);
             Mp_Pop(&gMpRecvRing, &flags);
-            Multiplayer_HandleBattleTurn(moveSlot, target, flags);
+            Multiplayer_HandleBattleTurn(seq, moveSlot, target, flags);
         }
         break;
 
@@ -582,22 +594,33 @@ static bool8 ProcessOneRecvPacket(void)
         {
             u8 n_mons = 0;
             u8 needed;
-            // Peek n_mons without consuming it yet; need 1 (count) + n*MON_SIZE bytes total.
+            // Peek n_mons without consuming it yet; need 1 (count) + n*MON_SIZE
+            // + 4 (trailing battle RNG seed) bytes total.
             if (Mp_Available(&gMpRecvRing) < 1)
                 return FALSE;
             n_mons = gMpRecvRing.buf[(u8)(gMpRecvRing.tail)];
             if (n_mons > MULTI_PARTY_SIZE) n_mons = MULTI_PARTY_SIZE;
-            needed = 1 + n_mons * MP_PKT_PARTY_SYNC_MON_SIZE;
+            needed = 1 + n_mons * MP_PKT_PARTY_SYNC_MON_SIZE + MP_PKT_PARTY_SYNC_SEED_SIZE;
             if (Mp_Available(&gMpRecvRing) < needed)
                 return FALSE;
             Mp_Pop(&gMpRecvRing, &n_mons); // consume n_mons byte now that all data is ready
             if (n_mons > MULTI_PARTY_SIZE) n_mons = MULTI_PARTY_SIZE;
             {
                 u8 data[MULTI_PARTY_SIZE * MP_PKT_PARTY_SYNC_MON_SIZE];
+                u8 seedBytes[MP_PKT_PARTY_SYNC_SEED_SIZE];
+                u32 battleSeed;
                 u8 j;
                 u8 dataLen = n_mons * MP_PKT_PARTY_SYNC_MON_SIZE;
                 for (j = 0; j < dataLen; j++)
                     Mp_Pop(&gMpRecvRing, &data[j]);
+                for (j = 0; j < MP_PKT_PARTY_SYNC_SEED_SIZE; j++)
+                    Mp_Pop(&gMpRecvRing, &seedBytes[j]);
+                battleSeed = ((u32)seedBytes[0] << 24) | ((u32)seedBytes[1] << 16)
+                           | ((u32)seedBytes[2] << 8)  | seedBytes[3];
+                // Only the host transmits a nonzero seed; adopting any nonzero
+                // value keeps both sides on the host's per-battle stream.
+                if (battleSeed != 0)
+                    gMultiplayerState.coopBattleSeed = battleSeed;
                 Multiplayer_HandleRemotePartySync(data, n_mons);
             }
         }
@@ -789,6 +812,12 @@ void Multiplayer_Init(void)
     gMultiplayerState.partnerName[2] = CHAR_QUESTION_MARK;
     gMultiplayerState.partnerName[3] = EOS;
     gMultiplayerState.coopBattlePending  = FALSE;
+    gMultiplayerState.battleTurnReceived   = FALSE;
+    gMultiplayerState.battleTurnSent       = FALSE;
+    gMultiplayerState.battleTurnSeqOut     = 0;
+    gMultiplayerState.battleTurnSeqApplied = 0;
+    gMultiplayerState.coopBattleSeed       = 0;
+    gMultiplayerState.coopRngState         = 0;
     gCoopSettings.randomizeEncounters    = 1;
 #if MP_DEBUG_TEST_SEED
     gCoopSettings.encounterSeed          = MP_DEBUG_TEST_SEED_VALUE;
@@ -852,6 +881,76 @@ void Multiplayer_UpdateOncePerFrame(void)
     Multiplayer_Update();
 }
 
+// Heartbeat ping every 120 frames (2s) so the relay can detect silent
+// disconnects, plus the idempotent session-state beacon every
+// MP_BEACON_INTERVAL_FRAMES: gender + starter pick + boss readiness +
+// (in coop battles) the cached battle turn.  The beacon is the repair
+// channel for every dropped one-shot exchange — any new reliability need
+// extends its payload rather than adding a resend timer.
+// Shared by the overworld pump (Multiplayer_Update) and the battle pump
+// (Multiplayer_BattleTick); only ever call once per frame.
+static void TickPingAndBeacon(void)
+{
+    gMultiplayerState.pingTimer++;
+    if (gMultiplayerState.pingTimer >= 120)
+    {
+        u8 pingByte = MP_PKT_PING;
+        gMultiplayerState.pingTimer = 0;
+        MpRing_Write(&gMpSendRing, &pingByte, MP_PKT_SIZE_PING);
+    }
+
+    if (++gMultiplayerState.starterResendTimer >= MP_BEACON_INTERVAL_FRAMES)
+    {
+        u8 pkt[MP_PKT_SIZE_STATE_BEACON];
+        gMultiplayerState.starterResendTimer = 0;
+        pkt[0] = MP_PKT_STATE_BEACON;
+        pkt[1] = gSaveBlock2Ptr->playerGender;
+        pkt[2] = (u8)(gMultiplayerState.myStarterSpecies >> 8);
+        pkt[3] = (u8)(gMultiplayerState.myStarterSpecies);
+        pkt[4] = gMultiplayerState.bossReadyBossId;
+        // Re-carry the cached battle turn while in a coop battle so a
+        // dropped MP_PKT_BATTLE_TURN converges on the next beacon (the
+        // receiver dedups by seq).  Zeroed otherwise — turn_seq 0 means
+        // "no cached turn" on the wire.
+        if (Multiplayer_IsCoopBattle() && gMultiplayerState.battleTurnSent)
+        {
+            pkt[5] = gMultiplayerState.battleTurnSeqOut;
+            pkt[6] = gMultiplayerState.battleTurnSentMoveSlot;
+            pkt[7] = gMultiplayerState.battleTurnSentTarget;
+            pkt[8] = gMultiplayerState.battleTurnSentFlags;
+        }
+        else
+        {
+            pkt[5] = 0;
+            pkt[6] = 0;
+            pkt[7] = 0;
+            pkt[8] = 0;
+        }
+        MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STATE_BEACON);
+    }
+}
+
+// Battle-safe multiplayer pump.  During a battle neither the overworld loop
+// nor the script engine runs, so NOTHING pumped the transport: no packet
+// polling outside the partner controller's ChooseMove window, no heartbeat
+// ping (the relay's silence detection went dark for the whole battle), and
+// no state beacon (the battle-turn repair channel never fired — found live
+// 2026-06-12: a wiped turn was never re-applied).  Called every battle frame
+// from BattleMainCB2.  NOT hookable via Task_CoopBattleBlockRelay: battle
+// init's ResetTasks() (CB2_InitBattleInternal) destroys that task right
+// after Multiplayer_SetupCoopBattle creates it.
+// Deliberately excludes the overworld-only work in Multiplayer_Update:
+// ghost/object-event management, position sends, starter recovery, and the
+// auto-checkpoint (TrySavingData mid-battle is unsafe).
+void Multiplayer_BattleTick(void)
+{
+    if (!Multiplayer_IsCoopBattle()
+        || gMultiplayerState.connState != MP_STATE_CONNECTED)
+        return;
+    Multiplayer_PollPackets();
+    TickPingAndBeacon();
+}
+
 // Overworld-only update: ghost NPC management and outbound position send.
 // Called from the overworld game loop, after Multiplayer_PollPackets has
 // already consumed incoming packets for this frame.
@@ -911,31 +1010,9 @@ void Multiplayer_Update(void)
         if (gMultiplayerState.posFrameCounter >= 4)
             gMultiplayerState.posFrameCounter = 0;
 
-        // Heartbeat ping every 120 frames (2 seconds) so the relay can detect
-        // silent disconnects and inject PARTNER_DISCONNECTED to the other side.
-        gMultiplayerState.pingTimer++;
-        if (gMultiplayerState.pingTimer >= 120)
-        {
-            u8 pingByte = MP_PKT_PING;
-            gMultiplayerState.pingTimer = 0;
-            MpRing_Write(&gMpSendRing, &pingByte, MP_PKT_SIZE_PING);
-        }
-
-        // Idempotent session-state beacon: gender + our starter pick + boss
-        // readiness, every MP_BEACON_INTERVAL_FRAMES.  Replaces the per-frame
-        // gender flood and the per-message starter/boss-ready resend timers —
-        // any dropped one-shot exchange converges on the next beacon.
-        if (++gMultiplayerState.starterResendTimer >= MP_BEACON_INTERVAL_FRAMES)
-        {
-            u8 pkt[MP_PKT_SIZE_STATE_BEACON];
-            gMultiplayerState.starterResendTimer = 0;
-            pkt[0] = MP_PKT_STATE_BEACON;
-            pkt[1] = gSaveBlock2Ptr->playerGender;
-            pkt[2] = (u8)(gMultiplayerState.myStarterSpecies >> 8);
-            pkt[3] = (u8)(gMultiplayerState.myStarterSpecies);
-            pkt[4] = gMultiplayerState.bossReadyBossId;
-            MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STATE_BEACON);
-        }
+        // Heartbeat ping + idempotent session-state beacon (shared with the
+        // mid-battle pump in Multiplayer_BattleTick).
+        TickPingAndBeacon();
 
         // Auto-checkpoint: save on map change so progress isn't lost on disconnect.
         if (gSaveBlock1Ptr)
@@ -1709,20 +1786,46 @@ bool32 Multiplayer_IsCoopBattle(void)
 
 void Multiplayer_SendBattleTurn(u8 moveSlot, u8 target, u8 flags)
 {
-    u8 pkt[MP_PKT_SIZE_BATTLE_TURN];
-    pkt[0] = MP_PKT_BATTLE_TURN;
-    pkt[1] = moveSlot;
-    pkt[2] = target;
-    pkt[3] = flags;
-    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_BATTLE_TURN);
+    // One fresh sequence number per logical turn; 0 is reserved for "no turn"
+    // on the wire (beacon), so skip it on wraparound.
+    u8 seq = (u8)(gMultiplayerState.battleTurnSeqOut + 1);
+    if (seq == 0)
+        seq = 1;
+    gMultiplayerState.battleTurnSeqOut       = seq;
     gMultiplayerState.battleTurnSent         = TRUE;
     gMultiplayerState.battleTurnSentMoveSlot = moveSlot;
     gMultiplayerState.battleTurnSentTarget   = target;
     gMultiplayerState.battleTurnSentFlags    = flags;
+    Multiplayer_ResendBattleTurn();
 }
 
-void Multiplayer_HandleBattleTurn(u8 moveSlot, u8 target, u8 flags)
+// Re-emit the cached turn with its original seq.  Used by the reconnect path
+// and callable any time battleTurnSent is set; the receiver's seq dedup makes
+// duplicates harmless.
+void Multiplayer_ResendBattleTurn(void)
 {
+    u8 pkt[MP_PKT_SIZE_BATTLE_TURN];
+    if (!gMultiplayerState.battleTurnSent)
+        return;
+    pkt[0] = MP_PKT_BATTLE_TURN;
+    pkt[1] = gMultiplayerState.battleTurnSeqOut;
+    pkt[2] = gMultiplayerState.battleTurnSentMoveSlot;
+    pkt[3] = gMultiplayerState.battleTurnSentTarget;
+    pkt[4] = gMultiplayerState.battleTurnSentFlags;
+    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_BATTLE_TURN);
+}
+
+void Multiplayer_HandleBattleTurn(u8 seq, u8 moveSlot, u8 target, u8 flags)
+{
+    // Dedup + ordering: apply only turns strictly newer than the last applied
+    // (wraparound-aware).  diff==0 is a repeat (beacon re-carry, reconnect
+    // resend); diff>=0x80 is a stale turn delivered late by a reordering
+    // relay.  Either way the engine already has — or has moved past — it.
+    u8 diff = (u8)(seq - gMultiplayerState.battleTurnSeqApplied);
+    if (seq == 0 || diff == 0 || diff >= 0x80)
+        return;
+    gMultiplayerState.battleTurnSeqApplied = seq;
+
     // The partner's sim is mirrored: their own mon is battler 0 on their
     // screen but battler 2 on ours (and vice versa).  Opponent indices (1/3)
     // line up unchanged.  Remap ally-side targets into our index space.
@@ -1735,6 +1838,88 @@ void Multiplayer_HandleBattleTurn(u8 moveSlot, u8 target, u8 flags)
     gMultiplayerState.battleTurnFlags    = flags;
     gMultiplayerState.battleTurnReceived = TRUE;
 }
+
+// ---------------------------------------------------------------------------
+// Coop battle RNG lockstep
+//
+// The expansion's tagged battle-logic rolls (RandomUniform / RandomUniformExcept
+// / RandomWeightedArray / RandomElementArray) normally draw from the shared
+// gRngValue stream, which is also advanced by per-frame visual/animation draws
+// — so two free-running instances diverge immediately even with an identical
+// seed.  During BATTLE_TYPE_COOP battles we override the weak symbols from
+// src/random.c and route those rolls through a dedicated xorshift32 stream
+// seeded identically on both sides (host's seed via MP_PKT_PARTY_SYNC).
+// Both sims make the same logic rolls in the same order, so damage / crits /
+// status procs / AI choices stay in lockstep; cosmetic Random() draws remain
+// free-running and harmless.
+//
+// Known limitation: untagged Random()/Random32() calls inside battle logic
+// (if any remain upstream) still draw from the shared stream and can diverge.
+// ---------------------------------------------------------------------------
+
+u16 Multiplayer_CoopBattleRandom16(void)
+{
+    u32 x = gMultiplayerState.coopRngState;
+    if (x == 0)
+        x = 0x12345678u; // xorshift32 sticks at 0; remap (same fallback as Multiplayer_SeedRng)
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    gMultiplayerState.coopRngState = x;
+    return (u16)(x >> 16);
+}
+
+// TESTING builds (make check / battle tests) install their own strong
+// RandomUniform etc. in test/test_runner.c; defining ours there would clash.
+// Native unit tests compile with TESTING undefined, so they exercise these.
+#if !TESTING
+
+u32 RandomUniform(enum RandomTag tag, u32 lo, u32 hi)
+{
+    if (Multiplayer_IsCoopBattle())
+        return lo + (((hi - lo + 1) * Multiplayer_CoopBattleRandom16()) >> 16);
+    return RandomUniformDefault(tag, lo, hi);
+}
+
+u32 RandomUniformExcept(enum RandomTag tag, u32 lo, u32 hi, bool32 (*reject)(u32))
+{
+    if (Multiplayer_IsCoopBattle())
+    {
+        while (TRUE)
+        {
+            u32 n = lo + (((hi - lo + 1) * Multiplayer_CoopBattleRandom16()) >> 16);
+            if (!reject(n))
+                return n;
+        }
+    }
+    return RandomUniformExceptDefault(tag, lo, hi, reject);
+}
+
+u32 RandomWeightedArray(enum RandomTag tag, u32 sum, u32 n, const u16 *weights)
+{
+    if (Multiplayer_IsCoopBattle())
+    {
+        u32 i, targetSum;
+        targetSum = (sum * Multiplayer_CoopBattleRandom16()) >> 16;
+        for (i = 0; i < n - 1; i++)
+        {
+            if (targetSum < weights[i])
+                return i;
+            targetSum -= weights[i];
+        }
+        return n - 1;
+    }
+    return RandomWeightedArrayDefault(tag, sum, n, weights);
+}
+
+const void *RandomElementArray(enum RandomTag tag, const void *array, size_t size, size_t count)
+{
+    if (Multiplayer_IsCoopBattle())
+        return (const u8 *)array + size * RandomUniform(tag, 0, count - 1);
+    return RandomElementArrayDefault(tag, array, size, count);
+}
+
+#endif // !TESTING
 
 // Returns 1 if a partner is connected; 0 otherwise.
 // Called from gym scripts: 'specialvar VAR_RESULT, Multiplayer_IsConnected'
@@ -1889,6 +2074,15 @@ static u8 EncodePartySync(u8 *dst, u8 n_mons)
         GetMonData(mon, MON_DATA_NICKNAME, w.nickname);
         p += Mp_EncodePartyMon(p, &w);
     }
+    // Trailing battle RNG seed: only the host transmits a real value; guests
+    // send 0 so the receiver's "adopt nonzero" rule always converges on the
+    // host's seed regardless of message order.
+    {
+        u32 seed = (gMultiplayerState.role == MP_ROLE_HOST)
+                       ? gMultiplayerState.coopBattleSeed : 0;
+        MpPutU32(p, seed);
+        p += MP_PKT_PARTY_SYNC_SEED_SIZE;
+    }
     return (u8)(p - dst);
 }
 
@@ -1998,6 +2192,12 @@ void CB2_CoopPartySelected(void)
     // Restore VAR_FRONTIER_FACILITY so it doesn't leak into other menus.
     VarSet(VAR_FRONTIER_FACILITY, 0);
 
+    // Host mints a fresh battle RNG seed once per battle, before the (re)sends
+    // in NativePollPartySync — every resend must carry the SAME seed or the
+    // guest could adopt a different stream than the host plays.
+    if (gMultiplayerState.role == MP_ROLE_HOST)
+        gMultiplayerState.coopBattleSeed = Multiplayer_GenerateSeed();
+
     if (gMultiplayerState.connState == MP_STATE_CONNECTED)
         Multiplayer_SendPartySync();
     else
@@ -2039,6 +2239,21 @@ void Multiplayer_SetupCoopBattle(void)
     for (i = 0; i < MAX_RFU_PLAYERS; i++)
         gLinkPlayers[i].version = VERSION_EMERALD;
     gReceivedRemoteLinkPlayers = TRUE;
+
+    // Fresh turn-sequence space for this battle.  Both sides reset here, so
+    // seq 1 is always the first turn of the current battle.  An early turn
+    // packet that lands before this reset is repaired by the partner's state
+    // beacon (its seq is newer than the zeroed battleTurnSeqApplied).
+    gMultiplayerState.battleTurnSeqOut     = 0;
+    gMultiplayerState.battleTurnSeqApplied = 0;
+    gMultiplayerState.battleTurnReceived   = FALSE;
+    gMultiplayerState.battleTurnSent       = FALSE;
+
+    // Seed the lockstep battle RNG stream.  coopBattleSeed was adopted from
+    // the host's PARTY_SYNC; if no role was ever assigned both sides hold 0
+    // here and CoopBattleRandom16's zero-remap keeps them on the same fixed
+    // stream — still lockstep, just not per-battle fresh.
+    gMultiplayerState.coopRngState = gMultiplayerState.coopBattleSeed;
 
     // If the party sync exchange happened (waitpartysync completed), gMultiPartnerParty
     // and gPlayerParty[MULTI_PARTY_SIZE..] were already populated by Multiplayer_HandleRemotePartySync.
