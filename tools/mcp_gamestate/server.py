@@ -230,10 +230,10 @@ _PKT_SIZES = {
     0x07: lambda b, i: 3 + ((b[i+1] << 8) | b[i+2]) if i + 3 <= len(b) else None,
     0x08: 1, 0x09: 1, 0x0A: 1, 0x0B: 1, 0x0C: 1, 0x0D: 4, 0x0E: 3, 0x0F: 3,
     0x10: 2, 0x11: 8,
-    0x12: lambda b, i: 2 + b[i+1] * 30 if i + 2 <= len(b) else None,
+    0x12: lambda b, i: 2 + b[i+1] * 58 if i + 2 <= len(b) else None,
     0x13: 3, 0x14: 4, 0x15: 4, 0x16: 1, 0x17: 1,
     0x18: lambda b, i: 2 + b[i+1] * 4 if i + 2 <= len(b) else None,
-    0x19: 1, 0x1A: 5,
+    0x19: 1, 0x1A: 5, 0x1B: 2,
 }
 
 
@@ -329,6 +329,13 @@ def _relay_loop() -> None:
                 _pending_inject.clear()
                 p1.inject_bytes("0B")
                 p2.inject_bytes("0B")
+                # Assign session roles (MP_PKT_ROLE_ASSIGN 0x1B): without these
+                # both ROMs sit at MP_ROLE_NONE and GetMultiplayerId() answers
+                # identically on both sides — there is no link master for
+                # co-op battle seed authority.  Mirrors the real relay's
+                # `role` message (translated by the Tauri bridge).
+                p1.inject_bytes("1B 01" if _host_instance == "p1" else "1B 02")
+                p2.inject_bytes("1B 01" if _host_instance == "p2" else "1B 02")
                 _connected_pair = True
                 # Initialise last-heard timestamps so we don't immediately trigger
                 # a false-positive disconnect on session start.
@@ -348,8 +355,12 @@ def _relay_loop() -> None:
                     # Instance is alive again — clear its disconnect entry.
                     if src_id in _disconnect_injected:
                         _disconnect_injected.discard(src_id)
-                        # Notify the current host that the partner reconnected.
+                        # Notify the current host that the partner reconnected,
+                        # and re-assert both sides' roles (a savestate reload
+                        # zeroes gMultiplayerState.role on the survivor too).
                         dst.inject_bytes("0B")
+                        dst.inject_bytes("1B 01" if _host_instance == dst.iid else "1B 02")
+                        src.inject_bytes("1B 01" if _host_instance == src_id else "1B 02")
                 # Chaos applies to newly drained packets only; pending bytes
                 # already passed the filter on a previous cycle.
                 new_bytes = _chaos_filter(dst_id, new_bytes)
@@ -743,6 +754,7 @@ def load_savestate(path: str, instance_id: str = "p1") -> str:
         path: Path to .ss1 file (relative to repo root or absolute).
         instance_id: Which instance to load into ('p1' or 'p2').
     """
+    global _connected_pair
     p = Path(path)
     if not p.is_absolute():
         p = REPO_ROOT / p
@@ -751,6 +763,10 @@ def load_savestate(path: str, instance_id: str = "p1") -> str:
     r = _inst(instance_id).send_locked({"cmd": "loadstate", "path": str(p)})
     if not r.get("ok"):
         return f"loadstate failed: {r.get('error', 'unknown')}"
+    # A state load wipes IWRAM session state (connState, role).  Re-arm the
+    # session handshake so the relay loop re-injects PARTNER_CONNECTED and
+    # the role assignments on its next cycle.
+    _connected_pair = False
     return f"Loaded '{p}' into '{instance_id}'. Wait ~300 frames before sending inputs."
 
 

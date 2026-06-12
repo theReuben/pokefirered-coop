@@ -149,3 +149,47 @@ Maximum payload ≈ 172 bytes (trainer flag bitmap), well within the
   connect, not repeatedly.
 - No framing delimiter is needed — each type byte implicitly defines the
   packet length (or the 2-byte length field for FULL_SYNC).
+
+---
+
+## Later additions (canonical list: `include/constants/multiplayer.h`)
+
+Packet types `0x08`–`0x1B` were added after this document was first
+written; the constants header is the authoritative size table (mirrored
+in `serial_bridge.rs`, `relay-server/src/server.ts`, and the MCP
+server's `_PKT_SIZES`).  Two are documented here because their layouts
+are non-obvious:
+
+### PARTY_SYNC (0x12) — 2 + n×58 bytes
+
+```
+Byte 0: type = 0x12
+Byte 1: n_mons (≤ 3)
+Then n_mons × 58-byte wire mons (struct MpWirePartyMon, big-endian):
+  +0  species     u16     +14 moves[4]  u16×4    +30 atk    u16
+  +2  heldItem    u16     +22 pp[4]     u8×4     +32 def    u16
+  +4  level       u8      +26 hp        u16      +34 speed  u16
+  +5  abilityNum  u8      +28 maxHP     u16      +36 spAtk  u16
+  +6  personality u32                            +38 spDef  u16
+  +10 otId        u32                            +40 status u32
+  +44 friendship u8   +45 gender u8   +46 language u8   +47 nickname[11]
+```
+
+The receiving ROM rebuilds a battle-identical mon in the partner half of
+`gPlayerParty` from these fields.  Every stat must be on the wire:
+`CreateMon()` in this expansion does **not** compute stats, and a
+reconstructed mon left at 0 HP is flagged absent by
+`TryDoEventsBeforeFirstTurn` — battler 2 then silently drops out of the
+co-op battle.
+
+### ROLE_ASSIGN (0x1B) — 2 bytes
+
+```
+Byte 0: type = 0x1B
+Byte 1: role  (1 = MP_ROLE_HOST, 2 = MP_ROLE_GUEST)
+```
+
+Relay → ROM only, sent at session start (and re-sent after savestate
+loads / reconnects on the MCP relay).  Gives `GetMultiplayerId()` /
+`IsLinkMaster()` a real answer; without it both ROMs sit at
+`MP_ROLE_NONE` and neither side is link master.

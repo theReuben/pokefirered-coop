@@ -19,7 +19,7 @@
 #define MP_PKT_STARTER_PICK         0x0F   // 3 bytes — player chose a starter (species hi + lo)
 #define MP_PKT_GENDER               0x10   // 2 bytes — partner's player gender (MALE/FEMALE)
 #define MP_PKT_NAME                 0x11   // 1+PLAYER_NAME_LENGTH bytes — partner's player name
-#define MP_PKT_PARTY_SYNC           0x12   // 2+n*30 bytes — partner's selected party (MultiPartnerMenuPokemon * n)
+#define MP_PKT_PARTY_SYNC           0x12   // 2+n*58 bytes — partner's selected party (MpWirePartyMon * n)
 #define MP_PKT_FOLLOWER_GFX         0x13   // 3 bytes — partner's follower OBJ_EVENT_GFX id (0 = no follower)
 #define MP_PKT_BATTLE_TURN          0x14   // 4 bytes — co-op turn: move slot + target + flags
 #define MP_PKT_TRAINER_BUSY         0x15   // 4 bytes — player started a trainer battle (localId + mapGroup + mapNum)
@@ -30,6 +30,9 @@
 #define MP_PKT_STATE_BEACON         0x1A   // 5 bytes — periodic idempotent session state
                                            // (gender + my starter species + boss-ready id);
                                            // converges any dropped one-shot exchange
+#define MP_PKT_ROLE_ASSIGN          0x1B   // 2 bytes — relay→ROM: session role (MP_ROLE_HOST/GUEST).
+                                           // Without it both ROMs sit at MP_ROLE_NONE, so
+                                           // GetMultiplayerId()/IsLinkMaster() agree on neither side.
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -100,6 +103,7 @@
 #define MP_PKT_SIZE_HOST_MIGRATE            1  // type only
 #define MP_PKT_SIZE_TRAINER_FREE            1  // type only
 #define MP_PKT_SIZE_STATE_BEACON            5  // type + gender + starter_hi + starter_lo + boss_ready_id
+#define MP_PKT_SIZE_ROLE_ASSIGN             2  // type + role (MP_ROLE_HOST/GUEST)
 
 // Beacon cadence: 16 frames ≈ 267 ms.  Cheap (5 bytes) and idempotent, it
 // replaces the per-frame gender flood and the per-message starter/boss-ready
@@ -115,9 +119,14 @@
 #define MP_PKT_EVENT_ENTRY_SIZE 4     // event_type(1) + data[3]
 #define MP_PKT_SIZE_EVENT_LOG_MAX (MP_PKT_EVENT_LOG_HDR + MP_EVENT_LOG_SIZE * MP_PKT_EVENT_ENTRY_SIZE)
 
-// PARTY_SYNC: type(1) + n_mons(1) + n * sizeof(MultiPartnerMenuPokemon)(30); max n=3 → 92 bytes
+// PARTY_SYNC: type(1) + n_mons(1) + n * 58-byte wire mon; max n=3 → 176 bytes.
+// The wire mon (struct MpWirePartyMon) carries every field the battle engine
+// reads for battler 2 — moves, PP, stats, ability slot, OT id, status — so the
+// receiving ROM can reconstruct a battle-identical copy of the partner's mon.
+// The old 30-byte MultiPartnerMenuPokemon payload was display-only; rebuilding
+// a mon from it left hp/stats at 0 and the battler was flagged absent.
 #define MP_PKT_PARTY_SYNC_HDR               2   // type + n_mons
-#define MP_PKT_PARTY_SYNC_MON_SIZE          30  // sizeof(struct MultiPartnerMenuPokemon)
+#define MP_PKT_PARTY_SYNC_MON_SIZE          58  // serialized MpWirePartyMon (see multiplayer.h)
 #define MP_PKT_SIZE_PARTY_SYNC_MAX          (MP_PKT_PARTY_SYNC_HDR + MULTI_PARTY_SIZE * MP_PKT_PARTY_SYNC_MON_SIZE)
 
 // Player roles assigned by relay server

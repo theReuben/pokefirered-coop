@@ -14,13 +14,23 @@ struct OriginalTrainerId { u8 type; u32 value; };
 enum MonData {
     MON_DATA_PERSONALITY = 0,
     MON_DATA_STATUS      = 1,
+    MON_DATA_OT_ID       = 2,
     MON_DATA_LANGUAGE    = 3,
     MON_DATA_HP          = 10,
     MON_DATA_NICKNAME    = 16,
     MON_DATA_SPECIES     = 18,
     MON_DATA_HELD_ITEM   = 19,
+    MON_DATA_MOVE1       = 20,
+    MON_DATA_PP1         = 24,
+    MON_DATA_FRIENDSHIP  = 39,
+    MON_DATA_ABILITY_NUM = 55,
     MON_DATA_LEVEL       = 64,
     MON_DATA_MAX_HP      = 65,
+    MON_DATA_ATK         = 66,
+    MON_DATA_DEF         = 67,
+    MON_DATA_SPEED       = 68,
+    MON_DATA_SPATK       = 69,
+    MON_DATA_SPDEF       = 70,
 };
 
 // The real GetMonData is a 2-or-3-arg macro. Use a variadic wrapper so both

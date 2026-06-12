@@ -142,6 +142,43 @@ u16 Mp_EncodeFullSync(u8 *out, const u8 *data, u16 dataLen);
 bool8 Mp_DecodeFullSync(const u8 *in, u16 len, const u8 **dataOut, u16 *dataLen);
 
 // ---------------------------------------------------------------------------
+// PARTY_SYNC wire mon — the full battle-relevant snapshot of one party mon.
+// The receiving ROM rebuilds a battle-identical mon in the partner half of
+// gPlayerParty from these fields.  Display-only data (nickname, gender,
+// language) doubles for gMultiPartnerParty.  58 bytes serialized
+// (MP_PKT_PARTY_SYNC_MON_SIZE); all multi-byte fields big-endian.
+// ---------------------------------------------------------------------------
+#define MP_WIRE_NICK_LEN 11  // POKEMON_NAME_LENGTH + 1
+
+struct MpWirePartyMon {
+    u16 species;
+    u16 heldItem;
+    u8  level;
+    u8  abilityNum;
+    u32 personality;
+    u32 otId;
+    u16 moves[4];
+    u8  pp[4];
+    u16 hp;
+    u16 maxHP;
+    u16 atk;
+    u16 def;
+    u16 speed;
+    u16 spAtk;
+    u16 spDef;
+    u32 status;
+    u8  friendship;
+    u8  gender;
+    u8  language;
+    u8  nickname[MP_WIRE_NICK_LEN];
+};
+
+// Serialize/deserialize one wire mon.  Encode returns bytes written
+// (MP_PKT_PARTY_SYNC_MON_SIZE); decode returns FALSE only on NULL args.
+u8    Mp_EncodePartyMon(u8 *out, const struct MpWirePartyMon *m);
+bool8 Mp_DecodePartyMon(const u8 *in, struct MpWirePartyMon *m);
+
+// ---------------------------------------------------------------------------
 // Structures
 // ---------------------------------------------------------------------------
 struct CoopSettings {

@@ -9,8 +9,8 @@
 ## Current State
 - **Active Phase:** 9
 - **Active Step:** 9.1
-- **Last Session Summary:** Steps 9.3 (variable sync) and 9.5 (trainer randomization) implemented and tested. IsSyncableVar() now returns TRUE for VAR_MAP_SCENE_* range; trainer party randomization hooked in battle_main.c; 202 unit tests pass. Steps 9.1, 9.2, 9.4, 9.6 still require Rust/Cargo installed to build the Tauri app with mGBA.
-- **Next Action:** Step 9.1 — install Rust toolchain (`curl https://sh.rustup.rs -sSf | sh`), then link real mGBA so the game actually runs.
+- **Last Session Summary (2026-06-12):** Diagnosed the v0.1.22 "co-op battle ignores partner input" report. Root causes: (1) `Multiplayer_HandleRemotePartySync` rebuilt the partner's mon with bare `CreateMon()`, which in this expansion does NOT compute stats → partner mon hp=0 → `TryDoEventsBeforeFirstTurn` flags battler 2 absent → each instance silently fights a private 1v1 (BATTLE_TURN packets arrive but are never consumed). (2) No role assignment ever reaches `gMultiplayerState.role` on ANY path: the Tauri bridge swallowed the relay's `role` message into a debug field, the MCP relay never sent one, and the ROM had no role packet — both ROMs answer `GetMultiplayerId()==1`, no link master exists. Fixed: 58-byte full-fidelity `MpWirePartyMon` wire format (moves/PP/all stats/ability/OT id/status), `MP_PKT_ROLE_ASSIGN` (0x1B) across ROM+bridge+MCP relay, ally-target mirroring (0↔2) in `Multiplayer_HandleBattleTurn`, role re-injection after savestate loads. ALSO: local `pokefirered.gba` was stale (built 06-09, predating the entire June 10–11 fix set) — earlier MCP test sessions exercised dead code; replaced with the CI artifact for HEAD and regenerated all save states. RNG lockstep remains unimplemented (CLAUDE.md amended with the weak-symbol override design).
+- **Next Action:** CI-build the ROM with these fixes, rerun the co-op rival battle via MCP (verify battler 2 acts on the partner's actual input), then re-test gym double battle + chaos mode.
 
 ## ⚠️ Done Criteria Policy
 A step must NOT be marked done by:

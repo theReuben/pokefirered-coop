@@ -310,9 +310,10 @@ Gym leaders and key story battles become **true co-op double battles** where bot
 
 **Packet definitions:**
 
-- `MP_PKT_PARTY_SYNC = 0x12` — 2-byte header + n×30 bytes (`struct MultiPartnerMenuPokemon`); includes RNG seed (4 bytes) at end
-- `MP_PKT_BATTLE_TURN = 0x13` — 4 bytes: move index (1), target (1), flags (1), padding (1)
-- `MP_PKT_FOLLOWER_SPECIES = 0x14` — 3 bytes: type (1) + species (2)
+- `MP_PKT_PARTY_SYNC = 0x12` — 2-byte header + n×58 bytes (`struct MpWirePartyMon`: species, item, level, ability slot, personality, OT id, moves, PP, hp/maxHP, all five battle stats, status, friendship, nickname). Full fidelity is mandatory: `CreateMon()` does not compute stats, so a reconstruction from display-only data leaves the partner's mon at 0 HP and the engine flags battler 2 absent (amended 2026-06-12 — this was the "co-op battle ignores partner input" bug).
+- `MP_PKT_BATTLE_TURN = 0x14` — 4 bytes: move index (1), target (1), flags (1); ally-side targets are mirrored (0↔2) on receipt because each instance runs its local player as battler 0
+- `MP_PKT_FOLLOWER_GFX = 0x13` — 3 bytes: type (1) + gfx id (2)
+- `MP_PKT_ROLE_ASSIGN = 0x1B` — 2 bytes: relay assigns MP_ROLE_HOST/GUEST at session start; required for `GetMultiplayerId()`/`IsLinkMaster()` to differ between the two ROMs
 
 **Script changes:**
 
@@ -326,7 +327,7 @@ Gym leaders and key story battles become **true co-op double battles** where bot
 - State 1: `SetupNativeScript(ctx, Multiplayer_NativePollPartySync)` — blocks until `partnerPartySelectDone`
 - `CB2_CoopPartySelected`: reorder `gPlayerParty[0..2]` from `gSelectedOrderFromParty[]`, call `Multiplayer_SendPartySync()`, set state→1, return to field
 
-**RNG lockstep requirement:** Both ROMs MUST produce identical RNG outputs. Send the host's `gBattleRngSeed` in `MP_PKT_PARTY_SYNC`. Receiving end overwrites its own seed before the battle engine starts.
+**RNG lockstep requirement (NOT YET IMPLEMENTED — amended 2026-06-12):** Both ROMs should produce identical RNG outputs for battle-logic rolls. The original plan ("send `gBattleRngSeed` in `MP_PKT_PARTY_SYNC`") is insufficient as stated: the expansion's battle-logic rolls (`RandomUniform(RNG_*, …)`) draw from the shared `gRngValue` stream, which is also advanced by per-frame visual/animation draws — two free-running instances diverge immediately even with the same seed. The working design is to override the weak `RandomUniform`/`RandomUniformExcept`/`RandomWeightedArray`/`RandomElementArray` symbols during `BATTLE_TYPE_COOP` battles to route tagged logic rolls through a dedicated stream seeded by the host (role now arrives via `MP_PKT_ROLE_ASSIGN`). Until then, the two instances run mirrored simulations that can drift in damage rolls and AI move choice.
 
 ### Link Cable Hook Point
 

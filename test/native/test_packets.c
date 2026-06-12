@@ -2,6 +2,7 @@
 #include "global.h"
 #include "multiplayer.h"
 #include "constants/multiplayer.h"
+#include "pokemon.h"
 #include <string.h>
 
 // ---- Ring buffer helpers --------------------------------------------------
@@ -468,6 +469,107 @@ static void TestRecvUnknownTypeDrainsRing(void)
     ASSERT_EQ(Mp_Available(&gMpRecvRing), 0);
 }
 
+// ---- PARTY_SYNC wire mon ---------------------------------------------------
+
+static void TestPartyMonWireRoundTrip(void)
+{
+    struct MpWirePartyMon in, out;
+    u8 buf[MP_PKT_PARTY_SYNC_MON_SIZE];
+    u8 j;
+
+    memset(&in, 0, sizeof(in));
+    memset(&out, 0xEE, sizeof(out));
+    in.species     = 0x0004;       // Charmander
+    in.heldItem    = 0x00AA;
+    in.level       = 5;
+    in.abilityNum  = 1;
+    in.personality = 0xA551BB52u;
+    in.otId        = 0xDEADBEEFu;
+    in.moves[0] = 10; in.moves[1] = 45; in.moves[2] = 0x0152; in.moves[3] = 0;
+    in.pp[0] = 35; in.pp[1] = 40; in.pp[2] = 15; in.pp[3] = 0;
+    in.hp     = 19;
+    in.maxHP  = 20;
+    in.atk    = 11;
+    in.def    = 10;
+    in.speed  = 13;
+    in.spAtk  = 12;
+    in.spDef  = 9;
+    in.status = 0x00000040u;       // e.g. 3 turns sleep
+    in.friendship = 70;
+    in.gender     = 0;
+    in.language   = 2;
+    memcpy(in.nickname, "CHARMANDE\xFF", MP_WIRE_NICK_LEN);
+
+    ASSERT_EQ(Mp_EncodePartyMon(buf, &in), MP_PKT_PARTY_SYNC_MON_SIZE);
+    ASSERT_EQ(Mp_DecodePartyMon(buf, &out), TRUE);
+
+    ASSERT_EQ(out.species, in.species);
+    ASSERT_EQ(out.heldItem, in.heldItem);
+    ASSERT_EQ(out.level, in.level);
+    ASSERT_EQ(out.abilityNum, in.abilityNum);
+    ASSERT_EQ(out.personality, in.personality);
+    ASSERT_EQ(out.otId, in.otId);
+    for (j = 0; j < 4; j++)
+    {
+        ASSERT_EQ(out.moves[j], in.moves[j]);
+        ASSERT_EQ(out.pp[j], in.pp[j]);
+    }
+    // Regression guard for the absent-battler bug: hp/maxHP and every battle
+    // stat must survive the wire — a reconstruction with hp 0 makes
+    // TryDoEventsBeforeFirstTurn flag the partner battler absent.
+    ASSERT_EQ(out.hp, in.hp);
+    ASSERT_EQ(out.maxHP, in.maxHP);
+    ASSERT_EQ(out.atk, in.atk);
+    ASSERT_EQ(out.def, in.def);
+    ASSERT_EQ(out.speed, in.speed);
+    ASSERT_EQ(out.spAtk, in.spAtk);
+    ASSERT_EQ(out.spDef, in.spDef);
+    ASSERT_EQ(out.status, in.status);
+    ASSERT_EQ(out.friendship, in.friendship);
+    ASSERT_EQ(out.gender, in.gender);
+    ASSERT_EQ(out.language, in.language);
+    ASSERT_EQ(memcmp(out.nickname, in.nickname, MP_WIRE_NICK_LEN), 0);
+}
+
+static void TestSendPartySyncPacketSize(void)
+{
+    // 2 mons → header(2) + 2*58 bytes in the send ring.
+    Multiplayer_Init();
+    gPlayerPartyCount = 2;
+    Multiplayer_SendPartySync();
+    ASSERT_EQ(Mp_Available(&gMpSendRing),
+              MP_PKT_PARTY_SYNC_HDR + 2 * MP_PKT_PARTY_SYNC_MON_SIZE);
+    gPlayerPartyCount = 0;
+}
+
+// ---- ROLE_ASSIGN ------------------------------------------------------------
+
+static void TestRecvRoleAssignSetsRole(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    ASSERT_EQ(gMultiplayerState.role, MP_ROLE_NONE);
+
+    Mp_Push(&gMpRecvRing, MP_PKT_ROLE_ASSIGN);
+    Mp_Push(&gMpRecvRing, MP_ROLE_GUEST);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.role, MP_ROLE_GUEST);
+
+    // Invalid role value is ignored; current role survives.
+    Mp_Push(&gMpRecvRing, MP_PKT_ROLE_ASSIGN);
+    Mp_Push(&gMpRecvRing, 7);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.role, MP_ROLE_GUEST);
+
+    Mp_Push(&gMpRecvRing, MP_PKT_ROLE_ASSIGN);
+    Mp_Push(&gMpRecvRing, MP_ROLE_HOST);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.role, MP_ROLE_HOST);
+}
+
 // ---- Entry point ----------------------------------------------------------
 
 int main(void)
@@ -520,6 +622,11 @@ int main(void)
     TestRecvPacketDispatchesGhostPosition();
     TestRecvSeedSyncUpdatesSeed();
     TestRecvUnknownTypeDrainsRing();
+
+    // PARTY_SYNC wire mon + ROLE_ASSIGN
+    TestPartyMonWireRoundTrip();
+    TestSendPartySyncPacketSize();
+    TestRecvRoleAssignSetsRole();
 
     TEST_SUMMARY();
 }

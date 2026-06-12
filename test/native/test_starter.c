@@ -18,6 +18,11 @@
 #include "constants/vars.h"   // VAR_STARTER_MON
 #include <string.h>
 
+// Flag stubs from stubs.c (newer host gcc rejects implicit declarations).
+void  FlagSet(u16 flagId);
+bool8 FlagGet(u16 flagId);
+void  FlagClear(u16 flagId);
+
 // VAR_TEMP_2 holds the local player's chosen starter species when the picker
 // script calls Multiplayer_SendStarterPick.  The rival trigger then overwrites
 // it with a ball position (1/2/3), so Multiplayer_GetRivalStarterSpecies reads

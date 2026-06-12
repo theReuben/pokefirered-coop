@@ -60,6 +60,10 @@ static mut PACKETS_SENT:  u64 = 0;
 static mut PACKETS_RECV:  u64 = 0;
 // Role received from relay: 0=none, 1=host, 2=guest
 static mut RECEIVED_ROLE: u8  = 0;
+// Set once the role has been written into the ROM's recv ring as a
+// MP_PKT_ROLE_ASSIGN packet (the relay only sends `role` once, possibly
+// before the ROM's rings exist).
+static mut ROLE_DELIVERED: bool = false;
 
 /// Call once from start_emulator to prime the encounter seed for this session.
 pub fn set_encounter_seed(seed: u32) {
@@ -76,6 +80,7 @@ pub fn reset_discovery() {
         BLOCK_EXCHANGE_ADDR    = 0;
         PARTNER_CONNECTED      = false;
         RECEIVED_ROLE          = 0;
+        ROLE_DELIVERED         = false;
         PACKETS_SENT           = 0;
         PACKETS_RECV           = 0;
         TICK_COUNT             = 0;
@@ -165,7 +170,7 @@ const PKT_FLAG_CLEAR:           u8 = 0x0E; // 3 bytes: type + flagId_hi + flagId
 const PKT_STARTER_PICK:         u8 = 0x0F; // 3 bytes: type + species_hi + species_lo
 const PKT_GENDER:               u8 = 0x10; // 2 bytes: type + gender
 const PKT_NAME:                 u8 = 0x11; // 8 bytes: type + 7 name bytes
-const PKT_PARTY_SYNC:           u8 = 0x12; // 2 + n_mons*30 bytes
+const PKT_PARTY_SYNC:           u8 = 0x12; // 2 + n_mons*58 bytes
 const PKT_FOLLOWER_GFX:         u8 = 0x13; // 3 bytes: type + gfx_hi + gfx_lo
 const PKT_BATTLE_TURN:          u8 = 0x14; // 4 bytes: type + move_slot + target + flags
 const PKT_TRAINER_BUSY:         u8 = 0x15; // 4 bytes: type + localId + mapGroup + mapNum
@@ -174,8 +179,9 @@ const PKT_HOST_MIGRATE:         u8 = 0x17; // 1 byte (relay -> ROM only)
 const PKT_EVENT_LOG:            u8 = 0x18; // 2 + count*4 bytes
 const PKT_TRAINER_FREE:         u8 = 0x19; // 1 byte
 const PKT_STATE_BEACON:         u8 = 0x1A; // 5 bytes: type + gender + starter_hi + starter_lo + boss_ready_id
+const PKT_ROLE_ASSIGN:          u8 = 0x1B; // 2 bytes: type + role (1=host, 2=guest); relay -> ROM only
 
-const PARTY_SYNC_MON_SIZE:   usize = 30; // sizeof(struct MultiPartnerMenuPokemon)
+const PARTY_SYNC_MON_SIZE:   usize = 58; // serialized MpWirePartyMon (full battle fidelity)
 const EVENT_LOG_ENTRY_SIZE:  usize = 4;  // event_type(1) + data[3]
 
 // FULL_SYNC payload is exactly this many bytes (must match FULL_SYNC_PAYLOAD_SIZE in ROM).
@@ -270,6 +276,20 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
         if let Some(pkt) = json_to_packet(&msg) {
             unsafe { PACKETS_RECV += 1; }
             push_recv_ring(emu, &pkt);
+            if pkt[0] == PKT_ROLE_ASSIGN {
+                unsafe { ROLE_DELIVERED = true; }
+            }
+        }
+    }
+
+    // Catch-up role delivery: the relay sends `role` exactly once at connect,
+    // which can land before Multiplayer_Init runs (pre-discovery inbound is
+    // dropped).  Replay it from RECEIVED_ROLE once the ring is live so the ROM
+    // never misses its role assignment.  Idempotent on the ROM side.
+    unsafe {
+        if !ROLE_DELIVERED && RECEIVED_ROLE != 0 {
+            push_recv_ring(emu, &[PKT_ROLE_ASSIGN, RECEIVED_ROLE]);
+            ROLE_DELIVERED = true;
         }
     }
 
@@ -487,6 +507,7 @@ fn packet_size(raw: &[u8], pos: usize) -> usize {
         }
         PKT_TRAINER_FREE         => 1,
         PKT_STATE_BEACON         => 5,
+        PKT_ROLE_ASSIGN          => 2,
         _ => 0,
     }
 }
@@ -709,10 +730,22 @@ fn json_to_packet(msg: &Value) -> Option<Vec<u8>> {
         "battle_turn" => from_hex(msg.get("turnData")?.as_str()?),
         "party_sync"  => from_hex(msg.get("partyData")?.as_str()?),
 
+        // The ROM needs its session role for GetMultiplayerId()/IsLinkMaster()
+        // (host = link master / seed authority in co-op battles).  Translate
+        // the relay's role message into MP_PKT_ROLE_ASSIGN; the app-state copy
+        // in RECEIVED_ROLE is debug-only.
+        "role" => {
+            let role_num: u8 = match msg.get("role").and_then(|r| r.as_str()) {
+                Some("host")  => 1,
+                Some("guest") => 2,
+                _ => return None,
+            };
+            Some(vec![PKT_ROLE_ASSIGN, role_num])
+        }
+
         // boss_waiting is server telling us to wait — ROM already polls bossReadyBossId.
-        // role is handled by the Tauri app state, not the ROM.
         // room_full / session_mismatch are handled by the frontend.
-        "boss_waiting" | "role" | "room_full" | "session_mismatch"
+        "boss_waiting" | "room_full" | "session_mismatch"
         | "starter_denied" => None,
 
         other => {
@@ -795,10 +828,11 @@ mod tests {
         assert_eq!(packet_size(&[PKT_HOST_MIGRATE],                       0), 1);
         assert_eq!(packet_size(&[PKT_TRAINER_FREE],                       0), 1);
         assert_eq!(packet_size(&[PKT_STATE_BEACON, 0, 0, 0, 0],           0), 5);
-        // Variable: party sync with 2 mons = 2 + 2*30
+        assert_eq!(packet_size(&[PKT_ROLE_ASSIGN, 1],                     0), 2);
+        // Variable: party sync with 2 mons = 2 + 2*58
         let mut ps = vec![PKT_PARTY_SYNC, 2];
-        ps.resize(62, 0);
-        assert_eq!(packet_size(&ps, 0), 62);
+        ps.resize(118, 0);
+        assert_eq!(packet_size(&ps, 0), 118);
         // Variable: event log with 3 entries = 2 + 3*4
         let mut ev = vec![PKT_EVENT_LOG, 3];
         ev.resize(14, 0);
@@ -824,10 +858,20 @@ mod tests {
         assert_eq!(json_to_packet(&msg).unwrap(), turn);
 
         let mut party = vec![PKT_PARTY_SYNC, 1];
-        party.resize(32, 0xAB);
+        party.resize(2 + PARTY_SYNC_MON_SIZE, 0xAB);
         let msg = packet_to_json(&party).unwrap();
         assert_eq!(msg.get("type").unwrap().as_str().unwrap(), "party_sync");
         assert_eq!(json_to_packet(&msg).unwrap(), party);
+    }
+
+    #[test]
+    fn role_message_becomes_role_assign_packet() {
+        let host = serde_json::json!({ "type": "role", "role": "host" });
+        assert_eq!(json_to_packet(&host).unwrap(), vec![PKT_ROLE_ASSIGN, 1]);
+        let guest = serde_json::json!({ "type": "role", "role": "guest" });
+        assert_eq!(json_to_packet(&guest).unwrap(), vec![PKT_ROLE_ASSIGN, 2]);
+        let junk = serde_json::json!({ "type": "role", "role": "wat" });
+        assert!(json_to_packet(&junk).is_none());
     }
 
     #[test]

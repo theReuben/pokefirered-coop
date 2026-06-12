@@ -607,6 +607,20 @@ static bool8 ProcessOneRecvPacket(void)
         // 1-byte packet — type already consumed. No-op; relay handles timeout.
         break;
 
+    case MP_PKT_ROLE_ASSIGN:
+        // Relay assigns our session role on connect.  Without this both ROMs
+        // sit at MP_ROLE_NONE and GetMultiplayerId()/IsLinkMaster() give the
+        // same answer on both sides — no host exists for seed authority.
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_ROLE_ASSIGN - 1)
+            return FALSE;
+        {
+            u8 role = 0;
+            Mp_Pop(&gMpRecvRing, &role);
+            if (role == MP_ROLE_HOST || role == MP_ROLE_GUEST)
+                gMultiplayerState.role = role;
+        }
+        break;
+
     case MP_PKT_HOST_MIGRATE:
         // Relay says we are now the host (old host disconnected).
         gMultiplayerState.role = MP_ROLE_HOST;
@@ -1709,6 +1723,13 @@ void Multiplayer_SendBattleTurn(u8 moveSlot, u8 target, u8 flags)
 
 void Multiplayer_HandleBattleTurn(u8 moveSlot, u8 target, u8 flags)
 {
+    // The partner's sim is mirrored: their own mon is battler 0 on their
+    // screen but battler 2 on ours (and vice versa).  Opponent indices (1/3)
+    // line up unchanged.  Remap ally-side targets into our index space.
+    if (target == 0)
+        target = 2;
+    else if (target == 2)
+        target = 0;
     gMultiplayerState.battleTurnMoveSlot = moveSlot;
     gMultiplayerState.battleTurnTarget   = target;
     gMultiplayerState.battleTurnFlags    = flags;
@@ -1764,30 +1785,109 @@ bool8 Multiplayer_NativePollBossStart(void)
 // Party selection for co-op boss battles
 // ---------------------------------------------------------------------------
 
-// Encode gPlayerParty[0..n-1] as MultiPartnerMenuPokemon and write into dst.
+// ---------------------------------------------------------------------------
+// PARTY_SYNC wire mon serialization (pure byte-level helpers; unit-tested
+// natively).  Explicit big-endian field writes — never memcpy a struct onto
+// the wire, struct padding would leak into the protocol.
+// ---------------------------------------------------------------------------
+
+static void MpPutU16(u8 *p, u16 v) { p[0] = (u8)(v >> 8); p[1] = (u8)v; }
+static void MpPutU32(u8 *p, u32 v) { p[0] = (u8)(v >> 24); p[1] = (u8)(v >> 16); p[2] = (u8)(v >> 8); p[3] = (u8)v; }
+static u16  MpGetU16(const u8 *p)  { return (u16)(((u16)p[0] << 8) | p[1]); }
+static u32  MpGetU32(const u8 *p)  { return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3]; }
+
+u8 Mp_EncodePartyMon(u8 *out, const struct MpWirePartyMon *m)
+{
+    u8 j;
+    u8 *p = out;
+    MpPutU16(p, m->species);     p += 2;
+    MpPutU16(p, m->heldItem);    p += 2;
+    *p++ = m->level;
+    *p++ = m->abilityNum;
+    MpPutU32(p, m->personality); p += 4;
+    MpPutU32(p, m->otId);        p += 4;
+    for (j = 0; j < 4; j++) { MpPutU16(p, m->moves[j]); p += 2; }
+    for (j = 0; j < 4; j++) *p++ = m->pp[j];
+    MpPutU16(p, m->hp);          p += 2;
+    MpPutU16(p, m->maxHP);       p += 2;
+    MpPutU16(p, m->atk);         p += 2;
+    MpPutU16(p, m->def);         p += 2;
+    MpPutU16(p, m->speed);       p += 2;
+    MpPutU16(p, m->spAtk);       p += 2;
+    MpPutU16(p, m->spDef);       p += 2;
+    MpPutU32(p, m->status);      p += 4;
+    *p++ = m->friendship;
+    *p++ = m->gender;
+    *p++ = m->language;
+    memcpy(p, m->nickname, MP_WIRE_NICK_LEN); p += MP_WIRE_NICK_LEN;
+    return (u8)(p - out);
+}
+
+bool8 Mp_DecodePartyMon(const u8 *in, struct MpWirePartyMon *m)
+{
+    u8 j;
+    const u8 *p = in;
+    if (in == NULL || m == NULL)
+        return FALSE;
+    m->species     = MpGetU16(p); p += 2;
+    m->heldItem    = MpGetU16(p); p += 2;
+    m->level       = *p++;
+    m->abilityNum  = *p++;
+    m->personality = MpGetU32(p); p += 4;
+    m->otId        = MpGetU32(p); p += 4;
+    for (j = 0; j < 4; j++) { m->moves[j] = MpGetU16(p); p += 2; }
+    for (j = 0; j < 4; j++) m->pp[j] = *p++;
+    m->hp          = MpGetU16(p); p += 2;
+    m->maxHP       = MpGetU16(p); p += 2;
+    m->atk         = MpGetU16(p); p += 2;
+    m->def         = MpGetU16(p); p += 2;
+    m->speed       = MpGetU16(p); p += 2;
+    m->spAtk       = MpGetU16(p); p += 2;
+    m->spDef       = MpGetU16(p); p += 2;
+    m->status      = MpGetU32(p); p += 4;
+    m->friendship  = *p++;
+    m->gender      = *p++;
+    m->language    = *p++;
+    memcpy(m->nickname, p, MP_WIRE_NICK_LEN);
+    return TRUE;
+}
+
+// Encode gPlayerParty[0..n-1] as wire mons and write into dst.
 // Returns number of bytes written.
 static u8 EncodePartySync(u8 *dst, u8 n_mons)
 {
-    u8 i;
+    u8 i, j;
     u8 *p = dst;
     *p++ = MP_PKT_PARTY_SYNC;
     *p++ = n_mons;
     for (i = 0; i < n_mons; i++)
     {
         struct Pokemon *mon = &gPlayerParty[i];
-        struct MultiPartnerMenuPokemon tmp;
-        tmp.species     = GetMonData(mon, MON_DATA_SPECIES);
-        tmp.heldItem    = GetMonData(mon, MON_DATA_HELD_ITEM);
-        GetMonData(mon, MON_DATA_NICKNAME, tmp.nickname);
-        tmp.level       = GetMonData(mon, MON_DATA_LEVEL);
-        tmp.hp          = GetMonData(mon, MON_DATA_HP);
-        tmp.maxhp       = GetMonData(mon, MON_DATA_MAX_HP);
-        tmp.status      = GetMonData(mon, MON_DATA_STATUS);
-        tmp.personality = GetMonData(mon, MON_DATA_PERSONALITY);
-        tmp.gender      = GetMonGender(mon);
-        tmp.language    = GetMonData(mon, MON_DATA_LANGUAGE);
-        memcpy(p, &tmp, MP_PKT_PARTY_SYNC_MON_SIZE);
-        p += MP_PKT_PARTY_SYNC_MON_SIZE;
+        struct MpWirePartyMon w;
+        w.species     = GetMonData(mon, MON_DATA_SPECIES);
+        w.heldItem    = GetMonData(mon, MON_DATA_HELD_ITEM);
+        w.level       = GetMonData(mon, MON_DATA_LEVEL);
+        w.abilityNum  = GetMonData(mon, MON_DATA_ABILITY_NUM);
+        w.personality = GetMonData(mon, MON_DATA_PERSONALITY);
+        w.otId        = GetMonData(mon, MON_DATA_OT_ID);
+        for (j = 0; j < 4; j++)
+        {
+            w.moves[j] = GetMonData(mon, MON_DATA_MOVE1 + j);
+            w.pp[j]    = GetMonData(mon, MON_DATA_PP1 + j);
+        }
+        w.hp         = GetMonData(mon, MON_DATA_HP);
+        w.maxHP      = GetMonData(mon, MON_DATA_MAX_HP);
+        w.atk        = GetMonData(mon, MON_DATA_ATK);
+        w.def        = GetMonData(mon, MON_DATA_DEF);
+        w.speed      = GetMonData(mon, MON_DATA_SPEED);
+        w.spAtk      = GetMonData(mon, MON_DATA_SPATK);
+        w.spDef      = GetMonData(mon, MON_DATA_SPDEF);
+        w.status     = GetMonData(mon, MON_DATA_STATUS);
+        w.friendship = GetMonData(mon, MON_DATA_FRIENDSHIP);
+        w.gender     = GetMonGender(mon);
+        w.language   = GetMonData(mon, MON_DATA_LANGUAGE);
+        GetMonData(mon, MON_DATA_NICKNAME, w.nickname);
+        p += Mp_EncodePartyMon(p, &w);
     }
     return (u8)(p - dst);
 }
@@ -1804,19 +1904,53 @@ void Multiplayer_SendPartySync(void)
 
 void Multiplayer_HandleRemotePartySync(const u8 *data, u8 n_mons)
 {
-    u8 i;
+    u8 i, j;
     if (n_mons > MULTI_PARTY_SIZE) n_mons = MULTI_PARTY_SIZE;
     for (i = 0; i < n_mons; i++)
     {
-        const struct MultiPartnerMenuPokemon *src =
-            (const struct MultiPartnerMenuPokemon *)(data + i * MP_PKT_PARTY_SYNC_MON_SIZE);
-        gMultiPartnerParty[i] = *src;
-        // Mirror into the upper gPlayerParty slots so the battle engine can read
-        // HP, moves, and stats for battler 1.
-        CreateMon(&gPlayerParty[MULTI_PARTY_SIZE + i], src->species, src->level,
-                  src->personality, OTID_STRUCT_PRESET(0));
-        SetMonData(&gPlayerParty[MULTI_PARTY_SIZE + i], MON_DATA_NICKNAME, src->nickname);
-        SetMonData(&gPlayerParty[MULTI_PARTY_SIZE + i], MON_DATA_HELD_ITEM, &src->heldItem);
+        struct MpWirePartyMon w;
+        struct Pokemon *mon = &gPlayerParty[MULTI_PARTY_SIZE + i];
+
+        if (!Mp_DecodePartyMon(data + i * MP_PKT_PARTY_SYNC_MON_SIZE, &w))
+            return;
+
+        // Display copy for the VS screen / party menus.
+        gMultiPartnerParty[i].species     = w.species;
+        gMultiPartnerParty[i].heldItem    = w.heldItem;
+        memcpy(gMultiPartnerParty[i].nickname, w.nickname, MP_WIRE_NICK_LEN);
+        gMultiPartnerParty[i].level       = w.level;
+        gMultiPartnerParty[i].hp          = w.hp;
+        gMultiPartnerParty[i].maxhp       = w.maxHP;
+        gMultiPartnerParty[i].status      = w.status;
+        gMultiPartnerParty[i].personality = w.personality;
+        gMultiPartnerParty[i].gender      = w.gender;
+        gMultiPartnerParty[i].language    = w.language;
+
+        // Battle-engine copy in the partner half of gPlayerParty.  CreateMon
+        // does NOT compute stats (only CreateMonWithIVs does), so every stat
+        // field must be written explicitly here — a mon left at 0 HP gets
+        // flagged absent by TryDoEventsBeforeFirstTurn and battler 2 silently
+        // drops out of the co-op battle (each side then fights a private 1v1).
+        CreateMon(mon, w.species, w.level, w.personality, OTID_STRUCT_PRESET(w.otId));
+        SetMonData(mon, MON_DATA_NICKNAME, w.nickname);
+        SetMonData(mon, MON_DATA_HELD_ITEM, &w.heldItem);
+        SetMonData(mon, MON_DATA_ABILITY_NUM, &w.abilityNum);
+        SetMonData(mon, MON_DATA_FRIENDSHIP, &w.friendship);
+        SetMonData(mon, MON_DATA_LANGUAGE, &w.language);
+        for (j = 0; j < 4; j++)
+        {
+            u16 move = w.moves[j];
+            SetMonData(mon, MON_DATA_MOVE1 + j, &move);
+            SetMonData(mon, MON_DATA_PP1 + j, &w.pp[j]);
+        }
+        SetMonData(mon, MON_DATA_MAX_HP, &w.maxHP);
+        SetMonData(mon, MON_DATA_HP, &w.hp);
+        SetMonData(mon, MON_DATA_ATK, &w.atk);
+        SetMonData(mon, MON_DATA_DEF, &w.def);
+        SetMonData(mon, MON_DATA_SPEED, &w.speed);
+        SetMonData(mon, MON_DATA_SPATK, &w.spAtk);
+        SetMonData(mon, MON_DATA_SPDEF, &w.spDef);
+        SetMonData(mon, MON_DATA_STATUS, &w.status);
     }
     gMultiplayerState.partnerPartySelectDone = TRUE;
 }
