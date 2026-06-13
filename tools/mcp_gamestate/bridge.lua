@@ -326,8 +326,8 @@ callbacks:add("frame", function()
             return
         end
         local bytes = {}
-        for hex in (cmd.bytes or ""):gmatch("%S+") do
-            bytes[#bytes+1] = tonumber(hex, 16) or 0
+        for hex in (cmd.bytes or ""):gmatch("%x%x") do
+            bytes[#bytes+1] = tonumber(hex, 16)
         end
         ring_push(ADDR.gMpRecvRing, bytes)
         write_resp({ok=true, pushed=#bytes})

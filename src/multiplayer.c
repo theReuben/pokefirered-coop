@@ -676,8 +676,8 @@ static bool8 ProcessOneRecvPacket(void)
         break;
 
     default:
-        // Unknown type — can't recover sync; drain ring to avoid stall.
-        while (Mp_Pop(&gMpRecvRing, &typeByte)) {}
+        // Unknown type — skip this byte and continue.  Draining the whole
+        // ring was wrong: one bad byte destroyed every subsequent beacon.
         break;
     }
     return TRUE;
