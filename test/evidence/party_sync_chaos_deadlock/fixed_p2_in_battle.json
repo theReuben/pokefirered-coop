@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-06-14T19:37:39.975899Z",
+  "claim": "Same chaos run, P2: also in the co-op battle (vs. the prior run where P2 crashed on item.c:782). Menu-drain fix prevented the recv-ring overflow; both ROMs in lockstep, check_battle_sync PASS.",
+  "box_open": true,
+  "printing": true,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

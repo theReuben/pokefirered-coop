@@ -691,10 +691,30 @@ deadlock is strictly at the earlier party-sync handshake.
 
 ---
 
-## Open: recv-ring overflow during party menu → misframed packet crash (found 2026-06-14)
+## recv-ring overflow during party menu → misframed packet crash (found + fixed 2026-06-14)
 
-**Status:** open — diagnosed, NOT fixed. Pre-existing; surfaced while live
+**Status:** fix implemented and native-tested (test_packets 1111, test_dispatch
+49 — 1721 assertions total, 0 failed); **live chaos re-verification pending**
+(fresh ROM + states, re-run rival battle under chaos, confirm both ROMs enter
+the battle with no item.c assert). Pre-existing; surfaced while live
 chaos-testing the party-sync deadlock fix. NOT caused by that fix's logic.
+
+**Fix (commit pending):** two ROM-side changes, no protocol change.
+1. **Root cause** — new `Multiplayer_MenuTick()` (poll + ping + state beacon,
+   like `Multiplayer_BattleTick` but not battle-gated) hooked into
+   `CB2_UpdatePartyMenu` (`src/party_menu.c`).  The party menu owns the main
+   callback, so neither `Multiplayer_Update` nor `Multiplayer_BattleTick` ran
+   and the recv ring was never drained while it was open.  Now it drains every
+   frame during ANY party menu → can't overflow, and the heartbeat keeps
+   flowing (no false silence-disconnect on a slow chooser).
+2. **Defense-in-depth** — the `MP_PKT_ITEM_GIVE` handler now also rejects
+   `itemId >= ITEMS_COUNT` (alongside the existing ITEM_NONE/qty guard) so any
+   malformed/corrupted item-give — test relay OR production — can never
+   assert-crash in `SanitizeItemId`.  Mock `ITEMS_COUNT` added for the host
+   build.  New tests: `TestMenuTickDrainsRecvAndBeacons`,
+   `TestItemGivePacketRejectsOutOfRangeItem`.
+
+**Original diagnosis (for reference):**
 
 **Symptom:** Under `set_link_chaos(drop=0.3, seed=1)`, P2 (HOST) crashed with
 `SRC/ITEM.C:782: INVALID ITEM: 3842` (assert in `SanitizeItemId`). Evidence:

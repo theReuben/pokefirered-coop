@@ -43,6 +43,7 @@
 #include "menu_helpers.h"
 #include "menu_specialized.h"
 #include "metatile_behavior.h"
+#include "multiplayer.h"
 #include "move_relearner.h"
 #include "overworld.h"
 #include "palette.h"
@@ -582,6 +583,10 @@ static void RefreshPartyMenu(void) //Refreshes the party menu without restarting
 
 static void CB2_UpdatePartyMenu(void)
 {
+    // Keep the co-op transport alive while the menu owns the main callback:
+    // drains the recv ring (otherwise it overflows/corrupts under sustained
+    // traffic — see Multiplayer_MenuTick) and keeps the heartbeat flowing.
+    Multiplayer_MenuTick();
     RunTasks();
     AnimateSprites();
     BuildOamBuffer();

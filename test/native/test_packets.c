@@ -994,6 +994,49 @@ static void TestMidBattlePartySyncIgnored(void)
     gBattleTypeFlags = 0;
 }
 
+static void TestMenuTickDrainsRecvAndBeacons(void)
+{
+    u8 pkt[MP_PKT_SIZE_STATE_BEACON];
+    u8 i, frame;
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+
+    // Disconnected: inert — recv not drained, nothing sent.
+    PushBeaconGenderAck(0, FALSE);
+    Multiplayer_MenuTick();
+    ASSERT_NE(Mp_Available(&gMpRecvRing), 0); // still queued (not drained)
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);
+
+    // Connected: drains the recv ring so it can never overflow while the party
+    // menu owns the main callback (the item.c:782 misframe repair).
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    PushBeaconGenderAck(1, TRUE);
+    Multiplayer_MenuTick();
+    ASSERT_EQ(Mp_Available(&gMpRecvRing), 0);       // drained
+    ASSERT_EQ(gMultiplayerState.partnerGotMyParty, TRUE); // beacon applied
+    ASSERT_EQ(gMultiplayerState.partnerGender, 1);
+
+    // ...and the heartbeat/beacon keep flowing so the relay's silence detector
+    // can't false-disconnect a slow chooser.
+    { u8 out; while (Mp_Pop(&gMpSendRing, &out)) {} }
+    for (frame = 0; frame < MP_BEACON_INTERVAL_FRAMES; frame++)
+        Multiplayer_MenuTick();
+    for (;;)
+    {
+        ASSERT_EQ(Mp_Pop(&gMpSendRing, &pkt[0]), TRUE);
+        if (pkt[0] == MP_PKT_STATE_BEACON)
+            break;
+    }
+    for (i = 1; i < MP_PKT_SIZE_STATE_BEACON; i++)
+        Mp_Pop(&gMpSendRing, &pkt[i]);
+    // Outside a coop battle the turn payload is zero.
+    ASSERT_EQ(pkt[5], 0);
+}
+
 // ---- Coop battle RNG lockstep -------------------------------------------------
 
 static bool32 RejectNothing(u32 v) { (void)v; return FALSE; }
@@ -1169,6 +1212,7 @@ int main(void)
     TestBeaconPartyAckSetsPartnerGotMyParty();
     TestPartySyncHandshakeNeedsMutualAck();
     TestMidBattlePartySyncIgnored();
+    TestMenuTickDrainsRecvAndBeacons();
 
     // Coop battle RNG lockstep
     TestCoopRngDeterministicStream();

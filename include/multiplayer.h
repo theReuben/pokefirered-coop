@@ -297,6 +297,10 @@ void Multiplayer_UpdateOncePerFrame(void);
 // Battle-safe transport pump (poll + ping + state beacon, none of the
 // overworld work).  Hooked into BattleMainCB2; no-op outside coop battles.
 void Multiplayer_BattleTick(void);
+// Menu-safe transport pump (poll + ping + state beacon).  Hooked into
+// CB2_UpdatePartyMenu so the recv ring keeps draining while a party menu owns
+// the main callback; no-op when disconnected.
+void Multiplayer_MenuTick(void);
 
 // Ghost NPC
 void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing);

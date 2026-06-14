@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-06-14T19:37:37.799860Z",
+  "claim": "After both fixes, under chaos drop=0.3 seed=1: P1 entered the co-op rival battle (no deadlock). Mutual handshake converged (gotPartnerParty=1, partnerGotMyParty=1) and no recv-ring-overflow crash. check_battle_sync PASS.",
+  "box_open": true,
+  "printing": true,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

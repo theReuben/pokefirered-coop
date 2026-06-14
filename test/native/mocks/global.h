@@ -52,6 +52,10 @@ typedef u32 bool32;
 
 // Minimal item constants for multiplayer.c native build.
 #define ITEM_NONE 0
+// Test stand-in for the real enum value (constants/items.h).  Only needs to sit
+// above every valid item id used in tests and below the out-of-range ids
+// (3842, 0xFFFF) so the ITEM_GIVE range-check can be exercised on the host.
+#define ITEMS_COUNT 1000
 
 // Minimal OamData stub — the real struct is GBA hardware-specific; tests never
 // read/write oam fields, so an opaque fixed-size placeholder is sufficient.

@@ -475,7 +475,11 @@ static bool8 ProcessOneRecvPacket(void)
             Mp_Pop(&gMpRecvRing, &itemLo);
             Mp_Pop(&gMpRecvRing, &qty);
             itemId = ((u16)itemHi << 8) | itemLo;
-            if (itemId != ITEM_NONE && qty > 0)
+            // Range-check the id: AddBagItem -> GetItemName asserts on
+            // itemId >= ITEMS_COUNT (SanitizeItemId, item.c).  A malformed or
+            // misframed packet must never assert-crash the receiver, so reject
+            // out-of-range ids here alongside the existing ITEM_NONE/qty guard.
+            if (itemId != ITEM_NONE && itemId < ITEMS_COUNT && qty > 0)
                 AddBagItem(itemId, qty);
         }
         break;
@@ -972,6 +976,24 @@ void Multiplayer_BattleTick(void)
 {
     if (!Multiplayer_IsCoopBattle()
         || gMultiplayerState.connState != MP_STATE_CONNECTED)
+        return;
+    Multiplayer_PollPackets();
+    TickPingAndBeacon();
+}
+
+// Per-frame transport pump for the party menu, which runs its own main callback
+// (CB2_UpdatePartyMenu) so neither Multiplayer_Update (overworld) nor
+// Multiplayer_BattleTick (battle) runs.  Without it the recv ring is never
+// drained while the menu is open: under sustained beacon + partner party-resend
+// traffic it overflows and corrupts, and (separately) the relay's silence
+// detector would false-disconnect a slow chooser.  Found 2026-06-14: the
+// overflow misframed a packet into a bogus MP_PKT_ITEM_GIVE and asserted in
+// item.c:782.  Drains recv + sends ping/beacon only (none of the overworld
+// object-event/position work, which is unsafe and irrelevant in a menu).
+// Safe for ANY party menu and a no-op when disconnected.
+void Multiplayer_MenuTick(void)
+{
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED)
         return;
     Multiplayer_PollPackets();
     TickPingAndBeacon();

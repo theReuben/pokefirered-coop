@@ -177,6 +177,27 @@ static void TestItemGivePacketIgnoresZeroQuantity(void)
     ASSERT_EQ(gTestLastAddBagItemCount, 0xAAAA);
 }
 
+static void TestItemGivePacketRejectsOutOfRangeItem(void)
+{
+    // An out-of-range id (>= ITEMS_COUNT) must NOT reach AddBagItem: on the ROM
+    // it would assert in SanitizeItemId (item.c:782).  This is the misframed-
+    // packet crash found 2026-06-14 (the real bogus value was 3842); 0xFFFF is
+    // unconditionally out of range regardless of ITEMS_COUNT.
+    ResetAll();
+    gTestLastAddBagItemId    = 0xAAAA;
+    gTestLastAddBagItemCount = 0xAAAA;
+
+    Mp_Push(&gMpRecvRing, MP_PKT_ITEM_GIVE);
+    Mp_Push(&gMpRecvRing, 0xFF); // itemHi
+    Mp_Push(&gMpRecvRing, 0xFF); // itemLo → itemId 0xFFFF
+    Mp_Push(&gMpRecvRing, 1);    // quantity
+
+    Multiplayer_Update();
+
+    ASSERT_EQ(gTestLastAddBagItemId,    0xAAAA); // unchanged → AddBagItem not called
+    ASSERT_EQ(gTestLastAddBagItemCount, 0xAAAA);
+}
+
 // ---- OnItemGiven outbound --------------------------------------------------
 
 static void TestOnItemGivenWritesPacketWhenConnected(void)
@@ -409,6 +430,7 @@ int main(void)
     TestItemGivePacketAddsToBag();
     TestItemGivePacketIgnoresZeroItem();
     TestItemGivePacketIgnoresZeroQuantity();
+    TestItemGivePacketRejectsOutOfRangeItem();
     TestOnItemGivenWritesPacketWhenConnected();
     TestOnItemGivenSuppressedWhenDisconnected();
     TestSendFlagClearWritesPacket();
