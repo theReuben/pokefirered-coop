@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-06-14T14:12:57.398592Z",
+  "claim": "Under chaos drop=0.3 seed=1, P1 is stuck on the overworld in Oak's lab: it never received P2's PARTY_SYNC (partnerPartySelectDone=0) and resends its own party forever (partySyncResendTimer cycling).",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": false,
+  "in_native_script": true,
+  "text": "Choose POK?MON and confirm."
+}

@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-06-14T16:15:19.630746Z",
+  "claim": "After the party-sync fix, under chaos drop=0.3 seed=1, P2 (HOST) hit an assert SRC/ITEM.C:782 INVALID ITEM 3842 during the co-op rival battle setup \u2014 needs isolation (regression vs chaos-framing).",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

@@ -3407,6 +3407,13 @@ bool8 ScrCmd_waitcoopparty(struct ScriptContext *ctx)
 {
     Script_RequestEffects(SCREFF_V1);
     VarSet(VAR_FRONTIER_FACILITY, FACILITY_MULTI_OR_EREADER);
+    // Reset the party-sync handshake for this battle BEFORE any exchange:
+    // waitpartysync's exit requires both flags and they latch through the
+    // previous battle.  This is the earliest per-battle point (before our
+    // party send, and before the partner's party can be applied for this one).
+    gMultiplayerState.gotPartnerParty      = FALSE;
+    gMultiplayerState.partnerGotMyParty    = FALSE;
+    gMultiplayerState.partySyncResendTimer = 0;
     gMain.savedCallback = CB2_CoopPartySelected;
     InitChooseHalfPartyForBattle(0);
     ScriptContext_Stop();

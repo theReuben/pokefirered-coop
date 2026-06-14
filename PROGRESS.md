@@ -11,7 +11,7 @@
 - **Active Step:** 9.1
 - **Last Session Summary (2026-06-12, overnight continuation):** Implemented the two open battle-sync issues. (1) **BATTLE_TURN loss recovery** — turn packets carry a per-battle sequence number (packet now 5 bytes); the state beacon (now 9 bytes) re-carries the cached turn while in a coop battle; the receiver applies only strictly-newer seqs (wraparound-aware) so duplicates/reordered stale turns are no-ops; the reconnect path uses new `Multiplayer_ResendBattleTurn` (no seq bump); `battleTurnSent` is no longer cleared when the partner's turn is consumed — the cache persists until the next turn overwrites it so the beacon can keep repairing. (2) **RNG lockstep** — strong overrides of the weak `RandomUniform`/`RandomUniformExcept`/`RandomWeightedArray`/`RandomElementArray` symbols in multiplayer.c (`#if !TESTING`) route tagged battle-logic rolls through a dedicated xorshift32 stream (`coopRngState`) during `BATTLE_TYPE_COOP`; host mints the seed per battle in `CB2_CoopPartySelected` and ships it in 4 trailing PARTY_SYNC bytes (guests send 0); `Multiplayer_SetupCoopBattle` seeds the stream and resets turn seqs. All protocol layers updated together (relay-server unchanged by design — battle_turn/party_sync are opaque hex there, no size validation). New `MultiplayerState` fields appended at the END only (server.py battle_diag hardcodes offsets 31/38/42). **Mechanism found during live verification:** during a battle NOTHING pumped the transport — `Multiplayer_Update` is hooked only in the overworld loop and script engine, so mid-battle there were no heartbeat pings (relay silence detection went dark every battle; latent pre-existing bug) and no beacons (the new turn-repair channel never fired). Also: `Task_CoopBattleBlockRelay` has been dead in every co-op battle since it was written — battle init's `ResetTasks()` (CB2_InitBattleInternal, battle_main.c:585) destroys it right after `Multiplayer_SetupCoopBattle` creates it; the block-exchange relay it serviced is vestigial (party data rides PARTY_SYNC packets). Fix: new `Multiplayer_BattleTick()` (poll + ping + beacon only, none of the overworld work — no object events, no position sends, no `TrySavingData`) hooked into `BattleMainCB2` next to `RunTasks()`. Caveat: the running MCP server predates the new `_PKT_SIZES` (0x14→5, 0x1A→9, 0x12→+4) — running `set_link_chaos` against the new ROM can mis-frame and corrupt the stream, so the chaos pass NEEDS a restarted MCP server.
 - **Previous (2026-06-12, same day):** Diagnosed the v0.1.22 "co-op battle ignores partner input" report. Root causes: (1) `Multiplayer_HandleRemotePartySync` rebuilt the partner's mon with bare `CreateMon()`, which in this expansion does NOT compute stats → partner mon hp=0 → `TryDoEventsBeforeFirstTurn` flags battler 2 absent → each instance silently fights a private 1v1 (BATTLE_TURN packets arrive but are never consumed). (2) No role assignment ever reaches `gMultiplayerState.role` on ANY path: the Tauri bridge swallowed the relay's `role` message into a debug field, the MCP relay never sent one, and the ROM had no role packet — both ROMs answer `GetMultiplayerId()==1`, no link master exists. Fixed: 58-byte full-fidelity `MpWirePartyMon` wire format (moves/PP/all stats/ability/OT id/status), `MP_PKT_ROLE_ASSIGN` (0x1B) across ROM+bridge+MCP relay, ally-target mirroring (0↔2) in `Multiplayer_HandleBattleTurn`, role re-injection after savestate loads. ALSO: local `pokefirered.gba` was stale (built 06-09, predating the entire June 10–11 fix set) — earlier MCP test sessions exercised dead code; replaced with the CI artifact for HEAD and regenerated all save states. RNG lockstep remains unimplemented (CLAUDE.md amended with the weak-symbol override design).
-- **Next Action:** After an MCP server restart (new session), run the chaos pass: co-op rival battle with `set_link_chaos(drop=0.3, seed=1)` through multiple turns, confirming turn-loss recovery via beacon and RNG lockstep (compare per-turn HP/gLastMoves). Then Phase 6/7 integration (Tauri end-to-end, PartyKit live deployment).
+- **Next Action:** Fix the **PARTY_SYNC asymmetric-loss deadlock** found 2026-06-14 (see "Known Issue" section at end of file) — under chaos one ROM enters the co-op battle while the other is stuck on the overworld forever, because party resends stop on local receipt rather than partner-confirmed receipt. The BATTLE_TURN beacon-recovery + RNG lockstep chaos pass is now DONE/verified (Session 5; the MCP server framing was current, so the `_PKT_SIZES` concern from 2026-06-12 is resolved). Then Phase 6/7 integration (Tauri end-to-end, PartyKit live deployment).
 
 ## ⚠️ Done Criteria Policy
 A step must NOT be marked done by:
@@ -615,3 +615,124 @@ All four steps below are features the previous automation claimed to implement b
 | 3 (auto) | 2026-04-28 | 8.3 | Created .github/workflows/release.yml — cross-platform Tauri builds (macOS universal, Linux, Windows) using tauri-apps/tauri-action triggered on v* tags or workflow_dispatch. ROM built as artifact and bundled. Added `make tauri-release` target. tauri.conf.json metadata already complete. | Step 8.4: PLAYING.md | build.yml was upstream file — created release.yml instead |
 | 3 (auto) | 2026-04-28 | 8.4 | Wrote PLAYING.md: non-technical player guide covering download+install (all 3 OSes), hosting/joining, keyboard controls, starter selection, gym leader co-op readiness, resuming sessions, randomization, known limitations, and troubleshooting. Phase 8 complete. PROJECT DONE. | — | None |
 | 4 | 2026-05-03 | 9.3, 9.5 | Implemented IsSyncableVar (VAR_MAP_SCENE_* range). Hooked trainer Pokémon randomization in battle_main.c. Fixed title screen crash (CreateFlameSprite using wrong CreateSprite variant). Manually verified in mGBA: wild encounters and trainer Pokémon both randomized. 202 unit tests pass. | Step 9.1: Install Rust, link mGBA | Title screen "out of sprite slots" crash (pre-existing bug, fixed same session) |
+| 5 | 2026-06-14 | Phase 8 chaos verify | Verified `e3196da4b5` BATTLE_TURN beacon-recovery under `set_link_chaos(drop=0.3,seed=1)`: co-op rival battle ran 3 full turns, `battleTurnSeqApplied` advanced 1→2→3 in lockstep on both ROMs, identical outcome (Squirtle KO, both mons +64 EXP → RNG lockstep held). check_battle_sync PASS through turn decisions; end-of-battle controller-func mismatch is benign un-synced victory-message playback (gBattleCommunication identical). Evidence in test/evidence/battle_turn_chaos_recovery/ + recordings/battle_turn_chaos_recovery.mp4. | Fix PARTY_SYNC asymmetric-loss deadlock (see Known Issue below) | **NEW BUG: PARTY_SYNC asymmetric loss permanently deadlocks the co-op battle handshake under chaos** |
+
+---
+
+## Known Issue: PARTY_SYNC asymmetric-loss deadlock (found + fixed 2026-06-14)
+
+**Status:** fix implemented, native-tested (test_packets: 1104 assertions),
+and **happy-path verified live** (chaos OFF, fresh ROM @ 2026-06-14 17:08): both
+ROMs complete the mutual handshake (`gotPartnerParty=1 && partnerGotMyParty=1`
+on both) and `check_battle_sync` PASS — no deadlock, no regression. A clean
+end-to-end CHAOS run is **blocked by a separate pre-existing crash** (see
+"Open: recv-ring overflow" below), not by the handshake logic. Found during the
+Phase 8 chaos verification pass.
+
+**Fix (commit pending):** mutual party-sync handshake riding the state beacon.
+A 1-bit party-ack rides bit 7 of the beacon gender byte
+(`MP_BEACON_PARTYACK_BIT`) — set once a side has received the partner's
+PARTY_SYNC this battle.  `Multiplayer_NativePollPartySync` now exits only when
+`gotPartnerParty && partnerGotMyParty`, so a side keeps resending its party
+(every 60 frames) until the partner's beacon confirms receipt — not merely
+until it received the partner's.  `Multiplayer_HandleRemotePartySync` /
+PARTY_SYNC adoption are gated on `!Multiplayer_IsCoopBattle()` so a late resend
+arriving after battle start can't clobber the partner's live party or re-adopt
+the RNG seed.  Flags reset per battle in `ScrCmd_waitcoopparty` and in
+`Multiplayer_Init`.  Wire size unchanged (9 bytes) → bridge/relay/MCP framing
+tables untouched (stated per ENGINEERING_DISCIPLINE rule 4).  New tests:
+`TestBeaconPartyAckSetsPartnerGotMyParty`, `TestPartySyncHandshakeNeedsMutualAck`,
+`TestMidBattlePartySyncIgnored`.
+
+**Original diagnosis (for reference):**
+
+**Symptom:** Entering the co-op rival battle, P2 received P1's party, set up
+the co-op double battle, and entered it alone; P1 stayed standing on the
+overworld in Oak's lab indefinitely. Permanent, not slow — observed unchanged
+for >8 s. Evidence: `test/evidence/party_sync_chaos_deadlock/`.
+
+**Mechanism (verified by memory reads + code):**
+- The party handshake resends only inside `Multiplayer_NativePollPartySync`
+  (`src/multiplayer.c:2152`). That poll returns TRUE — and zeroes
+  `partySyncResendTimer` — the instant **our own** `partnerPartySelectDone`
+  is set (i.e. as soon as *we* receive *their* party). The script then
+  proceeds and the poll is never called again, so we stop resending.
+- `Multiplayer_HandleRemotePartySync` (`:2099`) only sets
+  `partnerPartySelectDone = TRUE`. There is **no acknowledgment** that the
+  partner received *our* party.
+- Net effect under asymmetric loss: if P2 gets P1's party but all of P2's
+  party packets to P1 drop, P2 stops resending (it got P1's) while P1 waits
+  forever. The one packet P1 needs is never sent again.
+- Confirmed state at the deadlock: P1 `partnerPartySelectDone=0`,
+  `partySyncResendTimer` cycling (still resending); P2
+  `partnerPartySelectDone=1`, `partySyncResendTimer=0` (stopped). Both shared
+  the same `coopBattleSeed` (seed exchange itself succeeded).
+
+**Why the resend is insufficient:** the stop condition keys on *local*
+receipt, not on the *partner* confirming receipt of *our* party. The two
+directions are independent under loss; receiving theirs says nothing about
+whether ours arrived.
+
+**Fix direction (per ENGINEERING_DISCIPLINE rule 4 "reliability rides the
+beacon"):** carry a 1-bit "I have your party" ack in the `MP_PKT_STATE_BEACON`
+payload; each side keeps (re)sending its full `MP_PKT_PARTY_SYNC` from a
+per-frame tick (beacon cadence) until the partner's beacon reports it has our
+party. This is a beacon-payload change → it must touch all transport layers
+in one commit (ROM constant/handler + native test, serial_bridge.rs three
+tables + test, relay server union + test, mcp server `_PKT_SIZES`). **Hazard
+to guard:** once a co-op battle has started, `Multiplayer_HandleRemotePartySync`
+must NOT re-apply a late party packet — re-applying would overwrite the
+partner's live in-battle HP/PP with the pre-battle snapshot. Gate the apply on
+"first receipt / not yet in BATTLE_TYPE_COOP".
+
+**What this does NOT affect:** the BATTLE_TURN beacon-recovery path
+(`e3196da4b5`) is verified working once both sides are in the battle — the
+deadlock is strictly at the earlier party-sync handshake.
+
+---
+
+## Open: recv-ring overflow during party menu → misframed packet crash (found 2026-06-14)
+
+**Status:** open — diagnosed, NOT fixed. Pre-existing; surfaced while live
+chaos-testing the party-sync deadlock fix. NOT caused by that fix's logic.
+
+**Symptom:** Under `set_link_chaos(drop=0.3, seed=1)`, P2 (HOST) crashed with
+`SRC/ITEM.C:782: INVALID ITEM: 3842` (assert in `SanitizeItemId`). Evidence:
+`test/evidence/party_sync_chaos_deadlock/p2_invalid_item_crash.png`.
+
+**Mechanism (addr2line on the fresh elf + ring math):**
+- `addr2line` resolved the assert call sites to `ProcessOneRecvPacket` →
+  `AddBagItem`.  The `MP_PKT_ITEM_GIVE` (0x0D) handler (`multiplayer.c:468`)
+  calls `AddBagItem(itemId, qty)` after checking only `itemId != ITEM_NONE &&
+  qty > 0` — **no upper-bound check**, so a garbage id (3842 = 0x0F02) asserts.
+- `Multiplayer_OnItemGiven` (the only ITEM_GIVE sender) is called solely from
+  the `additem` script command (`scrcmd.c:636`), which does NOT run in the
+  rival-battle scenario.  So no real ITEM_GIVE was sent → the `0x0D 0x0F 0x02`
+  bytes are **misframed** — a recv-ring framing desync.
+- Source of the desync: the party-selection menu does NOT drain the recv ring
+  (only `waitpartysync` drains afterward — see its comment).  `MP_RING_SIZE`
+  is ≤256 (u8 head/tail).  When P1 was slow to clear the boss-ready handshake
+  under chaos, P2 sat in its party menu for seconds while incoming traffic
+  (9-byte beacons every 16 frames + the waiting partner's ~180-byte party
+  resends) accumulated undrained.  The relay/bridge write side does not respect
+  the ring-full condition, so head overran tail → corruption → misframed bytes.
+- Chaos-timing dependent: the prior OLD-ROM chaos run (which deadlocked on
+  party-sync instead) never sat in the menu long enough to overflow.
+
+**Why it is independent of the party-sync fix:** the fix's resend RATE (every
+60 frames while waiting) is unchanged from before; only the wait's exit
+condition changed.  During the partner's menu window both old and new code
+resend identically.  Confirmed: chaos-OFF run completes cleanly with the fix.
+
+**Fix direction (follow-up, not yet done):**
+1. Drain the recv ring while the co-op party-selection menu is open (hook
+   `Multiplayer_PollPackets`/`Multiplayer_UpdateOncePerFrame` into the party
+   menu task, as was already done for other wait commands), OR make the
+   relay/bridge inject respect the ring-full condition (drop on full; the
+   beacon repairs dropped one-shots).
+2. Range-validate received item ids in the `MP_PKT_ITEM_GIVE` handler
+   (`itemId < ITEMS_COUNT`) — defensive hardening so any malformed/corrupted
+   packet (test relay OR production) can never assert-crash.  Complete the
+   existing ITEM_NONE/qty validation.  (Do NOT treat this alone as the fix —
+   it stops the crash symptom but not the underlying overflow, which could
+   also misframe a flag_set/var_set and silently corrupt game state.)

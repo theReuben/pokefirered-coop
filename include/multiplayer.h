@@ -272,6 +272,15 @@ struct MultiplayerState {
     // rolls / crits / AI choices stay identical across the mirrored sims.
     u32 coopBattleSeed;         // 0 = none adopted; both-zero still converges (fixed fallback)
     u32 coopRngState;           // xorshift32 state; advanced only by coop battle rolls
+    // Party-sync mutual handshake (fixes asymmetric-loss deadlock, 2026-06-14).
+    // The waitpartysync wait exits only once BOTH are TRUE, so a side keeps
+    // resending its party until the partner confirms receipt — not merely
+    // until it has received the partner's.  Reset per battle in
+    // ScrCmd_waitcoopparty.  gotPartnerParty persists through the battle so the
+    // state beacon keeps acking; it is broadcast as MP_BEACON_PARTYACK_BIT.
+    u8  gotPartnerParty;        // TRUE once partner's PARTY_SYNC applied this battle
+    u8  partnerGotMyParty;      // TRUE once partner's beacon acked our party (latched)
+    u8  _pad4[2];
 };
 
 extern struct MultiplayerState gMultiplayerState;

@@ -505,7 +505,13 @@ static bool8 ProcessOneRecvPacket(void)
             Mp_Pop(&gMpRecvRing, &moveSlot);
             Mp_Pop(&gMpRecvRing, &target);
             Mp_Pop(&gMpRecvRing, &flags);
-            Multiplayer_HandleRemoteGender(gender);
+            // Bit 7 of the gender byte is the party-sync ack: the partner has
+            // received our party this battle, so we can stop resending.  Latch
+            // it (cleared per battle in ScrCmd_waitcoopparty) so a reordered
+            // stale beacon can't flap it.  Strip it before reading the gender.
+            if (gender & MP_BEACON_PARTYACK_BIT)
+                gMultiplayerState.partnerGotMyParty = TRUE;
+            Multiplayer_HandleRemoteGender(gender & ~MP_BEACON_PARTYACK_BIT);
             // Starter is validated inside; 0 / unknown species are ignored.
             ApplyPartnerStarterPick(((u16)hi << 8) | lo);
             // Repair a dropped BOSS_READY only.  Never clear from a beacon:
@@ -617,11 +623,24 @@ static bool8 ProcessOneRecvPacket(void)
                     Mp_Pop(&gMpRecvRing, &seedBytes[j]);
                 battleSeed = ((u32)seedBytes[0] << 24) | ((u32)seedBytes[1] << 16)
                            | ((u32)seedBytes[2] << 8)  | seedBytes[3];
-                // Only the host transmits a nonzero seed; adopting any nonzero
-                // value keeps both sides on the host's per-battle stream.
-                if (battleSeed != 0)
-                    gMultiplayerState.coopBattleSeed = battleSeed;
-                Multiplayer_HandleRemotePartySync(data, n_mons);
+                // Ignore late/duplicate party packets once the battle is
+                // underway.  The mutual-handshake resend (NativePollPartySync)
+                // can land a partner's final PARTY_SYNC just after we entered
+                // the battle; rebuilding then would overwrite the partner half
+                // of gPlayerParty (live HP/PP/status) with the pre-battle
+                // snapshot, and re-adopting the seed would desync the RNG
+                // stream.  The packet is already fully drained above, so
+                // framing is unaffected; gotPartnerParty stays set so our
+                // beacon keeps acking.
+                if (!Multiplayer_IsCoopBattle())
+                {
+                    // Only the host transmits a nonzero seed; adopting any
+                    // nonzero value keeps both sides on the host's per-battle
+                    // stream.
+                    if (battleSeed != 0)
+                        gMultiplayerState.coopBattleSeed = battleSeed;
+                    Multiplayer_HandleRemotePartySync(data, n_mons);
+                }
             }
         }
         break;
@@ -818,6 +837,8 @@ void Multiplayer_Init(void)
     gMultiplayerState.battleTurnSeqApplied = 0;
     gMultiplayerState.coopBattleSeed       = 0;
     gMultiplayerState.coopRngState         = 0;
+    gMultiplayerState.gotPartnerParty      = FALSE;
+    gMultiplayerState.partnerGotMyParty    = FALSE;
     gCoopSettings.randomizeEncounters    = 1;
 #if MP_DEBUG_TEST_SEED
     gCoopSettings.encounterSeed          = MP_DEBUG_TEST_SEED_VALUE;
@@ -904,7 +925,12 @@ static void TickPingAndBeacon(void)
         u8 pkt[MP_PKT_SIZE_STATE_BEACON];
         gMultiplayerState.starterResendTimer = 0;
         pkt[0] = MP_PKT_STATE_BEACON;
+        // Bit 7 = party-sync ack: tells the partner we have its party this
+        // battle so it can stop resending (asymmetric-loss deadlock repair).
+        // Low bits remain the player gender.
         pkt[1] = gSaveBlock2Ptr->playerGender;
+        if (gMultiplayerState.gotPartnerParty)
+            pkt[1] |= MP_BEACON_PARTYACK_BIT;
         pkt[2] = (u8)(gMultiplayerState.myStarterSpecies >> 8);
         pkt[3] = (u8)(gMultiplayerState.myStarterSpecies);
         pkt[4] = gMultiplayerState.bossReadyBossId;
@@ -2147,20 +2173,39 @@ void Multiplayer_HandleRemotePartySync(const u8 *data, u8 n_mons)
         SetMonData(mon, MON_DATA_STATUS, &w.status);
     }
     gMultiplayerState.partnerPartySelectDone = TRUE;
+    // Persistent handshake flag: drives the beacon party-sync ack and the
+    // waitpartysync exit.  Unlike partnerPartySelectDone (consumed/reset by the
+    // solo path), this stays set through the battle and is reset per battle in
+    // ScrCmd_waitcoopparty.
+    gMultiplayerState.gotPartnerParty = TRUE;
 }
 
 bool8 Multiplayer_NativePollPartySync(void)
 {
     // Packet draining is handled by the script engine's native step before
     // this poll runs, regardless of the active main callback.
-    if (gMultiplayerState.connState != MP_STATE_CONNECTED
-        || gMultiplayerState.partnerPartySelectDone)
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED)
     {
+        // Solo / disconnected: nothing to exchange.  Keep the legacy reset so
+        // Multiplayer_SetupCoopBattle's solo-clone fallback (which keys on
+        // !partnerPartySelectDone) still fires.
         gMultiplayerState.partnerPartySelectDone = FALSE;
         gMultiplayerState.partySyncResendTimer   = 0;
         return TRUE;
     }
-    // Resend every 60 frames in case the single SendPartySync was dropped.
+    // Mutual handshake: proceed only once we have the partner's party AND the
+    // partner's state beacon has confirmed it has ours.  Gating the exit on
+    // local receipt alone deadlocked under asymmetric loss — the side that
+    // received first stopped resending while the other waited forever
+    // (PROGRESS.md "PARTY_SYNC asymmetric-loss deadlock").  Because we stay in
+    // this poll (and keep resending below) until partnerGotMyParty is set, the
+    // resend survives until the partner actually receives our party.
+    if (gMultiplayerState.gotPartnerParty && gMultiplayerState.partnerGotMyParty)
+    {
+        gMultiplayerState.partySyncResendTimer = 0;
+        return TRUE;
+    }
+    // Resend every 60 frames until the partner acks receipt (beacon bit 7).
     gMultiplayerState.partySyncResendTimer++;
     if (gMultiplayerState.partySyncResendTimer >= 60)
     {

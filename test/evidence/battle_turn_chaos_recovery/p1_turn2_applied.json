@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-06-14T14:20:56.632038Z",
+  "claim": "Co-op rival battle under chaos drop=0.3 seed=1: P1 has applied partner turn seq=2 (battleTurnSeqApplied=0x02) and advanced to the turn-3 action menu, in lockstep with P2. BATTLE_TURN loss recovery via beacon re-carry works.",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

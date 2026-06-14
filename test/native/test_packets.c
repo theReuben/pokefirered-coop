@@ -887,6 +887,113 @@ static void TestBattleTickPumpsBeaconAndRecv(void)
     gBattleTypeFlags = 0;
 }
 
+// ---- Party-sync mutual handshake (asymmetric-loss deadlock fix) -------------
+
+// Push a state beacon whose gender byte (pkt[1]) optionally carries the
+// party-sync ack bit.  Battle-turn payload (bytes 5-8) left zero.
+static void PushBeaconGenderAck(u8 gender, bool8 partyAck)
+{
+    u8 pkt[MP_PKT_SIZE_STATE_BEACON];
+    u8 i;
+    memset(pkt, 0, sizeof(pkt));
+    pkt[0] = MP_PKT_STATE_BEACON;
+    pkt[1] = (u8)(gender | (partyAck ? MP_BEACON_PARTYACK_BIT : 0));
+    for (i = 0; i < MP_PKT_SIZE_STATE_BEACON; i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+}
+
+static void TestBeaconPartyAckSetsPartnerGotMyParty(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+
+    // Plain beacon: gender male (0), no ack.
+    PushBeaconGenderAck(0, FALSE);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerGotMyParty, FALSE);
+    ASSERT_EQ(gMultiplayerState.partnerGender, 0);
+
+    // Beacon with the ack bit AND a gender change to female (1): the ack
+    // latches AND the bit is stripped before decoding — otherwise
+    // HandleRemoteGender would reject 0x81 and the gender would stay male.
+    PushBeaconGenderAck(1, TRUE);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerGotMyParty, TRUE);
+    ASSERT_EQ(gMultiplayerState.partnerGender, 1);
+}
+
+static void TestPartySyncHandshakeNeedsMutualAck(void)
+{
+    struct SaveBlock1 save;
+    u8 out;
+    u8 i;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+
+    // Neither flag set: stay in the wait and resend our party every 60 frames.
+    while (Mp_Pop(&gMpSendRing, &out)) {}
+    for (i = 0; i < 59; i++)
+        ASSERT_EQ(Multiplayer_NativePollPartySync(), FALSE);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);       // no resend before frame 60
+    ASSERT_EQ(Multiplayer_NativePollPartySync(), FALSE);
+    ASSERT_NE(Mp_Available(&gMpSendRing), 0);        // party resent at frame 60
+
+    // Received the partner's party but no ack yet: STILL waiting.  Exiting on
+    // local receipt alone was the asymmetric-loss deadlock.
+    gMultiplayerState.gotPartnerParty = TRUE;
+    ASSERT_EQ(Multiplayer_NativePollPartySync(), FALSE);
+
+    // Partner's beacon acked our party too: both sides now hold each other's
+    // parties, so the wait completes.
+    gMultiplayerState.partnerGotMyParty = TRUE;
+    ASSERT_EQ(Multiplayer_NativePollPartySync(), TRUE);
+
+    // Solo / disconnected always completes immediately (Init leaves us
+    // disconnected), preserving the SetupCoopBattle solo-clone fallback.
+    Multiplayer_Init();
+    ASSERT_EQ(Multiplayer_NativePollPartySync(), TRUE);
+}
+
+static void TestMidBattlePartySyncIgnored(void)
+{
+    u8 pkt[MP_PKT_PARTY_SYNC_HDR + MP_PKT_PARTY_SYNC_MON_SIZE + MP_PKT_PARTY_SYNC_SEED_SIZE];
+    u16 i;
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    memset(pkt, 0, sizeof(pkt));
+    pkt[0] = MP_PKT_PARTY_SYNC;
+    pkt[1] = 1;                       // one mon
+    pkt[sizeof(pkt) - 1] = 0x11;      // nonzero seed 0x00000011
+
+    Multiplayer_Init();
+    gMultiplayerState.connState      = MP_STATE_CONNECTED;
+    // Battle underway with an already-adopted seed.
+    gBattleTypeFlags                 = BATTLE_TYPE_COOP;
+    gMultiplayerState.coopBattleSeed = 0xCAFEF00Du;
+
+    for (i = 0; i < sizeof(pkt); i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+    Multiplayer_Update();
+
+    // The late packet is drained (framing intact) but NOT applied: rebuilding
+    // would clobber the partner's live in-battle party and re-adopting the
+    // seed would desync the RNG stream.
+    ASSERT_EQ(gMultiplayerState.coopBattleSeed, 0xCAFEF00Du);
+    ASSERT_EQ(gMultiplayerState.partnerPartySelectDone, FALSE);
+    ASSERT_EQ(Mp_Available(&gMpRecvRing), 0);
+
+    gBattleTypeFlags = 0;
+}
+
 // ---- Coop battle RNG lockstep -------------------------------------------------
 
 static bool32 RejectNothing(u32 v) { (void)v; return FALSE; }
@@ -1057,6 +1164,11 @@ int main(void)
     TestBeaconRepairsDroppedBattleTurn();
     TestBeaconSenderCarriesCachedTurnOnlyInCoopBattle();
     TestBattleTickPumpsBeaconAndRecv();
+
+    // Party-sync mutual handshake (asymmetric-loss deadlock fix)
+    TestBeaconPartyAckSetsPartnerGotMyParty();
+    TestPartySyncHandshakeNeedsMutualAck();
+    TestMidBattlePartySyncIgnored();
 
     // Coop battle RNG lockstep
     TestCoopRngDeterministicStream();

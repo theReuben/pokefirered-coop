@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-06-14T14:12:58.879480Z",
+  "claim": "Same moment: P2 received P1's party (partnerPartySelectDone=1), stopped resending its own party (partySyncResendTimer=0), and entered the co-op rival battle alone. P1 will never join.",
+  "box_open": true,
+  "printing": true,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

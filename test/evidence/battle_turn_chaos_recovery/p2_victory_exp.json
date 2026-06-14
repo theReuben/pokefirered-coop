@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-06-14T14:23:16.837467Z",
+  "claim": "Same battle on P2: Charmander gained the same 64 Exp. Points. End-of-battle controller-func mismatch in check_battle_sync was benign un-synced victory-message playback (each side shows its own mon's EXP), not a logical desync.",
+  "box_open": true,
+  "printing": true,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

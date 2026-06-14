@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-06-14T14:23:15.420527Z",
+  "claim": "Co-op rival battle won under chaos drop=0.3 seed=1 after 3 turns: P1's Bulbasaur gained 64 Exp. Points. Identical outcome to P2 confirms RNG lockstep and turn-sync held under 30% packet loss.",
+  "box_open": true,
+  "printing": true,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

@@ -207,7 +207,7 @@ the cached turn (same seq) every beacon interval while in a coop battle.
 
 ```
 Byte 0: type = 0x1A
-Byte 1: gender              Byte 5: turn_seq  (0 = no cached battle turn)
+Byte 1: gender | ack<<7      Byte 5: turn_seq  (0 = no cached battle turn)
 Byte 2: starter species hi  Byte 6: move slot
 Byte 3: starter species lo  Byte 7: target battler
 Byte 4: boss-ready id       Byte 8: flags
@@ -219,6 +219,17 @@ turn).  Bytes 5-8 are zero unless the sender is in a coop battle with an
 unconsumed cached turn; the receiver feeds them through the same seq
 dedup as a direct BATTLE_TURN and ignores them when not in a coop battle
 itself.
+
+Byte 1 bit 7 (`MP_BEACON_PARTYACK_BIT`) is the **party-sync ack**: set once
+the sender has received the partner's PARTY_SYNC for the current battle.  The
+low bits remain the player gender (receivers strip bit 7 before decoding it).
+PARTY_SYNC has no resend timer of its own — its reliability rides this beacon
+bit: `waitpartysync` keeps resending the local party every 60 frames and does
+not complete until the local side both has the partner's party AND sees this
+ack, so the resend survives until the partner confirms receipt.  Without it,
+the side that received first stopped resending while the other waited forever
+(asymmetric-loss deadlock, fixed 2026-06-14).  Packed into a spare bit so the
+wire size stays 9 bytes — bridge/relay/MCP framing tables are unchanged.
 
 ### ROLE_ASSIGN (0x1B) — 2 bytes
 

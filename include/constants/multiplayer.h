@@ -111,6 +111,19 @@
                                                // cached battle turn; repairs a dropped MP_PKT_BATTLE_TURN)
 #define MP_PKT_SIZE_ROLE_ASSIGN             2  // type + role (MP_ROLE_HOST/GUEST)
 
+// Party-sync ack rides bit 7 of the beacon's gender byte (pkt[1]); the low
+// bits stay the player gender.  The sender sets it once it has received the
+// partner's PARTY_SYNC this battle, so the partner knows its party arrived and
+// can stop resending.  This repairs the asymmetric-loss deadlock where the
+// side that received first stopped resending while the other waited forever
+// (the party resend was gated on local receipt, not partner-confirmed
+// receipt).  Packing the ack into a spare bit keeps the wire size at 9 bytes,
+// so the bridge/relay/MCP framing tables need no change — the beacon payload
+// is opaque to every layer but the ROM, which is this byte's only reader.
+// Receivers MUST strip MP_BEACON_PARTYACK_BIT before treating pkt[1] as a
+// gender (Multiplayer_HandleRemoteGender rejects values other than MALE/FEMALE).
+#define MP_BEACON_PARTYACK_BIT              0x80
+
 // Beacon cadence: 16 frames ≈ 267 ms.  Cheap (5 bytes) and idempotent, it
 // replaces the per-frame gender flood and the per-message starter/boss-ready
 // resend timers: any dropped one-shot exchange converges on the next beacon.
