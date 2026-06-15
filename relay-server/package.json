@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "postinstall": "patch-package",
     "dev": "partykit dev",
     "deploy": "partykit deploy",
     "test": "vitest run",
@@ -12,6 +13,7 @@
     "partykit": "^0.0.110"
   },
   "devDependencies": {
+    "patch-package": "^8.0.1",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   }

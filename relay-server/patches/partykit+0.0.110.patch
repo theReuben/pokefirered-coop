@@ -1,0 +1,22 @@
+diff --git a/node_modules/partykit/dist/bin.mjs b/node_modules/partykit/dist/bin.mjs
+index 32e641e..711c0d2 100644
+--- a/node_modules/partykit/dist/bin.mjs
++++ b/node_modules/partykit/dist/bin.mjs
+@@ -93103,7 +93103,7 @@ Workers["${name2}"] = ${name2};
+         metafile: true,
+         inject: [
+           fileURLToPath7(
+-            path14.join(path14.dirname(import.meta.url), "../inject-process.js")
++            new URL("../inject-process.js", import.meta.url)
+           )
+         ],
+         define: {
+@@ -94275,7 +94275,7 @@ export const ${name2} = ${name2}Party;
+     },
+     inject: [
+       fileURLToPath8(
+-        path15.join(path15.dirname(import.meta.url), "../inject-process.js")
++        new URL("../inject-process.js", import.meta.url)
+       )
+     ],
+     alias: config.build?.alias,

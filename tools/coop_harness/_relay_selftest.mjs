@@ -7,9 +7,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(join(__dirname, "..", "..", "relay-server", "package.json"));
 const WebSocket = require("ws");
 
-const PORT = process.argv[2] || "1999";
+// argv[2] may be a bare port (local host) or a full ws(s):// base URL (live edge).
+const ARG = process.argv[2] || "1999";
 const ROOM = "selftest" + Date.now();
-const url = `ws://localhost:${PORT}/parties/main/${ROOM}`;
+const base = /^wss?:\/\//.test(ARG)
+  ? ARG.replace(/\/+$/, "")                 // strip trailing slash
+  : `ws://localhost:${ARG}`;
+const url = `${base}/parties/main/${ROOM}`;
 
 function client(name) {
   const ws = new WebSocket(url);
