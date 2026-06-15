@@ -244,7 +244,52 @@ jobs:
             ### Requirements
 
             - Two computers, each running this app
-            - Internet connection (relay at `pokefirered-coop.reubenday.partykit.dev`)
+            - Internet connection (relay at `pokefirered-coop.thereuben.partykit.dev`)
           releaseDraft: ${{ inputs.draft || 'true' }}
           prerelease: false
           args: ${{ matrix.platform.tauri-args }}
+
+  # ── Job 3: Deploy the PartyKit relay ──────────────────────────────────────────
+  # Runs independently of the ROM/app build: the relay is a separate edge service
+  # the released apps connect to (pokefirered-coop.thereuben.partykit.dev). The
+  # deployed edge must stay current — a stale edge silently drops {type:"raw"}
+  # messages (state beacon, battle-turn, party-sync, gender, follower gfx), which
+  # breaks co-op. `npm ci` triggers the patch-package postinstall that fixes the
+  # partykit-0.0.110 deploy crash (path.dirname on a file:// URL) on the runner.
+  #
+  # Auth: set repo secrets PARTYKIT_TOKEN and PARTYKIT_LOGIN. Generate the token
+  # locally with `npx partykit token generate` (run from relay-server/ after
+  # `partykit login`); PARTYKIT_LOGIN is the partykit username (e.g. "thereuben").
+  # If the secret is absent the job warns and skips rather than failing the run.
+  deploy-relay:
+    name: Deploy PartyKit relay
+    runs-on: ubuntu-latest
+    env:
+      PARTYKIT_TOKEN: ${{ secrets.PARTYKIT_TOKEN }}
+      PARTYKIT_LOGIN: ${{ secrets.PARTYKIT_LOGIN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: relay-server/package-lock.json
+
+      - name: Install relay dependencies (runs patch-package via postinstall)
+        working-directory: relay-server
+        run: npm ci
+
+      - name: Run relay tests
+        working-directory: relay-server
+        run: npm test
+
+      - name: Deploy to PartyKit
+        if: env.PARTYKIT_TOKEN != ''
+        working-directory: relay-server
+        run: npm run deploy
+
+      - name: Skip notice (no PartyKit credentials)
+        if: env.PARTYKIT_TOKEN == ''
+        run: echo "::warning::PARTYKIT_TOKEN not set — relay deploy skipped. Add repo secrets PARTYKIT_TOKEN and PARTYKIT_LOGIN to enable automatic relay deploys."
