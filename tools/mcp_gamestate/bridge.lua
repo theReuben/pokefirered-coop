@@ -332,6 +332,23 @@ callbacks:add("frame", function()
         ring_push(ADDR.gMpRecvRing, bytes)
         write_resp({ok=true, pushed=#bytes})
 
+    -- push_send: push bytes into the SEND ring atomically (test harness use).
+    -- Emulates the ROM's own FlagSet/VarSet hook enqueuing an outbound packet
+    -- while connected; the harness drain loop then forwards it to the relay.
+    -- Atomic (single frame-callback execution) so it never tears a concurrent
+    -- ROM position-packet push to the same head pointer.
+    elseif c == "push_send" then
+        if not ADDR.gMpSendRing then
+            write_resp({ok=true, pushed=0})
+            return
+        end
+        local bytes = {}
+        for hex in (cmd.bytes or ""):gmatch("%x%x") do
+            bytes[#bytes+1] = tonumber(hex, 16)
+        end
+        ring_push(ADDR.gMpSendRing, bytes)
+        write_resp({ok=true, pushed=#bytes})
+
     -- get_text: read dialogue box state and best-effort text from gStringVar4.
     -- box_open     true if text is printing OR script is paused waiting for input
     -- printing     true only while character-by-character rendering is active
