@@ -606,8 +606,16 @@ static void BattleIntroSlidePartner(u8 taskId)
         if ((gBattle_WIN0V & 0xFF00) != 0x5000)
             gBattle_WIN0V += 0xFF;
 
-        if (!gBattle_BG0_Y)
+        // Co-op robustness: the slide ramps BG0_Y from -48 toward 0 at +2/frame.
+        // The vanilla exit tested exact equality (`!gBattle_BG0_Y`); if BG0_Y is
+        // ever positive or odd while this task is in case 4, +2 skips 0 and the
+        // ramp climbs for ~32768 frames — the "battle textbox scrolls upward
+        // continuously" bug. Terminate once the ramp has reached or passed 0
+        // (signed compare): identical for the normal -48->0 ramp, immune to
+        // overshoot. (battle-textbox-scroll diagnosis, 2026-06-16)
+        if ((s16)gBattle_BG0_Y >= 0)
         {
+            gBattle_BG0_Y = 0; // settle the message BG exactly (overshoot-safe)
             CpuFill32(0, (void *)BG_SCREEN_ADDR(28), BG_SCREEN_SIZE * 4);
             SetGpuReg(REG_OFFSET_DISPCNT, GetGpuReg(REG_OFFSET_DISPCNT) & ~DISPCNT_WIN1_ON);
             SetBgAttribute(1, BG_ATTR_CHARBASEINDEX, 0);
