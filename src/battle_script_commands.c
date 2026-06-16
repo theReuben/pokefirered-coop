@@ -4476,8 +4476,23 @@ bool32 NoAliveMonsForPlayer(void)
     }
 
     if (B_MULTI_BATTLE_WHITEOUT > GEN_3 && gBattleTypeFlags & (BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER)
-     && !(gBattleTypeFlags & BATTLE_TYPE_ARENA) && !(IsMultibattleTest())) // Multibattle tests appear to not save the player party data for the check below.
+     && !(gBattleTypeFlags & BATTLE_TYPE_ARENA) && !(IsMultibattleTest()) // Multibattle tests appear to not save the player party data for the check below.
+     && !(gBattleTypeFlags & BATTLE_TYPE_COOP)) // Co-op: see below.
     {
+        // Gen4+ multi-battle whiteout: count the LOCAL player's saved party as
+        // the loss condition. In a single-player INGAME_PARTNER/MULTI battle the
+        // partner is AI, so the player losing their own mons IS a defeat.
+        //
+        // Co-op is different: battlers 0 and 2 are TWO real players, and the
+        // partner's mons live in gPlayerParty[3..5] (not in the saved party,
+        // which the coop setup never snapshots). Using the saved-party count
+        // here told a player they LOST whenever their own mon fainted even
+        // though their partner finished the opponent — gBattleOutcome became
+        // WON|LOST = DREW, which IsPlayerDefeated() reads as a defeat. So for
+        // BATTLE_TYPE_COOP we skip this block and fall through to the
+        // HP_count == 0 test, which sums HP across BOTH players' mons
+        // (gPlayerParty[0..5]): the side only whites out when neither player
+        // has an alive Pokémon. (co-op win/loss inversion fix, 2026-06-16)
         for (i = 0; i < PARTY_SIZE; i++)
         {
             if (!GetMonData(GetSavedPlayerPartyMon(i), MON_DATA_SPECIES)
