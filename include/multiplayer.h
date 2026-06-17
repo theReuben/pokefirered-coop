@@ -387,6 +387,11 @@ void Multiplayer_ResendBattleTurn(void);
 void Multiplayer_HandleBattleTurn(u8 seq, u8 moveSlot, u8 target, u8 flags);
 // Returns TRUE when running a BATTLE_TYPE_COOP battle.
 bool32 Multiplayer_IsCoopBattle(void);
+// Maps a role-canonical player index (0/1, agreed by both sims) to the LOCAL
+// player battler id (0 or 2). Used to make opponent random/tie target picks
+// resolve to the same physical mon on both instances despite the mirrored
+// battler layout. See the definition for the host/guest mapping.
+u32 Multiplayer_CanonicalPlayerTarget(u32 canonicalIdx);
 // Coop battle lockstep RNG: next 16-bit draw from the dedicated xorshift32
 // stream (seeded from coopBattleSeed in Multiplayer_SetupCoopBattle).
 u16 Multiplayer_CoopBattleRandom16(void);

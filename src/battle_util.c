@@ -34,6 +34,7 @@
 #include "battle_ai_util.h"
 #include "event_data.h"
 #include "link.h"
+#include "multiplayer.h"
 #include "malloc.h"
 #include "berry.h"
 #include "pokedex.h"
@@ -5605,7 +5606,16 @@ u32 SetRandomTarget(enum BattlerId battlerAtk)
 
     if (IsDoubleBattle())
     {
-        target = GetBattlerAtPosition(targets[GetBattlerSide(battlerAtk)][RandomUniform(RNG_RANDOM_TARGET, 0, 1)]);
+        u32 roll = RandomUniform(RNG_RANDOM_TARGET, 0, 1);
+        // Coop: a player-side target chosen by raw index resolves to opposite
+        // physical mons on the two sims (each runs its local player as battler
+        // 0). Route the lockstep roll through the role-canonical mapping so an
+        // opponent attacker hits the same mon on both instances. Player-side
+        // attackers target opponents (battlers 1/3), which line up unchanged.
+        if (Multiplayer_IsCoopBattle() && GetBattlerSide(battlerAtk) == B_SIDE_OPPONENT)
+            target = Multiplayer_CanonicalPlayerTarget(roll);
+        else
+            target = GetBattlerAtPosition(targets[GetBattlerSide(battlerAtk)][roll]);
         if (!IsBattlerAlive(target))
             target ^= BIT_FLANK;
     }

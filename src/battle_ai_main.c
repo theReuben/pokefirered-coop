@@ -22,6 +22,7 @@
 #include "recorded_battle.h"
 #include "util.h"
 #include "script.h"
+#include "multiplayer.h"
 #include "constants/abilities.h"
 #include "constants/battle_ai.h"
 #include "constants/battle_move_effects.h"
@@ -998,7 +999,20 @@ static u32 ChooseMoveOrAction_Doubles(enum BattlerId battler)
     gBattleTestRunnerState->data.trial.targetTieCount = mostViableTargetsNo;
 #endif
 
-    gBattlerTarget = mostViableTargetsArray[RandomUniform(RNG_AI_SCORE_TIE_DOUBLES_TARGET, 0, mostViableTargetsNo - 1)];
+    {
+        u32 tieRoll = RandomUniform(RNG_AI_SCORE_TIE_DOUBLES_TARGET, 0, mostViableTargetsNo - 1);
+        gBattlerTarget = mostViableTargetsArray[tieRoll];
+        // Coop: when an opponent's move ties between the two player mons, the
+        // winning battler INDEX names opposite physical mons on the two sims
+        // (mirrored layout). mostViableTargetsArray is built ascending, so a
+        // {0,2} tie has tieRoll 0->battler 0, 1->battler 2 — the same index
+        // semantics as the canonical map. Re-resolve so both sims hit one mon.
+        if (Multiplayer_IsCoopBattle()
+         && GetBattlerSide(battler) == B_SIDE_OPPONENT
+         && mostViableTargetsNo == 2
+         && mostViableTargetsArray[0] == 0 && mostViableTargetsArray[1] == 2)
+            gBattlerTarget = Multiplayer_CanonicalPlayerTarget(tieRoll);
+    }
     gAiBattleData->chosenTarget[battler] = gBattlerTarget;
 
     return actionOrMoveIndex[gBattlerTarget];
