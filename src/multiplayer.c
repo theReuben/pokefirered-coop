@@ -533,6 +533,28 @@ static bool8 ProcessOneRecvPacket(void)
             // instance never buffers a stale turn for a future battle.
             if (turnSeq != 0 && Multiplayer_IsCoopBattle())
                 Multiplayer_HandleBattleTurn(turnSeq, moveSlot, target, flags);
+            // Trainer-lock repair (overworld only — in a coop battle those same
+            // bytes are turn data, and neither side can hold an overworld
+            // trainer lock then).  Idempotent last-writer-wins: present bit set
+            // re-arms the lock (repairs a dropped MP_PKT_TRAINER_BUSY), present
+            // bit clear drops it (repairs a dropped TRAINER_FREE — the permanent
+            // over-lock).  A reordered stale beacon self-corrects on the next
+            // one, since the sender's beacons carry the bit set for the whole
+            // duration it is fighting and clear only afterward.
+            if (!Multiplayer_IsCoopBattle())
+            {
+                if (flags & MP_BEACON_BUSYTRAINER_BIT)
+                {
+                    gMultiplayerState.partnerBusyTrainerLocalId  = turnSeq;
+                    gMultiplayerState.partnerBusyTrainerMapGroup = moveSlot;
+                    gMultiplayerState.partnerBusyTrainerMapNum   = target;
+                    gMultiplayerState.partnerHasBusyTrainer      = TRUE;
+                }
+                else
+                {
+                    gMultiplayerState.partnerHasBusyTrainer      = FALSE;
+                }
+            }
         }
         break;
 
@@ -826,6 +848,16 @@ void Multiplayer_Init(void)
     gMultiplayerState.lastCkptMapGroup   = 0xFF;
     gMultiplayerState.lastCkptMapNum     = 0xFF;
     gMultiplayerState.saveState          = 0; // MP_SAVE_IDLE (enum defined below)
+    // Field-trainer lock (session scratch — clear on init/savestate reload so a
+    // stale lock never survives a reconnect; the beacon re-derives it).
+    gMultiplayerState.sentBusyTrainer          = FALSE;
+    gMultiplayerState.partnerHasBusyTrainer    = FALSE;
+    gMultiplayerState.sentBusyTrainerLocalId   = 0;
+    gMultiplayerState.sentBusyTrainerMapGroup  = 0;
+    gMultiplayerState.sentBusyTrainerMapNum    = 0;
+    gMultiplayerState.partnerBusyTrainerLocalId  = 0;
+    gMultiplayerState.partnerBusyTrainerMapGroup = 0;
+    gMultiplayerState.partnerBusyTrainerMapNum   = 0;
     gMultiplayerState.battleGraceTimer   = 0;
     gMultiplayerState.myStarterSpecies      = 0;
     gMultiplayerState.partnerStarterSpecies = 0;
@@ -954,6 +986,17 @@ static void TickPingAndBeacon(void)
             pkt[6] = gMultiplayerState.battleTurnSentMoveSlot;
             pkt[7] = gMultiplayerState.battleTurnSentTarget;
             pkt[8] = gMultiplayerState.battleTurnSentFlags;
+        }
+        else if (gMultiplayerState.sentBusyTrainer)
+        {
+            // Outside a coop battle the turn bytes are idle, so re-carry our
+            // field-trainer lock here: a dropped MP_PKT_TRAINER_BUSY re-arms and
+            // a dropped TRAINER_FREE clears on the partner within one beacon
+            // interval.  The present bit (byte 8) disambiguates from a coop turn.
+            pkt[5] = gMultiplayerState.sentBusyTrainerLocalId;
+            pkt[6] = gMultiplayerState.sentBusyTrainerMapGroup;
+            pkt[7] = gMultiplayerState.sentBusyTrainerMapNum;
+            pkt[8] = MP_BEACON_BUSYTRAINER_BIT;
         }
         else
         {
@@ -1342,6 +1385,11 @@ void Multiplayer_SendTrainerBusy(u8 localId, u8 mapGroup, u8 mapNum)
     pkt[3] = mapNum;
     MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_TRAINER_BUSY);
     gMultiplayerState.sentBusyTrainer = TRUE;
+    // Remember which trainer we locked so the state beacon can re-carry it and
+    // repair a dropped BUSY/FREE on the partner's side (MP_BEACON_BUSYTRAINER_BIT).
+    gMultiplayerState.sentBusyTrainerLocalId  = localId;
+    gMultiplayerState.sentBusyTrainerMapGroup = mapGroup;
+    gMultiplayerState.sentBusyTrainerMapNum   = mapNum;
 }
 
 bool32 Multiplayer_IsPartnerBusyWithTrainer(u8 objectEventId)

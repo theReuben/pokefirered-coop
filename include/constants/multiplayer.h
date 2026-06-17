@@ -124,6 +124,16 @@
 // gender (Multiplayer_HandleRemoteGender rejects values other than MALE/FEMALE).
 #define MP_BEACON_PARTYACK_BIT              0x80
 
+// Bit 0 of beacon byte 8 (the otherwise-idle battle-turn flags byte): set when
+// the sender currently holds a field-trainer lock, carrying the busy trainer's
+// localId/mapGroup/mapNum in beacon bytes 5/6/7.  Outside a coop battle those
+// turn bytes are unused, so the lock rides the beacon for free (no size change,
+// opaque to bridge/relay/MCP).  This is the loss-recovery channel for the
+// one-shot MP_PKT_TRAINER_BUSY/TRAINER_FREE: a dropped BUSY re-arms (bit set),
+// a dropped FREE clears (bit cleared) within one beacon interval.  Receivers
+// MUST ignore it while in a coop battle (then those bytes are turn data).
+#define MP_BEACON_BUSYTRAINER_BIT           0x01
+
 // Beacon cadence: 16 frames ≈ 267 ms.  Cheap (5 bytes) and idempotent, it
 // replaces the per-frame gender flood and the per-message starter/boss-ready
 // resend timers: any dropped one-shot exchange converges on the next beacon.

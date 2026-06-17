@@ -1,5 +1,6 @@
 #include "test_runner.h"
 #include "global.h"
+#include "main.h"   // for gMain.inBattle (trainer-lock lifecycle tests)
 #include "multiplayer.h"
 #include "constants/multiplayer.h"
 #include "constants/battle.h"
@@ -887,6 +888,166 @@ static void TestBattleTickPumpsBeaconAndRecv(void)
     gBattleTypeFlags = 0;
 }
 
+// ---- STATE_BEACON field-trainer lock repair (Bug #18a) ----------------------
+
+// Push a state beacon carrying a field-trainer lock in the otherwise-idle
+// battle-turn bytes (5/6/7) + the present bit in byte 8.  When present is
+// FALSE this is a "no lock" beacon (repairs a dropped TRAINER_FREE).
+static void PushBeaconBusyTrainer(u8 localId, u8 mapGroup, u8 mapNum, bool8 present)
+{
+    u8 pkt[MP_PKT_SIZE_STATE_BEACON];
+    u8 i;
+    pkt[0] = MP_PKT_STATE_BEACON;
+    pkt[1] = 0; // gender MALE, no party ack
+    pkt[2] = 0; // starter hi
+    pkt[3] = 0; // starter lo
+    pkt[4] = 0; // no boss readiness
+    pkt[5] = localId;
+    pkt[6] = mapGroup;
+    pkt[7] = mapNum;
+    pkt[8] = present ? MP_BEACON_BUSYTRAINER_BIT : 0;
+    for (i = 0; i < MP_PKT_SIZE_STATE_BEACON; i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+}
+
+static void TestBeaconRepairsDroppedTrainerBusy(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gBattleTypeFlags = 0; // overworld
+    ASSERT_EQ(gMultiplayerState.partnerHasBusyTrainer, FALSE);
+
+    // The direct MP_PKT_TRAINER_BUSY was "dropped"; the partner's beacon
+    // re-carries the lock so it converges within one interval (under-lock fix).
+    PushBeaconBusyTrainer(5, 3, 16, TRUE);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerHasBusyTrainer, TRUE);
+    ASSERT_EQ(gMultiplayerState.partnerBusyTrainerLocalId, 5);
+    ASSERT_EQ(gMultiplayerState.partnerBusyTrainerMapGroup, 3);
+    ASSERT_EQ(gMultiplayerState.partnerBusyTrainerMapNum, 16);
+}
+
+static void TestBeaconRepairsDroppedTrainerFree(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gBattleTypeFlags = 0; // overworld
+
+    // Partner is locked (e.g. from an earlier BUSY), then their battle ended
+    // but the MP_PKT_TRAINER_FREE was "dropped".  A clear beacon (present bit
+    // off) must release the lock — otherwise B is permanently told "Buzz off!"
+    // (the serious over-lock bug).
+    gMultiplayerState.partnerHasBusyTrainer      = TRUE;
+    gMultiplayerState.partnerBusyTrainerLocalId  = 5;
+    gMultiplayerState.partnerBusyTrainerMapGroup = 3;
+    gMultiplayerState.partnerBusyTrainerMapNum   = 16;
+
+    PushBeaconBusyTrainer(0, 0, 0, FALSE);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerHasBusyTrainer, FALSE);
+}
+
+static void TestSendTrainerBusyStoresCoords(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+
+    // Sending a one-shot BUSY must also cache the trainer identity so the
+    // beacon can re-carry it on the loss-recovery path.
+    Multiplayer_SendTrainerBusy(7, 3, 16);
+    ASSERT_EQ(gMultiplayerState.sentBusyTrainer, TRUE);
+    ASSERT_EQ(gMultiplayerState.sentBusyTrainerLocalId, 7);
+    ASSERT_EQ(gMultiplayerState.sentBusyTrainerMapGroup, 3);
+    ASSERT_EQ(gMultiplayerState.sentBusyTrainerMapNum, 16);
+}
+
+static void TestBeaconSenderCarriesBusyTrainerOutsideCoopBattle(void)
+{
+    u8 pkt[MP_PKT_SIZE_STATE_BEACON];
+    u8 i, frame;
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gBattleTypeFlags = 0; // overworld (not a coop battle)
+
+    // The lock is held only while gMain.inBattle (Multiplayer_Update auto-sends
+    // TRAINER_FREE and clears sentBusyTrainer the instant we're back in the
+    // overworld).  Set inBattle so the lock persists across this synthetic
+    // Update loop and we can observe the beacon packing — mirrors holding the
+    // lock for the duration of the trainer battle.
+    gMain.inBattle = TRUE;
+    Multiplayer_SendTrainerBusy(7, 3, 16);
+    { u8 out; while (Mp_Pop(&gMpSendRing, &out)) {} } // drain the one-shot BUSY
+
+    for (frame = 0; frame < MP_BEACON_INTERVAL_FRAMES; frame++)
+        Multiplayer_Update();
+    for (;;)
+    {
+        ASSERT_EQ(Mp_Pop(&gMpSendRing, &pkt[0]), TRUE);
+        if (pkt[0] == MP_PKT_STATE_BEACON)
+            break;
+    }
+    for (i = 1; i < MP_PKT_SIZE_STATE_BEACON; i++)
+        Mp_Pop(&gMpSendRing, &pkt[i]);
+    ASSERT_EQ(pkt[5], 7);  // localId
+    ASSERT_EQ(pkt[6], 3);  // mapGroup
+    ASSERT_EQ(pkt[7], 16); // mapNum
+    ASSERT_EQ(pkt[8], MP_BEACON_BUSYTRAINER_BIT);
+
+    // Battle ends — back in the overworld, the auto-FREE clears the lock and the
+    // beacon's turn bytes go back to zero (a present-bit-0 beacon, which is what
+    // repairs a dropped TRAINER_FREE on the partner's side).
+    gMain.inBattle = FALSE;
+    { u8 out; while (Mp_Pop(&gMpSendRing, &out)) {} }
+    for (frame = 0; frame < MP_BEACON_INTERVAL_FRAMES; frame++)
+        Multiplayer_Update();
+    for (;;)
+    {
+        ASSERT_EQ(Mp_Pop(&gMpSendRing, &pkt[0]), TRUE);
+        if (pkt[0] == MP_PKT_STATE_BEACON)
+            break;
+    }
+    for (i = 1; i < MP_PKT_SIZE_STATE_BEACON; i++)
+        Mp_Pop(&gMpSendRing, &pkt[i]);
+    ASSERT_EQ(pkt[5], 0);
+    ASSERT_EQ(pkt[6], 0);
+    ASSERT_EQ(pkt[7], 0);
+    ASSERT_EQ(pkt[8], 0);
+}
+
+static void TestBeaconBusyIgnoredDuringCoopBattle(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gBattleTypeFlags = BATTLE_TYPE_COOP;
+
+    // In a coop battle beacon bytes 5-8 are turn data, NOT a trainer lock —
+    // and neither side can hold an overworld lock then.  A beacon whose byte 8
+    // happens to have bit 0 set (a turn flag) must never be misread as a lock.
+    gMultiplayerState.partnerHasBusyTrainer = FALSE;
+    PushBeaconBusyTrainer(5, 3, 16, TRUE);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerHasBusyTrainer, FALSE);
+
+    gBattleTypeFlags = 0;
+}
+
 // ---- Party-sync mutual handshake (asymmetric-loss deadlock fix) -------------
 
 // Push a state beacon whose gender byte (pkt[1]) optionally carries the
@@ -1207,6 +1368,13 @@ int main(void)
     TestBeaconRepairsDroppedBattleTurn();
     TestBeaconSenderCarriesCachedTurnOnlyInCoopBattle();
     TestBattleTickPumpsBeaconAndRecv();
+
+    // STATE_BEACON field-trainer lock repair (Bug #18a)
+    TestBeaconRepairsDroppedTrainerBusy();
+    TestBeaconRepairsDroppedTrainerFree();
+    TestSendTrainerBusyStoresCoords();
+    TestBeaconSenderCarriesBusyTrainerOutsideCoopBattle();
+    TestBeaconBusyIgnoredDuringCoopBattle();
 
     // Party-sync mutual handshake (asymmetric-loss deadlock fix)
     TestBeaconPartyAckSetsPartnerGotMyParty();

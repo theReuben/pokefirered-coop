@@ -285,7 +285,15 @@ struct MultiplayerState {
     // busy-looping all sectors in a single frame, so it never stalls a scene
     // transition.  0 = idle.  Session scratch, zeroed by Multiplayer_Init.
     u8  saveState;
-    u8  _pad4;                  // padding to keep the struct 4-byte aligned
+    // Our own field-trainer lock, remembered so the state beacon can re-carry
+    // it (MP_BEACON_BUSYTRAINER_BIT) and repair a dropped MP_PKT_TRAINER_BUSY /
+    // TRAINER_FREE on the partner's side.  Set in Multiplayer_SendTrainerBusy,
+    // valid while sentBusyTrainer is TRUE.  Session scratch, zeroed by
+    // Multiplayer_Init.
+    u8  sentBusyTrainerLocalId;
+    u8  sentBusyTrainerMapGroup;
+    u8  sentBusyTrainerMapNum;
+    u8  _pad4[2];               // padding to keep the struct 4-byte aligned
 };
 
 extern struct MultiplayerState gMultiplayerState;
