@@ -3,6 +3,7 @@
 #include "constants/multiplayer.h"
 #include "constants/characters.h"
 #include "constants/event_object_movement.h"
+#include "constants/event_objects.h"
 #include "event_object_movement.h"
 #include "event_data.h"
 #include "item.h"
@@ -1193,10 +1194,21 @@ static void FollowerBehindPos(u8 x, u8 y, u8 facing, u8 *fx, u8 *fy)
     }
 }
 
+// The follower ghost is, by definition, the partner's lead Pokémon, whose
+// overworld graphics id is (species | OBJ_EVENT_MON).  A value of 0 means "no
+// follower"; a value lacking the OBJ_EVENT_MON bit is NOT a mon id and would
+// resolve to an arbitrary NPC/object graphic (the cuttable-tree / NPC sprite
+// symptom in bug #21).  Reject anything that is not a valid mon gfx id so the
+// follower ghost only ever renders a Pokémon.
+static bool32 Multiplayer_IsValidFollowerGfx(u16 gfxId)
+{
+    return gfxId != 0 && (gfxId & OBJ_EVENT_MON);
+}
+
 static void Multiplayer_SpawnFollowerGhost(void)
 {
     u8 fx, fy, objId;
-    if (gMultiplayerState.partnerFollowerGfxId == 0) return;
+    if (!Multiplayer_IsValidFollowerGfx(gMultiplayerState.partnerFollowerGfxId)) return;
     FollowerBehindPos(gMultiplayerState.targetX, gMultiplayerState.targetY,
                       gMultiplayerState.targetFacing, &fx, &fy);
     objId = SpawnSpecialObjectEventParameterized(
@@ -1223,7 +1235,7 @@ static void Multiplayer_UpdateFollowerGhostPosition(void)
 {
     u8 fx, fy;
     u8 objId = gMultiplayerState.followerGhostObjId;
-    if (gMultiplayerState.partnerFollowerGfxId == 0)
+    if (!Multiplayer_IsValidFollowerGfx(gMultiplayerState.partnerFollowerGfxId))
     {
         if (objId < OBJECT_EVENTS_COUNT)
             Multiplayer_DespawnFollowerGhost();
