@@ -752,6 +752,16 @@ static bool8 ProcessOneRecvPacket(void)
 // Ghost NPC — internal helpers
 // ---------------------------------------------------------------------------
 
+// Beyond this Chebyshev distance the main ghost teleports to the target instead
+// of walking one tile at a time.  A regular (non-coop) battle freezes the ghost
+// (GhostTick only runs on the overworld) while the partner keeps moving; on
+// battle exit the whole position backlog drains in one frame and the target
+// jumps far away.  Without a snap the ghost visibly slides across the gap one
+// tile per held movement ("catch-up ghosting", user-reported 2026-06-17).  The
+// threshold sits above worst-case running lag (~2-3 tiles) so ordinary movement
+// still follows smoothly, but below the typical post-battle gap (10+ tiles).
+#define GHOST_SNAP_DISTANCE 5
+
 // Returns the MOVEMENT_ACTION_WALK_NORMAL_* constant for the step direction,
 // or 0xFF if the ghost is already at the target.
 static u8 GhostNextStepAction(const struct ObjectEvent *ghost)
@@ -788,6 +798,25 @@ static void GhostTick(void)
     // ghost idles on its own — no freeze needed.  The interaction mutex
     // (Multiplayer_IsPartnerInScript) still blocks talking to the same NPC.
     ghost = &gObjectEvents[objId];
+
+    // Snap on a large positional jump (battle-exit / warp backlog drain) instead
+    // of sliding one tile at a time.  Checked before the heldMovementActive guard
+    // so an in-progress slide is pre-empted.  Mirrors the follower ghost, which
+    // already teleports every frame (Multiplayer_UpdateFollowerGhostPosition).
+    {
+        s16 dx  = (s16)gMultiplayerState.targetX - ghost->currentCoords.x;
+        s16 dy  = (s16)gMultiplayerState.targetY - ghost->currentCoords.y;
+        s16 adx = dx < 0 ? -dx : dx;
+        s16 ady = dy < 0 ? -dy : dy;
+        if ((adx > ady ? adx : ady) >= GHOST_SNAP_DISTANCE)
+        {
+            MoveObjectEventToMapCoords(ghost, gMultiplayerState.targetX,
+                                       gMultiplayerState.targetY);
+            SetObjectEventDirection(ghost, gMultiplayerState.targetFacing);
+            Multiplayer_UpdateFollowerGhostPosition();
+            return;
+        }
+    }
 
     ObjectEventClearHeldMovementIfFinished(ghost);
 
@@ -1042,8 +1071,14 @@ static void TickPingAndBeacon(void)
 // auto-checkpoint (TrySavingData mid-battle is unsafe).
 void Multiplayer_BattleTick(void)
 {
-    if (!Multiplayer_IsCoopBattle()
-        || gMultiplayerState.connState != MP_STATE_CONNECTED)
+    // Pump during ANY battle while connected, not only coop battles.  A regular
+    // wild/trainer battle blocks the overworld loop too: without pumping here the
+    // recv ring fills with the partner's position packets (silently dropped on
+    // overflow) and the heartbeat goes dark (false-disconnect risk).  Draining
+    // the ring also keeps the ghost's target current, shrinking the gap the
+    // GHOST_SNAP_DISTANCE snap covers on battle exit, and lets TickPingAndBeacon
+    // re-carry the busy-trainer lock (#18a) during the field-trainer battle.
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED)
         return;
     Multiplayer_PollPackets();
     TickPingAndBeacon();

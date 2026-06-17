@@ -178,6 +178,42 @@ static void TestGhostTickNoMoveWhenAtTarget(void)
     ASSERT_EQ(gObjectEvents[6].heldMovementActive, 0);
 }
 
+static void TestGhostSnapsOnLargeGap(void)
+{
+    // Ghost spawned at (5,5); target 10 tiles away (battle-exit backlog drain):
+    // GhostTick must TELEPORT to the target, not request a one-tile walk.
+    ResetAll();
+    gTestNextSpawnSlot = 4;
+    Multiplayer_SpawnGhostNPC(0, 1, 5, 5, DIR_SOUTH);
+    SetPlayerMap(0, 1);
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    // Partner on the same map, far target.  UpdateGhostPosition sets the target
+    // fields only; it does NOT move the ghost object, so the gap is real.
+    Multiplayer_UpdateGhostPosition(0, 1, 15, 5, DIR_SOUTH); // |dx| = 10 >= snap
+    Multiplayer_Update();
+    // Snapped: coords equal the target, and no walk movement was started.
+    ASSERT_EQ(gObjectEvents[4].currentCoords.x, 15);
+    ASSERT_EQ(gObjectEvents[4].currentCoords.y, 5);
+    ASSERT_EQ(gObjectEvents[4].heldMovementActive, 0);
+}
+
+static void TestGhostWalksOnSmallGap(void)
+{
+    // Ghost spawned at (5,5); target 1 tile away: GhostTick must WALK (held
+    // movement), not teleport — ordinary following stays smooth.
+    ResetAll();
+    gTestNextSpawnSlot = 4;
+    Multiplayer_SpawnGhostNPC(0, 1, 5, 5, DIR_SOUTH);
+    SetPlayerMap(0, 1);
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    Multiplayer_UpdateGhostPosition(0, 1, 6, 5, DIR_EAST); // |dx| = 1 < snap
+    Multiplayer_Update();
+    // Walk requested (stub sets heldMovementActive), coords NOT teleported.
+    ASSERT_NE(gObjectEvents[4].heldMovementActive, 0);
+    ASSERT_EQ(gObjectEvents[4].currentCoords.x, 5);
+    ASSERT_EQ(gObjectEvents[4].currentCoords.y, 5);
+}
+
 // ---- Step 1.5: Cross-map ghost management ----------------------------------
 
 static void TestGhostMapCheckSpawnsOnSameMap(void)
@@ -1205,6 +1241,8 @@ int main(void)
     TestUpdateGhostPosition();
     TestGhostTickMovesWhenOffTarget();
     TestGhostTickNoMoveWhenAtTarget();
+    TestGhostSnapsOnLargeGap();
+    TestGhostWalksOnSmallGap();
     TestGhostMapCheckSpawnsOnSameMap();
     TestGhostMapCheckDespawnsOnDifferentMap();
     TestGhostMapCheckDespawnsWhenDisconnected();
