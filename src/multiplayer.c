@@ -738,10 +738,14 @@ static void GhostTick(void)
     if (objId >= OBJECT_EVENTS_COUNT || !gObjectEvents[objId].active)
         return;
 
-    // Freeze ghost movement while partner is in a script interaction.
-    if (gMultiplayerState.partnerIsInScript)
-        return;
-
+    // NOTE: the ghost is NOT frozen while the partner is in a script.  It used
+    // to early-return on partnerIsInScript, but that broke player-moving
+    // cutscenes (bug #15): during the Oak starter escort the partner is in a
+    // script AND being walked by it, so freezing left the ghost stuck at the
+    // door while the real player advanced.  The ghost simply tracks its target
+    // tile here; a stationary NPC interaction produces no target change, so the
+    // ghost idles on its own — no freeze needed.  The interaction mutex
+    // (Multiplayer_IsPartnerInScript) still blocks talking to the same NPC.
     ghost = &gObjectEvents[objId];
 
     ObjectEventClearHeldMovementIfFinished(ghost);

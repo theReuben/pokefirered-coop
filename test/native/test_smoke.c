@@ -604,13 +604,17 @@ static void TestPartnerScriptUnlockRecv(void)
     ASSERT_EQ(Multiplayer_IsPartnerInScript(), FALSE);
 }
 
-static void TestGhostFreezesDuringPartnerScript(void)
+static void TestGhostFollowsDuringPartnerScript(void)
 {
-    // Ghost should not step towards its target while partner is in a script.
+    // Bug #15 regression: the ghost must KEEP following the partner's position
+    // even while the partner is in a script.  Player-moving cutscenes (the Oak
+    // starter escort) walk the partner via a script; freezing the ghost on
+    // partnerIsInScript left it stuck at the door.  The ghost should step
+    // toward its target regardless of the partner's script state.
     ResetAll();
     gTestNextSpawnSlot = 4;
     Multiplayer_SpawnGhostNPC(0, 1, 5, 5, DIR_SOUTH);
-    gMultiplayerState.targetX = 8; // off-target so GhostTick would normally move
+    gMultiplayerState.targetX = 8; // off-target so GhostTick should move
     gMultiplayerState.targetY = 5;
     SetPlayerMap(0, 1);
     gMultiplayerState.connState          = MP_STATE_CONNECTED;
@@ -619,8 +623,8 @@ static void TestGhostFreezesDuringPartnerScript(void)
 
     Multiplayer_Update();
 
-    // heldMovementActive must stay 0 — ghost should NOT have been asked to move.
-    ASSERT_EQ(gObjectEvents[4].heldMovementActive, 0);
+    // Ghost must have been asked to move toward the new target.
+    ASSERT_EQ(gObjectEvents[4].heldMovementActive, 1);
 }
 
 // ---- Step 4.2: Seeded PRNG --------------------------------------------------
@@ -1148,7 +1152,7 @@ int main(void)
     TestScriptLockDisconnectedNoSend();
     TestPartnerScriptLockRecv();
     TestPartnerScriptUnlockRecv();
-    TestGhostFreezesDuringPartnerScript();
+    TestGhostFollowsDuringPartnerScript();
     TestRngSameSeedSameSequence();
     TestRngDifferentSeedsDifferentSequences();
     TestRngZeroSeedNonZero();
