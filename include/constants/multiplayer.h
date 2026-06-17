@@ -35,6 +35,12 @@
 #define MP_PKT_ROLE_ASSIGN          0x1B   // 2 bytes — relay→ROM: session role (MP_ROLE_HOST/GUEST).
                                            // Without it both ROMs sit at MP_ROLE_NONE, so
                                            // GetMultiplayerId()/IsLinkMaster() agree on neither side.
+#define MP_PKT_TRAINER_APPROACH     0x1C   // 6 bytes — a field trainer spotted the sender; the
+                                           // partner replays a controls-free, battle-free "!" +
+                                           // walk on the matching NPC (localId+mapGroup+mapNum
+                                           // + direction + distance). One-shot, cosmetic: a drop
+                                           // just skips one animation, so it rides NO beacon
+                                           // (a re-carry would wrongly re-trigger the "!").
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -110,6 +116,7 @@
                                                // + turn_seq + move_slot + target + flags (turn_seq 0 = no
                                                // cached battle turn; repairs a dropped MP_PKT_BATTLE_TURN)
 #define MP_PKT_SIZE_ROLE_ASSIGN             2  // type + role (MP_ROLE_HOST/GUEST)
+#define MP_PKT_SIZE_TRAINER_APPROACH        6  // type + localId + mapGroup + mapNum + direction + distance
 
 // Party-sync ack rides bit 7 of the beacon's gender byte (pkt[1]); the low
 // bits stay the player gender.  The sender sets it once it has received the

@@ -307,3 +307,19 @@ const struct UCoords32 gDirectionToVectors[4]; // zeroed; tests don't call movem
 bool8 PlayerHasFollowerNPC(void) { return FALSE; }
 u32   GetFollowerNPCData(enum FollowerNpcData data) { (void)data; return 0; }
 struct ObjectEvent *GetFollowerObject(void) { return NULL; }
+
+// Records the last Multiplayer_PlayGhostTrainerApproach() invocation so the
+// MP_PKT_TRAINER_APPROACH recv-dispatch test can assert the cosmetic mirror was
+// triggered with the decoded args. The real implementation lives in
+// trainer_see.c, which is not compiled into the native suite.
+u8 gGhostApproachCalls;
+u8 gGhostApproachLocalId;
+u8 gGhostApproachDir;
+u8 gGhostApproachDist;
+void Multiplayer_PlayGhostTrainerApproach(u8 localId, u8 direction, u8 distance)
+{
+    gGhostApproachCalls++;
+    gGhostApproachLocalId  = localId;
+    gGhostApproachDir      = direction;
+    gGhostApproachDist     = distance;
+}

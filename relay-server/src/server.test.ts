@@ -288,6 +288,17 @@ describe("Raw packet relay", () => {
     expect(host.inbox.length).toBe(inboxBefore); // not echoed to sender
     expect(guest.last("raw")).toEqual({ type: "raw", bytes: "1a0100070e" });
   });
+
+  it("forwards trainer-approach (0x1C) raw bytes to partner only", () => {
+    const { server, room } = makeServer();
+    const host = connect(server, room, new MockConnection("c1"));
+    const guest = connect(server, room, new MockConnection("c2"));
+    const inboxBefore = host.inbox.length;
+    // 0x1C trainer approach: localId=07 mapGroup=03 mapNum=0c dir=02 dist=04
+    send(server, host, { type: "raw", bytes: "1c07030c0204" });
+    expect(host.inbox.length).toBe(inboxBefore); // not echoed to sender
+    expect(guest.last("raw")).toEqual({ type: "raw", bytes: "1c07030c0204" });
+  });
 });
 
 describe("Flag sync", () => {

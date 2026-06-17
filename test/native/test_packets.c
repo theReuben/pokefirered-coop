@@ -1048,6 +1048,80 @@ static void TestBeaconBusyIgnoredDuringCoopBattle(void)
     gBattleTypeFlags = 0;
 }
 
+// ---- Trainer-approach cosmetic mirror (Bug #18b, MP_PKT_TRAINER_APPROACH) ----
+
+// Recording stub for the cosmetic player (defined in stubs.c; the real impl is
+// in trainer_see.c, which is not part of the native suite).
+extern u8 gGhostApproachCalls;
+extern u8 gGhostApproachLocalId;
+extern u8 gGhostApproachDir;
+extern u8 gGhostApproachDist;
+
+static void PushTrainerApproach(u8 localId, u8 mapGroup, u8 mapNum, u8 dir, u8 dist)
+{
+    Mp_Push(&gMpRecvRing, MP_PKT_TRAINER_APPROACH);
+    Mp_Push(&gMpRecvRing, localId);
+    Mp_Push(&gMpRecvRing, mapGroup);
+    Mp_Push(&gMpRecvRing, mapNum);
+    Mp_Push(&gMpRecvRing, dir);
+    Mp_Push(&gMpRecvRing, dist);
+}
+
+static void TestSendTrainerApproachEncodes(void)
+{
+    u8 pkt[MP_PKT_SIZE_TRAINER_APPROACH];
+    u8 i;
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    Multiplayer_SendTrainerApproach(7, 3, 12, 2, 4);
+    for (i = 0; i < MP_PKT_SIZE_TRAINER_APPROACH; i++)
+        ASSERT_EQ(Mp_Pop(&gMpSendRing, &pkt[i]), TRUE);
+    ASSERT_EQ(pkt[0], MP_PKT_TRAINER_APPROACH);
+    ASSERT_EQ(pkt[1], 7);  // localId
+    ASSERT_EQ(pkt[2], 3);  // mapGroup
+    ASSERT_EQ(pkt[3], 12); // mapNum
+    ASSERT_EQ(pkt[4], 2);  // direction
+    ASSERT_EQ(pkt[5], 4);  // distance (walk count)
+}
+
+static void TestTrainerApproachFiresOnMatchingMap(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    save.location.mapGroup = 3;
+    save.location.mapNum   = 12;
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gGhostApproachCalls = 0;
+
+    PushTrainerApproach(7, 3, 12, 2, 4);
+    Multiplayer_Update();
+    ASSERT_EQ(gGhostApproachCalls, 1);
+    ASSERT_EQ(gGhostApproachLocalId, 7);
+    ASSERT_EQ(gGhostApproachDir, 2);
+    ASSERT_EQ(gGhostApproachDist, 4);
+}
+
+static void TestTrainerApproachIgnoredOnOtherMap(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    save.location.mapGroup = 3;
+    save.location.mapNum   = 99; // partner is on a different map
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gGhostApproachCalls = 0;
+
+    PushTrainerApproach(7, 3, 12, 2, 4);
+    Multiplayer_Update();
+    ASSERT_EQ(gGhostApproachCalls, 0); // cosmetic mirror suppressed off-map
+}
+
 // ---- Party-sync mutual handshake (asymmetric-loss deadlock fix) -------------
 
 // Push a state beacon whose gender byte (pkt[1]) optionally carries the
@@ -1375,6 +1449,11 @@ int main(void)
     TestSendTrainerBusyStoresCoords();
     TestBeaconSenderCarriesBusyTrainerOutsideCoopBattle();
     TestBeaconBusyIgnoredDuringCoopBattle();
+
+    // Trainer-approach cosmetic mirror (Bug #18b)
+    TestSendTrainerApproachEncodes();
+    TestTrainerApproachFiresOnMatchingMap();
+    TestTrainerApproachIgnoredOnOtherMap();
 
     // Party-sync mutual handshake (asymmetric-loss deadlock fix)
     TestBeaconPartyAckSetsPartnerGotMyParty();

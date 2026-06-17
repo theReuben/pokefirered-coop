@@ -328,6 +328,14 @@ u16 Multiplayer_GhostGraphicsId(void);
 // Packet send helpers (Phase 2 — now implemented via ring buffer)
 void Multiplayer_SendPosition(void);
 void Multiplayer_SendTrainerBusy(u8 localId, u8 mapGroup, u8 mapNum);
+// A field trainer spotted us — tell the partner so they can replay a cosmetic
+// "!" + walk on the matching NPC (no controls lock, no battle).  direction is
+// the trainer's facing; distance is the number of tiles it walks toward us.
+void Multiplayer_SendTrainerApproach(u8 localId, u8 mapGroup, u8 mapNum, u8 direction, u8 distance);
+// Partner side: play the controls-free, battle-free approach animation on the
+// NPC with the given localId on the current map.  Implemented in trainer_see.c
+// (reuses the exclamation-mark field effect + held-movement primitives).
+void Multiplayer_PlayGhostTrainerApproach(u8 localId, u8 direction, u8 distance);
 void Multiplayer_SendFlagSet(u16 flagId);
 void Multiplayer_SendFlagClear(u16 flagId);
 void Multiplayer_SendVarSet(u16 varId, u16 value);

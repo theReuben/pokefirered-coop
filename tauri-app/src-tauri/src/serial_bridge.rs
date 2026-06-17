@@ -181,6 +181,7 @@ const PKT_TRAINER_FREE:         u8 = 0x19; // 1 byte
 const PKT_STATE_BEACON:         u8 = 0x1A; // 9 bytes: type + gender + starter_hi + starter_lo + boss_ready_id
                                            //          + turn_seq + move_slot + target + flags
 const PKT_ROLE_ASSIGN:          u8 = 0x1B; // 2 bytes: type + role (1=host, 2=guest); relay -> ROM only
+const PKT_TRAINER_APPROACH:     u8 = 0x1C; // 6 bytes: type + localId + mapGroup + mapNum + direction + distance
 
 const PARTY_SYNC_MON_SIZE:   usize = 58; // serialized MpWirePartyMon (full battle fidelity)
 const PARTY_SYNC_SEED_SIZE:  usize = 4;  // trailing u32 battle RNG seed (big-endian)
@@ -510,6 +511,7 @@ fn packet_size(raw: &[u8], pos: usize) -> usize {
         PKT_TRAINER_FREE         => 1,
         PKT_STATE_BEACON         => 9,
         PKT_ROLE_ASSIGN          => 2,
+        PKT_TRAINER_APPROACH     => 6,
         _ => 0,
     }
 }
@@ -635,7 +637,7 @@ fn packet_to_json(pkt: &[u8]) -> Option<Value> {
         // bytes; the relay forwards them untouched and the partner bridge
         // writes them straight into the recv ring.
         PKT_GENDER | PKT_NAME | PKT_FOLLOWER_GFX | PKT_TRAINER_BUSY
-        | PKT_TRAINER_FREE | PKT_EVENT_LOG | PKT_STATE_BEACON => {
+        | PKT_TRAINER_FREE | PKT_TRAINER_APPROACH | PKT_EVENT_LOG | PKT_STATE_BEACON => {
             Some(json!({ "type": "raw", "bytes": to_hex(pkt) }))
         }
 
@@ -847,6 +849,18 @@ mod tests {
         // back to the identical packet bytes.
         let pkt = vec![PKT_STATE_BEACON, 1, 0x00, 0x07, 14, 3, 2, 1, 0];
         let msg = packet_to_json(&pkt).expect("beacon must map to JSON");
+        assert_eq!(msg.get("type").unwrap().as_str().unwrap(), "raw");
+        let back = json_to_packet(&msg).expect("raw must decode");
+        assert_eq!(back, pkt);
+    }
+
+    #[test]
+    fn trainer_approach_roundtrip_via_json() {
+        // 6-byte cosmetic approach packet: type + localId + mapGroup + mapNum
+        // + direction + distance. Travels as opaque raw and decodes identically.
+        let pkt = vec![PKT_TRAINER_APPROACH, 7, 3, 12, 2, 4];
+        assert_eq!(packet_size(&pkt, 0), 6);
+        let msg = packet_to_json(&pkt).expect("approach must map to JSON");
         assert_eq!(msg.get("type").unwrap().as_str().unwrap(), "raw");
         let back = json_to_packet(&msg).expect("raw must decode");
         assert_eq!(back, pkt);

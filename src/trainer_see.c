@@ -532,6 +532,14 @@ bool8 CheckForTrainersWantingBattle(void)
                 gObjectEvents[busyObjId].localId,
                 gObjectEvents[busyObjId].mapGroup,
                 gObjectEvents[busyObjId].mapNum);
+            // Mirror the cosmetic "!" + walk-up so the non-battling partner sees the
+            // trainer react (one-shot, cosmetic; the partner replays it locally).
+            Multiplayer_SendTrainerApproach(
+                gObjectEvents[busyObjId].localId,
+                gObjectEvents[busyObjId].mapGroup,
+                gObjectEvents[busyObjId].mapNum,
+                gObjectEvents[busyObjId].facingDirection,
+                gApproachingTrainers[0].radius - 1); // local walk count is approachDistance - 1
         }
         ResetTrainerOpponentIds();
         ConfigureAndSetUpOneTrainerBattle(gApproachingTrainers[gNoOfApproachingTrainers - 1].objectEventId,
@@ -1040,6 +1048,91 @@ void TryPrepareSecondApproachingTrainer(void)
         gSpecialVar_Result = FALSE;
     }
 }
+
+// ===== Co-op: cosmetic mirror of a partner's trainer-approach =====
+// When the partner is spotted by a field trainer, the non-battling player would
+// otherwise see that NPC standing inert. Multiplayer_PlayGhostTrainerApproach
+// replays a controls-free, battle-free "!" + walk-up on the matching NPC so the
+// approach is visible on both screens. It NEVER locks player controls, starts a
+// battle, or touches gApproachingTrainers — this player keeps free-roaming.
+// A dropped MP_PKT_TRAINER_APPROACH just means this animation is skipped; it is
+// purely cosmetic, so there is deliberately no beacon re-carry (that would
+// wrongly re-trigger the "!" every interval).
+#define tGhostFuncId    data[0]
+#define tGhostRange     data[1]
+#define tGhostObjId     data[2]
+#define tGhostDir       data[3]
+
+static void Task_GhostTrainerApproach(u8 taskId)
+{
+    struct Task *task = &gTasks[taskId];
+    struct ObjectEvent *trainerObj = &gObjectEvents[task->tGhostObjId];
+
+    if (!trainerObj->active)
+    {
+        DestroyTask(taskId);
+        return;
+    }
+
+    switch (task->tGhostFuncId)
+    {
+    case 0: // exclamation mark + face the partner's ghost
+        ObjectEventGetLocalIdAndMap(trainerObj, &gFieldEffectArguments[0], &gFieldEffectArguments[1], &gFieldEffectArguments[2]);
+        FieldEffectStart(FLDEFF_EXCLAMATION_MARK_ICON);
+        ObjectEventSetHeldMovement(trainerObj, GetFaceDirectionMovementAction(task->tGhostDir));
+        task->tGhostFuncId++;
+        break;
+    case 1: // wait for the "!" icon to clear
+        if (!FieldEffectActiveListContains(FLDEFF_EXCLAMATION_MARK_ICON))
+            task->tGhostFuncId++;
+        break;
+    case 2: // walk toward the partner, one tile per cleared step
+        if (!ObjectEventIsMovementOverridden(trainerObj) || ObjectEventClearHeldMovementIfFinished(trainerObj))
+        {
+            if (task->tGhostRange)
+            {
+                ObjectEventSetHeldMovement(trainerObj, GetWalkNormalMovementAction(task->tGhostDir));
+                task->tGhostRange--;
+            }
+            else
+            {
+                task->tGhostFuncId++;
+            }
+        }
+        break;
+    default: // done — leave the NPC where it stopped (its movement type reasserts)
+        DestroyTask(taskId);
+        break;
+    }
+}
+
+// Public entry point invoked from the MP_PKT_TRAINER_APPROACH receive handler.
+void Multiplayer_PlayGhostTrainerApproach(u8 localId, u8 direction, u8 distance)
+{
+    u8 objId;
+    u8 taskId;
+
+    if (gSaveBlock1Ptr == NULL)
+        return;
+    if (!TryGetObjectEventIdByLocalIdAndMap(localId,
+                                            gSaveBlock1Ptr->location.mapNum,
+                                            gSaveBlock1Ptr->location.mapGroup,
+                                            &objId))
+        return;
+    if (!gObjectEvents[objId].active)
+        return;
+
+    taskId = CreateTask(Task_GhostTrainerApproach, 0x50);
+    gTasks[taskId].tGhostFuncId = 0;
+    gTasks[taskId].tGhostRange = distance;
+    gTasks[taskId].tGhostObjId = objId;
+    gTasks[taskId].tGhostDir = direction;
+}
+
+#undef tGhostFuncId
+#undef tGhostRange
+#undef tGhostObjId
+#undef tGhostDir
 
 #define sLocalId    data[0]
 #define sMapNum     data[1]

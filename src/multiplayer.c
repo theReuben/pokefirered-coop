@@ -612,6 +612,25 @@ static bool8 ProcessOneRecvPacket(void)
         gMultiplayerState.partnerHasBusyTrainer = FALSE;
         break;
 
+    case MP_PKT_TRAINER_APPROACH:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_TRAINER_APPROACH - 1)
+            return FALSE;
+        {
+            u8 localId = 0, mapGroup = 0, mapNum = 0, direction = 0, distance = 0;
+            Mp_Pop(&gMpRecvRing, &localId);
+            Mp_Pop(&gMpRecvRing, &mapGroup);
+            Mp_Pop(&gMpRecvRing, &mapNum);
+            Mp_Pop(&gMpRecvRing, &direction);
+            Mp_Pop(&gMpRecvRing, &distance);
+            // Cosmetic only: replay the "!" + walk-up on the matching NPC if it's
+            // on our current map.  Never locks controls or starts a battle.
+            if (gSaveBlock1Ptr
+                && mapGroup == (u8)gSaveBlock1Ptr->location.mapGroup
+                && mapNum   == (u8)gSaveBlock1Ptr->location.mapNum)
+                Multiplayer_PlayGhostTrainerApproach(localId, direction, distance);
+        }
+        break;
+
     case MP_PKT_FOLLOWER_GFX:
         if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_FOLLOWER_GFX - 1)
             return FALSE;
@@ -1390,6 +1409,18 @@ void Multiplayer_SendTrainerBusy(u8 localId, u8 mapGroup, u8 mapNum)
     gMultiplayerState.sentBusyTrainerLocalId  = localId;
     gMultiplayerState.sentBusyTrainerMapGroup = mapGroup;
     gMultiplayerState.sentBusyTrainerMapNum   = mapNum;
+}
+
+void Multiplayer_SendTrainerApproach(u8 localId, u8 mapGroup, u8 mapNum, u8 direction, u8 distance)
+{
+    u8 pkt[MP_PKT_SIZE_TRAINER_APPROACH];
+    pkt[0] = MP_PKT_TRAINER_APPROACH;
+    pkt[1] = localId;
+    pkt[2] = mapGroup;
+    pkt[3] = mapNum;
+    pkt[4] = direction;
+    pkt[5] = distance;
+    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_TRAINER_APPROACH);
 }
 
 bool32 Multiplayer_IsPartnerBusyWithTrainer(u8 objectEventId)
