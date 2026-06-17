@@ -174,6 +174,37 @@ void FlagClear(u16 flagId)
 // TrySavingData stub — native tests don't exercise real save; just no-op.
 u8 TrySavingData(u8 saveType) { (void)saveType; return 0; }
 
+// Incremental link-save primitive stubs.  Counters + a call-order log let the
+// async-checkpoint test assert the state machine drives them in the right
+// sequence (Init -> WriteSector*N -> ReplaceLastSector -> SetLastSectorSignature).
+// gLinkSaveSectorsToWrite controls how many WriteSector calls precede "done".
+int gLinkSaveInitCalls = 0;
+int gLinkSaveWriteCalls = 0;
+int gLinkSaveReplaceCalls = 0;
+int gLinkSaveSigCalls = 0;
+int gLinkSaveSectorsToWrite = 3;  // test default; real slot is NUM_SECTORS_PER_SLOT
+char gLinkSaveOrder[64] = {0};    // appended initials: I W R S
+static void LinkSaveLog(char c)
+{
+    int n = 0;
+    while (n < 62 && gLinkSaveOrder[n]) n++;
+    if (n < 63) { gLinkSaveOrder[n] = c; gLinkSaveOrder[n + 1] = 0; }
+}
+void LinkSave_ResetStubCounters(void)
+{
+    gLinkSaveInitCalls = gLinkSaveWriteCalls = 0;
+    gLinkSaveReplaceCalls = gLinkSaveSigCalls = 0;
+    gLinkSaveOrder[0] = 0;
+}
+bool8 LinkFullSave_Init(void) { gLinkSaveInitCalls++; LinkSaveLog('I'); return FALSE; }
+bool8 LinkFullSave_WriteSector(void)
+{
+    gLinkSaveWriteCalls++; LinkSaveLog('W');
+    return (gLinkSaveWriteCalls >= gLinkSaveSectorsToWrite) ? TRUE : FALSE;
+}
+bool8 LinkFullSave_ReplaceLastSector(void) { gLinkSaveReplaceCalls++; LinkSaveLog('R'); return FALSE; }
+bool8 LinkFullSave_SetLastSectorSignature(void) { gLinkSaveSigCalls++; LinkSaveLog('S'); return FALSE; }
+
 // VarGet/VarSet stub — temp/special vars (0x8000+) plus the saved game var
 // range (0x4000–0x40FF) used by VAR_STARTER_MON / VAR_PARTNER_STARTER /
 // VAR_RIVAL_STARTER.

@@ -280,7 +280,12 @@ struct MultiplayerState {
     // state beacon keeps acking; it is broadcast as MP_BEACON_PARTYACK_BIT.
     u8  gotPartnerParty;        // TRUE once partner's PARTY_SYNC applied this battle
     u8  partnerGotMyParty;      // TRUE once partner's beacon acked our party (latched)
-    u8  _pad4[2];
+    // Async auto-checkpoint: the map-change/battle-end save runs one flash
+    // sector per frame (MP_SAVE_* state machine in multiplayer.c) instead of
+    // busy-looping all sectors in a single frame, so it never stalls a scene
+    // transition.  0 = idle.  Session scratch, zeroed by Multiplayer_Init.
+    u8  saveState;
+    u8  _pad4;                  // padding to keep the struct 4-byte aligned
 };
 
 extern struct MultiplayerState gMultiplayerState;

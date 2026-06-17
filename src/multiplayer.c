@@ -825,6 +825,7 @@ void Multiplayer_Init(void)
     gMultiplayerState.pingTimer          = 0;
     gMultiplayerState.lastCkptMapGroup   = 0xFF;
     gMultiplayerState.lastCkptMapNum     = 0xFF;
+    gMultiplayerState.saveState          = 0; // MP_SAVE_IDLE (enum defined below)
     gMultiplayerState.battleGraceTimer   = 0;
     gMultiplayerState.myStarterSpecies      = 0;
     gMultiplayerState.partnerStarterSpecies = 0;
@@ -1004,6 +1005,64 @@ void Multiplayer_MenuTick(void)
     TickPingAndBeacon();
 }
 
+// Async auto-checkpoint save state machine.  TrySavingData(SAVE_NORMAL)
+// busy-loops all NUM_SECTORS_PER_SLOT (14) flash sectors in a single frame,
+// which is the visible stall at scene transitions.  Instead we drive the
+// link save's incremental primitives one sector per frame, advanced from
+// Multiplayer_Update (once per frame via Multiplayer_UpdateOncePerFrame).
+// We deliberately OMIT the SetLinkStandbyCallback/IsLinkTaskFinished steps of
+// Task_LinkFullSave: our "link" is the virtual relay, with no real partner to
+// perform the standby handshake, so those steps would block forever.  The
+// resulting on-disk write is the full save slot — equivalent to
+// TrySavingData(SAVE_NORMAL).  gSoftResetDisabled is left untouched to match
+// the old synchronous autosave (which also never set it), so a stalled
+// machine can never strand soft-reset disabled.
+enum {
+    MP_SAVE_IDLE = 0,
+    MP_SAVE_INIT,
+    MP_SAVE_WRITE,
+    MP_SAVE_REPLACE,
+    MP_SAVE_SIGNATURE,
+};
+
+// Kick off an auto-checkpoint save if one isn't already running.  Shared by
+// the map-change checkpoint and Multiplayer_OnBattleEnd so both stalls die
+// with one fix (rule 2: fix the class, not the call site).
+static void Multiplayer_RequestCheckpointSave(void)
+{
+    if (gMultiplayerState.saveState == MP_SAVE_IDLE)
+        gMultiplayerState.saveState = MP_SAVE_INIT;
+}
+
+// Advance the async save by one step.  No-op when idle.  Called unconditionally
+// each frame (even while disconnected) so an in-flight save always finishes.
+static void Multiplayer_TickAsyncSave(void)
+{
+    switch (gMultiplayerState.saveState)
+    {
+    case MP_SAVE_INIT:
+        LinkFullSave_Init();
+        gMultiplayerState.saveState = MP_SAVE_WRITE;
+        break;
+    case MP_SAVE_WRITE:
+        // Writes ONE sector per call; returns TRUE once the last is written.
+        if (LinkFullSave_WriteSector())
+            gMultiplayerState.saveState = MP_SAVE_REPLACE;
+        break;
+    case MP_SAVE_REPLACE:
+        LinkFullSave_ReplaceLastSector();
+        gMultiplayerState.saveState = MP_SAVE_SIGNATURE;
+        break;
+    case MP_SAVE_SIGNATURE:
+        LinkFullSave_SetLastSectorSignature();
+        gMultiplayerState.saveState = MP_SAVE_IDLE;
+        break;
+    case MP_SAVE_IDLE:
+    default:
+        break;
+    }
+}
+
 // Overworld-only update: ghost NPC management and outbound position send.
 // Called from the overworld game loop, after Multiplayer_PollPackets has
 // already consumed incoming packets for this frame.
@@ -1067,8 +1126,12 @@ void Multiplayer_Update(void)
         // mid-battle pump in Multiplayer_BattleTick).
         TickPingAndBeacon();
 
-        // Auto-checkpoint: save on map change so progress isn't lost on disconnect.
-        if (gSaveBlock1Ptr)
+        // Auto-checkpoint: save on map change so progress isn't lost on
+        // disconnect.  Kicked off asynchronously (one sector/frame) so it never
+        // stalls the transition.  Only detect a new map while idle: if a save is
+        // still running we leave lastCkptMap unchanged so a second boundary
+        // crossed mid-save is caught on the frame the save completes.
+        if (gSaveBlock1Ptr && gMultiplayerState.saveState == MP_SAVE_IDLE)
         {
             u8 curMapGroup = (u8)gSaveBlock1Ptr->location.mapGroup;
             u8 curMapNum   = (u8)gSaveBlock1Ptr->location.mapNum;
@@ -1077,7 +1140,7 @@ void Multiplayer_Update(void)
             {
                 gMultiplayerState.lastCkptMapGroup = curMapGroup;
                 gMultiplayerState.lastCkptMapNum   = curMapNum;
-                TrySavingData(SAVE_NORMAL);
+                Multiplayer_RequestCheckpointSave();
                 Multiplayer_LogEvent(MPEVENT_MAP_ENTERED, curMapGroup, curMapNum, 0);
             }
         }
@@ -1108,6 +1171,10 @@ void Multiplayer_Update(void)
         MpRing_Write(&gMpSendRing, &freeByte, MP_PKT_SIZE_TRAINER_FREE);
         gMultiplayerState.sentBusyTrainer = FALSE;
     }
+
+    // Advance any in-flight async checkpoint save (no-op when idle).  Run
+    // unconditionally so a save started before a disconnect still completes.
+    Multiplayer_TickAsyncSave();
 }
 
 void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing)
@@ -2428,6 +2495,9 @@ void Multiplayer_OnBattleEnd(void)
 {
     if (gMultiplayerState.connState != MP_STATE_CONNECTED)
         return;
-    TrySavingData(SAVE_NORMAL);
+    // Async (one sector/frame), completed by Multiplayer_TickAsyncSave once
+    // control returns to the overworld — same anti-stall fix as the map-change
+    // checkpoint rather than a synchronous TrySavingData here.
+    Multiplayer_RequestCheckpointSave();
     Multiplayer_LogEvent(MPEVENT_CHECKPOINT, 0, 0, 0);
 }

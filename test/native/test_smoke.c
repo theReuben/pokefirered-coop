@@ -17,6 +17,12 @@ extern u16 gTestLastRemoteVarValue;
 // Controllable Random32 return value for Multiplayer_GenerateSeed tests.
 extern u32 gTestRandom32Value;
 
+// Async-checkpoint save: LinkFullSave_* stub call counters + ordered call log.
+extern int gLinkSaveInitCalls, gLinkSaveWriteCalls, gLinkSaveReplaceCalls, gLinkSaveSigCalls;
+extern int gLinkSaveSectorsToWrite;
+extern char gLinkSaveOrder[64];
+extern void LinkSave_ResetStubCounters(void);
+
 // ---- Test helpers --------------------------------------------------------
 
 static struct SaveBlock1 sTestSave;
@@ -627,6 +633,72 @@ static void TestGhostFollowsDuringPartnerScript(void)
     ASSERT_EQ(gObjectEvents[4].heldMovementActive, 1);
 }
 
+// ---- Async auto-checkpoint save --------------------------------------------
+
+// The map-change / battle-end checkpoint save must run one flash sector per
+// frame (driven by Multiplayer_Update) instead of busy-looping every sector in
+// one frame, so it never stalls a scene transition.  This drives the state
+// machine through a full save and asserts the LinkFullSave_* primitives fire
+// once each, in order, with exactly one WriteSector per sector.
+static void TestAsyncCheckpointSaveSequencing(void)
+{
+    int frames;
+
+    ResetAll();
+    LinkSave_ResetStubCounters();
+    gLinkSaveSectorsToWrite = 14; // NUM_SECTORS_PER_SLOT on the real target
+
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    SetPlayerMap(3, 5); // lastCkptMap defaults to 0xFF/0xFF, so this is "new"
+
+    // First update: detects the map change, requests the save, and runs the
+    // INIT step (LinkFullSave_Init) — but no sector has been written yet.
+    Multiplayer_Update();
+    ASSERT_EQ(gLinkSaveInitCalls,  1);
+    ASSERT_EQ(gLinkSaveWriteCalls, 0);
+
+    // Drive frames until the machine returns to idle.  Bound the loop so a
+    // stuck state machine fails the test instead of hanging.
+    for (frames = 0; gMultiplayerState.saveState != 0 && frames < 64; frames++)
+        Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.saveState, 0); // back to MP_SAVE_IDLE
+    ASSERT_EQ(gLinkSaveInitCalls,    1);
+    ASSERT_EQ(gLinkSaveWriteCalls,   14);
+    ASSERT_EQ(gLinkSaveReplaceCalls, 1);
+    ASSERT_EQ(gLinkSaveSigCalls,     1);
+    // Exact ordering: Init, 14 sector writes, replace-last, signature.
+    ASSERT(strcmp(gLinkSaveOrder, "IWWWWWWWWWWWWWWRS") == 0);
+
+    // A second update once idle must NOT start another save (map unchanged).
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.saveState, 0);
+    ASSERT_EQ(gLinkSaveInitCalls, 1);
+}
+
+// Battle-end checkpoint must request a save only while connected, and must do
+// it asynchronously (request without busy-looping the sectors inline).
+static void TestOnBattleEndRequestsAsyncSave(void)
+{
+    // Connected: OnBattleEnd should arm the async save (saveState leaves idle)
+    // without having driven any sector writes itself.
+    ResetAll();
+    LinkSave_ResetStubCounters();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    Multiplayer_OnBattleEnd();
+    ASSERT(gMultiplayerState.saveState != 0);
+    ASSERT_EQ(gLinkSaveInitCalls,  0); // not written inline — Update ticks it
+    ASSERT_EQ(gLinkSaveWriteCalls, 0);
+
+    // Disconnected: OnBattleEnd must be a no-op (no orphaned save).
+    ResetAll();
+    LinkSave_ResetStubCounters();
+    gMultiplayerState.connState = MP_STATE_DISCONNECTED;
+    Multiplayer_OnBattleEnd();
+    ASSERT_EQ(gMultiplayerState.saveState, 0);
+    ASSERT_EQ(gLinkSaveInitCalls, 0);
+}
+
 // ---- Step 4.2: Seeded PRNG --------------------------------------------------
 
 static void TestRngSameSeedSameSequence(void)
@@ -1184,5 +1256,10 @@ int main(void)
     TestBossReadyRequiresMatchingId();
     TestTrainerKeysDontCollideWithWildKeys();
     TestIsConnectedReflectsState();
+    // Registered last: these call ResetAll() (which nulls gSaveBlock1Ptr) and
+    // set up their own fixture, so they must not run mid-suite where later
+    // tests silently inherit a non-NULL gSaveBlock1Ptr from earlier ones.
+    TestAsyncCheckpointSaveSequencing();
+    TestOnBattleEndRequestsAsyncSave();
     TEST_SUMMARY();
 }
