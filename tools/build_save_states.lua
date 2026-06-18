@@ -10,9 +10,14 @@
 --   make build-states
 --
 -- State files are written to test/lua/states/:
---   oaks_lab.ss1          — starter ball table visible, no pick made yet
---   tall_grass_route1.ss1 — standing at Route 1 entry, can step into grass
---   pewter_gym.ss1        — inside Pewter City Gym, Brock visible (not yet fought)
+--   oaks_lab.ss1            — starter ball table visible, no pick made yet
+--   tall_grass_route1.ss1   — standing at Route 1 entry, can step into grass
+--   pewter_gym.ss1          — inside Pewter City Gym, Brock visible (not yet fought)
+--   p1_forest_trainer.ss1   — Viridian Forest (6,23), 1 tile S of UNDEFEATED bug
+--   p2_forest_trainer.ss1     catcher Sammy; press UP once → deterministic trainer
+--                             battle.  P1=Bulbasaur, P2=Charmander (asymmetric IDs).
+--                             Load the pair into p1/p2 to test the ghost catch-up
+--                             snap, busy-trainer lock (#18a) and approach mirror (#18b).
 --
 -- Map detection:
 --   waitForMap() polls gSaveBlock1Ptr->location each frame so map transitions
@@ -1001,15 +1006,46 @@ do
 end
 
 idle(120)  -- extra wait for rival's pick animation to fully settle
--- Player is at tile(10,5) after picking Charmander.  Don't rely on playerPos()
--- for lateral alignment — gObjectEvents is hardcoded and may be stale after a
--- ROM rebuild.  Use fixed tile counts instead: LEFT 4 reaches column 6, which
--- is the clear exit corridor.  Then hold DOWN until the warp fires.
--- Use continuous hold (same as Phase 8 exit) — walkToMap's step/A-spam cycle
--- gets stuck when the rival's animation sets field lock repeatedly.
-print("[states] charmander EXIT: LEFT 4 then continuous DOWN hold until warp fires")
-walk(KEY_LEFT, 4)   -- tile(10,5) → tile(6,5): clear of rival and ball table
+-- Player is at tile(10,5) after picking Charmander.  The Charmander ball sits at
+-- the RIGHT of the table (x=10); the ball-table furniture blocks leftward travel
+-- along rows 5-6, so the Bulbasaur-side "LEFT 2 then DOWN" exit does NOT work here.
+-- Verified-in-emulator exit path (2026-06-18, p2_rivals_lab + VAR_LAB=4):
+--   (10,5) --DOWN--> (10,7) [furniture stops descent on the east side]
+--          --LEFT--> (6,7)  [row 7 is the first clear lateral corridor]
+--          --DOWN--> warp at (6,12) fires into Pallet Town.
+-- gObjectEvents reads matched the raw memory tile here, so poll position to decide
+-- when each leg has stalled rather than guessing fixed counts.
+print("[states] charmander EXIT: DOWN to row 7, LEFT to col 6, DOWN through warp")
+do local x,y=playerPos(); print(string.format("[states] charmander EXIT pre-walk tile(%d,%d)", x-7, y-7)) end
+
+-- Leg 1: step DOWN one tile at a time until y stops increasing (wedged against
+-- the furniture row ~y=7).  Discrete walk(dir,1) steps — a continuous hold polled
+-- mid-step reads the same tile twice and bails after one tile.
+do
+    for _ = 1, 8 do
+        local _, oy = playerPos()
+        walk(KEY_DOWN, 1)
+        local _, ny = playerPos()
+        if ny == oy then break end
+    end
+    do local x,y=playerPos(); print(string.format("[states] charmander EXIT after DOWN leg tile(%d,%d)", x-7, y-7)) end
+end
+
+-- Leg 2: step LEFT one tile at a time until column 6 (clear central aisle) or
+-- blocked.  Row 7 is the first row clear of the ball-table furniture.
+do
+    for _ = 1, 8 do
+        local ox = ({playerPos()})[1] - 7
+        if ox <= 6 then break end
+        walk(KEY_LEFT, 1)
+        local nx = ({playerPos()})[1] - 7
+        if nx == ox then break end   -- blocked
+    end
+    do local x,y=playerPos(); print(string.format("[states] charmander EXIT after LEFT leg tile(%d,%d)", x-7, y-7)) end
+end
 idle(5)
+
+-- Leg 3: hold DOWN until the warp into Pallet Town fires.
 do
     local fired = false
     for i = 1, 600 do
@@ -1023,9 +1059,10 @@ do
             break
         end
         if i % 30 == 0 then
+            local px, py = playerPos()
             local lk = emu:read8(ADDR_FIELD_LOCK)
             local ct = emu:read8(ADDR_SCRIPT_STATUS)
-            print(string.format("[states] charmander EXIT hold i=%d lock=%d ctx=%d", i, lk, ct))
+            print(string.format("[states] charmander EXIT hold i=%d tile(%d,%d) lock=%d ctx=%d", i, px-7, py-7, lk, ct))
         end
     end
     if not fired then
@@ -1127,7 +1164,37 @@ local function reinjRepel()
         emu:write8(ADDR_COOP_SETTINGS, 0)
     end
 end
-print(string.format("[states] phase10 start tile(%d,%d)", ({playerPos()})[1]-7, ({playerPos()})[2]-7))
+-- ── Trainer defeat flag helpers ──────────────────────────────────────────────
+-- flags[] live at SaveBlock1 + 0x1270 (confirmed by the lab NPC hide byte at
+-- 0x1275); a trainer's defeat flag is TRAINER_FLAGS_START(0x500) + trainerId.
+local TRAINER_FLAGS_START = 0x500
+local FOREST_FLAGS_OFF    = 0x1270
+local function setTrainerFlag(tid)
+    local sb1 = emu:read32(ADDR_SB1_PTR); if sb1 == 0 then return end
+    local flag_id  = TRAINER_FLAGS_START + tid
+    local byte_idx = math.floor(flag_id / 8)
+    local mask     = math.floor(2 ^ (flag_id % 8) + 0.5)
+    local addr     = sb1 + FOREST_FLAGS_OFF + byte_idx
+    local v        = emu:read8(addr)
+    if v % (mask * 2) < mask then emu:write8(addr, v + mask) end
+end
+local function clearTrainerFlag(tid)
+    local sb1 = emu:read32(ADDR_SB1_PTR); if sb1 == 0 then return end
+    local flag_id  = TRAINER_FLAGS_START + tid
+    local byte_idx = math.floor(flag_id / 8)
+    local mask     = math.floor(2 ^ (flag_id % 8) + 0.5)
+    local addr     = sb1 + FOREST_FLAGS_OFF + byte_idx
+    local v        = emu:read8(addr)
+    if v % (mask * 2) >= mask then emu:write8(addr, v - mask) end
+end
+
+-- Navigate from a Route 1 entry state (tile 13,36) → Viridian → Route 2 →
+-- Viridian Forest tile (6,23), one tile south of bug catcher Sammy (7,22, faces
+-- LEFT, sight 4; cone = y=22, x=3-6).  The path to (6,23) never enters Sammy's
+-- cone, so his defeat flag is left UNSET — the saved state then triggers his
+-- battle on a single UP press.  Shared by Phase 10 (P1) and Phase 11 (P2).
+local function navToForestSammy()
+print(string.format("[states] forest-trainer nav start tile(%d,%d)", ({playerPos()})[1]-7, ({playerPos()})[2]-7))
 walk(KEY_UP,    4);  reinjRepel()  -- tile(13,36) → tile(13,32)
 walk(KEY_LEFT,  5);  reinjRepel()  -- tile(13,32) → tile(8,32)
 walk(KEY_UP,    5);  reinjRepel()  -- tile(8,32)  → tile(8,27)
@@ -1208,54 +1275,58 @@ walkToMap(KEY_UP, MAP.VID_FOREST, "Viridian Forest", 7200)
 -- entry tile (29,62) before counting path steps.
 idle(120)
 
--- Pre-set all Viridian Forest trainer defeat flags so trainer sight cones are
--- inactive during navigation.  TRAINER_FLAGS_START = 0x500 (flags.h).
--- flags[] is at SaveBlock1 offset 0x1270 (confirmed by lab NPC hide byte at 0x1275).
--- Trainers: Rick=14 (flag 0x50E), Doug=15 (0x50F), Sammy=16 (0x510),
---           Anthony=412 (0x69C), Charlie=413 (0x69D).
--- Sammy at (7,22) FACE_LEFT sight=4 sees tiles (3-6,22); the only terrain path
--- to the north exit crosses (6,22) — his defeat flag must be set or he engages.
-do
-    local sb1 = emu:read32(ADDR_SB1_PTR)
-    if sb1 ~= 0 then
-        local FLAGS_OFF           = 0x1270
-        local TRAINER_FLAGS_START = 0x500
-        local function setFlag(flag_id)
-            local byte_idx = math.floor(flag_id / 8)
-            local bit_pos  = flag_id % 8
-            local addr     = sb1 + FLAGS_OFF + byte_idx
-            local mask     = math.floor(2 ^ bit_pos + 0.5)
-            local v        = emu:read8(addr)
-            if v % (mask * 2) < mask then
-                emu:write8(addr, v + mask)
-            end
-        end
-        for _, tid in ipairs({14, 15, 16, 412, 413}) do
-            setFlag(TRAINER_FLAGS_START + tid)
-        end
-        print("[states] forest trainer defeat flags set (Rick/Doug/Sammy/Anthony/Charlie)")
-    end
-end
+-- Pre-set the four NON-Sammy Viridian Forest trainer defeat flags so their
+-- sight cones are inert during navigation.  Trainers: Rick=14, Doug=15,
+-- Anthony=412, Charlie=413.  Sammy (16, at (7,22) FACE_LEFT sight=4, cone
+-- (3-6,22)) is intentionally left UNDEFEATED — the (6,23) save point is the
+-- deterministic trigger for his battle.  The path to (6,23) stops short of his
+-- cone (the cone is only crossed by the later UP-10 step), so the other four
+-- flags are belt-and-braces.
+for _, tid in ipairs({14, 15, 412, 413}) do setTrainerFlag(tid) end
+print("[states] forest trainer flags set (Rick/Doug/Anthony/Charlie; Sammy left undefeated)")
 
--- NPC-aware BFS path from forest south entry (29,62) to north exit (5,9).
--- Detours around Youngster NPC at (29,58): go RIGHT before crossing y=58.
--- Crosses (6,22) which is in Sammy's sight cone — safe with defeat flag set above.
+-- NPC-aware BFS path from forest south entry (29,62) to (6,23) — one tile south
+-- of Sammy.  This is the first 16 steps of the original 19-step exit path;
+-- detours around Youngster NPC at (29,58) (go RIGHT before crossing y=58).  The
+-- remaining 3 steps (UP 10 onward, which crosses Sammy's cone) run later, after
+-- the forest-trainer state is saved and Sammy's flag is set.
 do
     local rx, ry = playerPos()
     print(string.format("[states] forest entry tile(%d,%d)", rx-7, ry-7))
-    local FOREST_SEQ = {
+    local FOREST_SEQ_TO_SAMMY = {
         {KEY_UP,    3}, {KEY_RIGHT, 1}, {KEY_UP,    1}, {KEY_RIGHT, 1},
         {KEY_UP,    3}, {KEY_RIGHT, 8}, {KEY_UP,   36}, {KEY_LEFT,  7},
         {KEY_DOWN,  4}, {KEY_LEFT,  9}, {KEY_UP,   13}, {KEY_LEFT,  8},
         {KEY_DOWN, 17}, {KEY_LEFT,  8}, {KEY_UP,    4}, {KEY_LEFT,  1},
-        {KEY_UP,   10}, {KEY_LEFT,  1}, {KEY_UP,    4},
     }
-    for _, move in ipairs(FOREST_SEQ) do
+    for _, move in ipairs(FOREST_SEQ_TO_SAMMY) do
         walk(move[1], move[2])
         local sb1 = emu:read32(ADDR_SB1_PTR)
         if sb1 ~= 0 then emu:write16(sb1 + REPEL_OFF, 9999) end
     end
     rx, ry = playerPos()
+    local tx, ty = rx - 7, ry - 7
+    print(string.format("[states] forest-trainer save tile(%d,%d) [want (6,23)]", tx, ty))
+    if tx ~= 6 or ty ~= 23 then
+        print(string.format("[states] WARNING: forest-trainer nav off target — expected (6,23), got (%d,%d)", tx, ty))
+    end
+end
+end  -- navToForestSammy
+
+-- ── PHASE 10 (cont.): P1 forest-trainer state, then finish to Pewter ─────────
+navToForestSammy()
+clearTrainerFlag(16)   -- ensure Sammy is UNDEFEATED in the saved fixture
+saveState("p1_forest_trainer.ss1")
+setTrainerFlag(16)     -- defeat Sammy again so the UP-10 cone crossing is safe
+-- Remaining 3 steps of the original exit path: cross Sammy's (now inert) cone
+-- and reach the north exit warp (5,9).
+for _, move in ipairs({ {KEY_UP, 10}, {KEY_LEFT, 1}, {KEY_UP, 4} }) do
+    walk(move[1], move[2])
+    local sb1 = emu:read32(ADDR_SB1_PTR)
+    if sb1 ~= 0 then emu:write16(sb1 + REPEL_OFF, 9999) end
+end
+do
+    local rx, ry = playerPos()
     print(string.format("[states] forest exit tile(%d,%d)", rx-7, ry-7))
 end
 
@@ -1385,6 +1456,35 @@ end
 
 -- ── CHECKPOINT 3: pewter_gym.ss1 ──────────────────────────────────────────────
 saveState("pewter_gym.ss1")
+
+-- ── PHASE 11: p2_forest_trainer.ss1 ──────────────────────────────────────────
+-- Produce the P2 half of the field-trainer fixture from p2_route1.ss1 (Charmander,
+-- distinct trainer ID, connState=0) using the same navigation as Phase 10.  Two
+-- asymmetric states are required: ENGINEERING_DISCIPLINE warns that symmetric
+-- fixtures hide role-dependent bugs, and loading one .ss1 into both instances
+-- collides on trainer ID / save data.
+print("[states] phase 11: p2 forest-trainer state")
+do
+    local f = io.open(STATES_DIR .. "p2_route1.ss1", "rb")
+    if f then
+        local buf = f:read("*all"); f:close()
+        emu:loadStateBuffer(buf)
+        idle(60)
+        print("[states] Phase 11: reloaded p2_route1.ss1")
+        if ADDR_COOP_SETTINGS and ADDR_COOP_SETTINGS ~= 0 then
+            emu:write8(ADDR_COOP_SETTINGS, 0)   -- randomizeEncounters = OFF
+        end
+        do
+            local sb1 = emu:read32(ADDR_SB1_PTR)
+            if sb1 ~= 0 then emu:write16(sb1 + REPEL_OFF, 9999) end
+        end
+        navToForestSammy()
+        clearTrainerFlag(16)   -- Sammy UNDEFEATED in the saved fixture
+        saveState("p2_forest_trainer.ss1")
+    else
+        print("[states] Phase 11: p2_route1.ss1 not found — skipping p2_forest_trainer.ss1")
+    end
+end
 
 -- ── Done ──────────────────────────────────────────────────────────────────────
 print("[states] All checkpoints saved to " .. STATES_DIR)

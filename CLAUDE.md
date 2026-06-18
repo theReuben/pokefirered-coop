@@ -407,10 +407,14 @@ Loading the same `.ss1` file for both instances causes conflicts: both instances
 | `p2_rivals_lab.ss1` | P2 | Charmander in party; VAR_LAB=3; rival battle coord trigger live |
 | `p1_route1.ss1` | P1 | Bulbasaur; Route 1 entry |
 | `p2_route1.ss1` | P2 | Charmander; Route 1 entry |
+| `p1_forest_trainer.ss1` | P1 | Viridian Forest `(6,23)`, 1 tile S of UNDEFEATED bug catcher Sammy; press UP once → deterministic trainer battle |
+| `p2_forest_trainer.ss1` | P2 | Same, Charmander/distinct ID |
 | `tall_grass_route1.ss1` | either | Route 1 tall grass (single-player use only) |
 | `pewter_gym.ss1` | either | Pewter Gym, Brock visible (single-player use only) |
 
 For the co-op rival battle specifically: start p1 with `p1_rivals_lab.ss1` and p2 with `p2_rivals_lab.ss1`. Both states have `connState=0` so the relay will inject `PARTNER_CONNECTED` automatically.
+
+For the field-trainer fixture (ghost catch-up snap, busy-trainer lock #18a, trainer-approach mirror #18b): start p1 with `p1_forest_trainer.ss1` and p2 with `p2_forest_trainer.ss1` (both `connState=0`). Press UP once on either instance to step into Sammy's cone and start a regular (non-coop) trainer battle while the partner roams the shared map.
 
 #### Sync check protocol — fail fast on desync
 
