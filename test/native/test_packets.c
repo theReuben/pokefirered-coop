@@ -983,17 +983,18 @@ static void TestBeaconSenderCarriesBusyTrainerOutsideCoopBattle(void)
     gMultiplayerState.connState = MP_STATE_CONNECTED;
     gBattleTypeFlags = 0; // overworld (not a coop battle)
 
-    // The lock is held only while gMain.inBattle (Multiplayer_Update auto-sends
-    // TRAINER_FREE and clears sentBusyTrainer the instant we're back in the
-    // overworld).  Set inBattle so the lock persists across this synthetic
-    // Update loop and we can observe the beacon packing — mirrors holding the
-    // lock for the duration of the trainer battle.
-    gMain.inBattle = TRUE;
+    // The lock is held from spotting until Multiplayer_OnBattleEnd, independent
+    // of gMain.inBattle: SendTrainerBusy fires at spotting (field intro, inBattle
+    // still FALSE), so the lock must survive overworld Update frames where
+    // inBattle is FALSE.  inBattle is left FALSE here precisely to prove the lock
+    // is no longer cleared by an Update-frame poll (the pre-battle-clear bug
+    // fixed 2026-06-18).
     Multiplayer_SendTrainerBusy(7, 3, 16);
     { u8 out; while (Mp_Pop(&gMpSendRing, &out)) {} } // drain the one-shot BUSY
 
     for (frame = 0; frame < MP_BEACON_INTERVAL_FRAMES; frame++)
         Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.sentBusyTrainer, TRUE); // not cleared by Update
     for (;;)
     {
         ASSERT_EQ(Mp_Pop(&gMpSendRing, &pkt[0]), TRUE);
@@ -1007,11 +1008,23 @@ static void TestBeaconSenderCarriesBusyTrainerOutsideCoopBattle(void)
     ASSERT_EQ(pkt[7], 16); // mapNum
     ASSERT_EQ(pkt[8], MP_BEACON_BUSYTRAINER_BIT);
 
-    // Battle ends — back in the overworld, the auto-FREE clears the lock and the
-    // beacon's turn bytes go back to zero (a present-bit-0 beacon, which is what
-    // repairs a dropped TRAINER_FREE on the partner's side).
-    gMain.inBattle = FALSE;
+    // Battle ends — Multiplayer_OnBattleEnd releases the lock (clears the flag
+    // and emits an explicit MP_PKT_TRAINER_FREE), after which the beacon's turn
+    // bytes go back to zero (a present-bit-0 beacon, which repairs a dropped
+    // TRAINER_FREE on the partner's side).
     { u8 out; while (Mp_Pop(&gMpSendRing, &out)) {} }
+    Multiplayer_OnBattleEnd();
+    ASSERT_EQ(gMultiplayerState.sentBusyTrainer, FALSE);
+    {
+        bool32 sawFree = FALSE;
+        u8 b;
+        while (Mp_Pop(&gMpSendRing, &b))
+        {
+            if (b == MP_PKT_TRAINER_FREE)
+                sawFree = TRUE;
+        }
+        ASSERT_EQ(sawFree, TRUE); // explicit FREE emitted at battle end
+    }
     for (frame = 0; frame < MP_BEACON_INTERVAL_FRAMES; frame++)
         Multiplayer_Update();
     for (;;)

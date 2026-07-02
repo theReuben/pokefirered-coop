@@ -23,6 +23,7 @@ Add to Claude Code:
 """
 
 import base64
+import heapq
 import json
 import os
 import random
@@ -965,6 +966,333 @@ def drive_to_tile(
 
     return (f"{instance_id}: gave up after {max_presses} presses at tile ({x},{y}); "
             f"target ({target_x},{target_y}) not reached. Path: {path}")
+
+
+# ── Collision map / pathfinding ────────────────────────────────────────────
+#
+# The game keeps a live collision grid in IWRAM at gBackupMapLayout:
+#   struct { s32 width; s32 height; u16 *map; }
+# Each cell is a u16: bits 0-9 metatile id, bits 10-11 collision, 12-15 elev.
+# A tile is a WALL if cell == 0x03FF (MAPGRID_UNDEFINED border) or any
+# collision bit is set; otherwise it is walkable floor.  Static collision is
+# necessary but NOT sufficient: dynamic object events (NPCs, the partner
+# ghost) occupy tiles the grid marks walkable, so true walkability =
+# (grid floor) AND (no object on the tile).  These helpers overlay both.
+
+MAP_OFFSET = 7  # pokeemerald/FRLG: raw grid coord = tile coord + MAP_OFFSET
+
+
+def _read_u16_array(inst: "Instance", addr: int, count: int) -> list[int]:
+    """Read `count` u16 values from addr, chunked to respect the per-call cap."""
+    out: list[int] = []
+    off = 0
+    while off < count:
+        n = min(256, count - off)
+        r = inst.send_locked(
+            {"cmd": "read_range", "addr": addr + off * 2, "count": n, "width": 16})
+        if not r.get("ok"):
+            raise RuntimeError(f"read failed at 0x{addr + off*2:08X}: {r.get('error')}")
+        out.extend(int(v, 16) for v in r["values"])
+        off += n
+    return out
+
+
+def _read_u32(inst: "Instance", addr: int) -> int:
+    r = inst.send_locked({"cmd": "read_range", "addr": addr, "count": 1, "width": 32})
+    if not r.get("ok"):
+        raise RuntimeError(f"read failed at 0x{addr:08X}: {r.get('error')}")
+    return int(r["values"][0], 16)
+
+
+def _read_u8(inst: "Instance", addr: int) -> int:
+    r = inst.send_locked({"cmd": "read_range", "addr": addr, "count": 1, "width": 8})
+    if not r.get("ok"):
+        raise RuntimeError(f"read failed at 0x{addr:08X}: {r.get('error')}")
+    return int(r["values"][0], 16)
+
+
+def _cell_is_wall(cell: int) -> bool:
+    """Decode one gBackupMapLayout cell → True if impassable."""
+    return cell == 0x03FF or (cell & 0x0C00) != 0
+
+
+def _read_map_grid(inst: "Instance") -> tuple[int, int, list[int]]:
+    """Return (width, height, cells) of the current map's collision grid."""
+    base = inst.addrs.get("gBackupMapLayout", 0x0300267C)
+    hdr = inst.send_locked({"cmd": "read_range", "addr": base, "count": 3, "width": 32})
+    if not hdr.get("ok"):
+        raise RuntimeError(f"failed to read gBackupMapLayout: {hdr.get('error')}")
+    width   = int(hdr["values"][0], 16)
+    height  = int(hdr["values"][1], 16)
+    map_ptr = int(hdr["values"][2], 16)
+    if not (0 < width <= 1000 and 0 < height <= 1000) or map_ptr == 0:
+        raise RuntimeError(
+            f"implausible map layout w={width} h={height} ptr=0x{map_ptr:08X} "
+            "(is a map loaded?)")
+    cells = _read_u16_array(inst, map_ptr, width * height)
+    return width, height, cells
+
+
+def _read_objects(inst: "Instance") -> list[dict]:
+    """Read active object events → [{slot, x, y}] in tile coords (slot 0 = player)."""
+    base = inst.addrs.get("gObjectEvents", 0x020015C0)
+    OBJ_COUNT = 16          # OBJECT_EVENTS_COUNT in FRLG
+    STRIDE_U16 = 18         # sizeof(struct ObjectEvent) == 0x24
+    raw = _read_u16_array(inst, base, OBJ_COUNT * STRIDE_U16)
+    objs = []
+    for i in range(OBJ_COUNT):
+        o = raw[i * STRIDE_U16:(i + 1) * STRIDE_U16]
+        if not (o[0] & 1):          # bitfield: bit0 = active
+            continue
+        rx, ry = o[8], o[9]         # currentCoords at +0x10 / +0x12 (s16)
+        if rx >= 0x8000:
+            rx -= 0x10000
+        if ry >= 0x8000:
+            ry -= 0x10000
+        objs.append({"slot": i, "x": rx - MAP_OFFSET, "y": ry - MAP_OFFSET})
+    return objs
+
+
+def _read_warps(inst: "Instance") -> list[dict]:
+    """Read this map's warp (exit) tiles from gMapHeader->events->warps."""
+    hbase = inst.addrs.get("gMapHeader", 0x02001AD4)
+    events_ptr = _read_u32(inst, hbase + 0x04)
+    if (events_ptr >> 24) not in (0x02, 0x03, 0x08, 0x09):
+        return []
+    warp_count = _read_u8(inst, events_ptr + 0x01)
+    warps_ptr = _read_u32(inst, events_ptr + 0x08)
+    if (warps_ptr >> 24) not in (0x02, 0x03, 0x08, 0x09):
+        return []
+    warps = []
+    for i in range(min(warp_count, 64)):
+        wr = inst.send_locked(
+            {"cmd": "read_range", "addr": warps_ptr + i * 8, "count": 2, "width": 16})
+        if not wr.get("ok"):
+            continue
+        wx, wy = int(wr["values"][0], 16), int(wr["values"][1], 16)
+        if wx >= 0x8000:
+            wx -= 0x10000
+        if wy >= 0x8000:
+            wy -= 0x10000
+        warps.append({"x": wx, "y": wy})  # warp templates use 0-based tile coords
+    return warps
+
+
+def _build_nav(inst: "Instance") -> dict:
+    """Read grid + objects + warps into one structure for rendering / pathfinding."""
+    width, height, cells = _read_map_grid(inst)
+    try:
+        objs = _read_objects(inst)
+    except Exception:
+        objs = []
+    try:
+        warps = _read_warps(inst)
+    except Exception:
+        warps = []
+    player = next((o for o in objs if o["slot"] == 0), None)
+    return {"width": width, "height": height, "cells": cells,
+            "objs": objs, "warps": warps, "player": player}
+
+
+def _nav_walkable(nav: dict, tx: int, ty: int, ignore: set) -> bool:
+    """True if tile (tx,ty) is floor AND unoccupied (tiles in `ignore` skip the object check)."""
+    w, h = nav["width"], nav["height"]
+    rx, ry = tx + MAP_OFFSET, ty + MAP_OFFSET
+    if not (0 <= rx < w and 0 <= ry < h):
+        return False
+    if _cell_is_wall(nav["cells"][ry * w + rx]):
+        return False
+    for o in nav["objs"]:
+        if (o["x"], o["y"]) == (tx, ty) and (tx, ty) not in ignore:
+            return False
+    return True
+
+
+def _astar(nav: dict, start: tuple, goal: tuple) -> "list[tuple] | None":
+    """4-neighbour A* over walkable tiles. start tile is always passable (player stands there)."""
+    ignore = {start}
+    if not _nav_walkable(nav, goal[0], goal[1], ignore):
+        return None
+    openh = [(abs(start[0] - goal[0]) + abs(start[1] - goal[1]), 0, start)]
+    came: dict = {start: None}
+    cost: dict = {start: 0}
+    while openh:
+        _, g, cur = heapq.heappop(openh)
+        if cur == goal:
+            path = [cur]
+            while came[path[-1]] is not None:
+                path.append(came[path[-1]])
+            return path[::-1]
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nxt = (cur[0] + dx, cur[1] + dy)
+            if not _nav_walkable(nav, nxt[0], nxt[1], ignore):
+                continue
+            ng = g + 1
+            if nxt not in cost or ng < cost[nxt]:
+                cost[nxt] = ng
+                came[nxt] = cur
+                h = abs(nxt[0] - goal[0]) + abs(nxt[1] - goal[1])
+                heapq.heappush(openh, (ng + h, ng, nxt))
+    return None
+
+
+# ── Tool: collision_map ────────────────────────────────────────────────────
+
+@mcp.tool()
+def collision_map(instance_id: str = "p1", radius: int = 0) -> str:
+    """Render the current room/map as an ASCII walkability grid from tile data.
+
+    Reads the live collision grid (gBackupMapLayout) and overlays dynamic
+    object events (NPCs, the partner ghost) and warp tiles, so you can SEE
+    which tiles are walkable before moving — instead of guessing tile counts.
+
+    Legend:  P = player   N = NPC/ghost (blocks)   D = warp/exit
+             # = wall      . = walkable floor
+
+    Coordinates shown are in-game tile coords (the same coords read from
+    gObjectEvents and used by drive_to_tile / path_to).
+
+    Args:
+        instance_id: Which instance to inspect ('p1' or 'p2').
+        radius: If > 0, crop to a (2*radius+1) window centred on the player
+            (useful for large outdoor maps). 0 = render the whole map interior.
+    """
+    inst = _inst(instance_id)
+    try:
+        nav = _build_nav(inst)
+    except Exception as e:
+        return f"collision_map failed: {e}"
+
+    w, h = nav["width"], nav["height"]
+    inner_w, inner_h = w - 2 * MAP_OFFSET, h - 2 * MAP_OFFSET
+    if inner_w <= 0 or inner_h <= 0:
+        return f"collision_map: degenerate interior ({inner_w}x{inner_h})"
+
+    obj_tiles = {(o["x"], o["y"]): o for o in nav["objs"]}
+    warp_tiles = {(wp["x"], wp["y"]) for wp in nav["warps"]}
+    player = nav["player"]
+
+    # Determine the tile window to render.
+    x0, y0, x1, y1 = 0, 0, inner_w - 1, inner_h - 1
+    if radius > 0 and player is not None:
+        x0 = max(0, player["x"] - radius); x1 = min(inner_w - 1, player["x"] + radius)
+        y0 = max(0, player["y"] - radius); y1 = min(inner_h - 1, player["y"] + radius)
+
+    def ch(tx: int, ty: int) -> str:
+        if player is not None and (tx, ty) == (player["x"], player["y"]):
+            return "P"
+        if (tx, ty) in obj_tiles:
+            return "N"
+        rx, ry = tx + MAP_OFFSET, ty + MAP_OFFSET
+        wall = _cell_is_wall(nav["cells"][ry * w + rx])
+        if (tx, ty) in warp_tiles:
+            return "D"
+        return "#" if wall else "."
+
+    # Header row with tens/ones digits of the x tile coords.
+    tens = "    " + "".join(str((x // 10) % 10) if x % 5 == 0 else " " for x in range(x0, x1 + 1))
+    ones = "    " + "".join(str(x % 10) for x in range(x0, x1 + 1))
+    rows = [tens, ones]
+    for ty in range(y0, y1 + 1):
+        rows.append(f"{ty:3d} " + "".join(ch(tx, ty) for tx in range(x0, x1 + 1)))
+
+    pstr = f"({player['x']},{player['y']})" if player else "unknown"
+    npcs = [f"({o['x']},{o['y']})" for o in nav["objs"] if o["slot"] != 0]
+    warps = [f"({wp['x']},{wp['y']})" for wp in nav["warps"]]
+    summary = [
+        f"{instance_id}: map {w}x{h} (interior {inner_w}x{inner_h})  player={pstr}",
+        f"NPCs/ghost: {', '.join(npcs) if npcs else 'none'}",
+        f"warps: {', '.join(warps) if warps else 'none'}",
+        "P=player N=blocker D=warp #=wall .=floor",
+        "",
+    ]
+    return "\n".join(summary + rows)
+
+
+# ── Tool: path_to ──────────────────────────────────────────────────────────
+
+@mcp.tool()
+def path_to(
+    target_x: int,
+    target_y: int,
+    instance_id: str = "p1",
+    max_recompute: int = 4,
+) -> str:
+    """Walk the player to a target tile using A* over real collision data.
+
+    Builds a walkability grid from gBackupMapLayout + object events, plans a
+    shortest path with A*, then executes it step by step with position
+    feedback.  If a step is unexpectedly blocked (e.g. the partner ghost
+    moved onto the path), it re-reads the map and replans.  This replaces
+    hand-tuned tile-counting, which breaks on object-occupied tiles.
+
+    Args:
+        target_x, target_y: Destination tile coords (as shown by collision_map).
+        instance_id: Which instance to drive ('p1' or 'p2').
+        max_recompute: Max replans before giving up (default 4).
+
+    Returns whether the target was reached and the executed step count.
+    """
+    inst = _inst(instance_id)
+    MASKS = {"L": 0x020, "R": 0x010, "U": 0x040, "D": 0x080}
+
+    def dir_for(c, n):
+        if n[0] < c[0]:
+            return "L"
+        if n[0] > c[0]:
+            return "R"
+        if n[1] < c[1]:
+            return "U"
+        if n[1] > c[1]:
+            return "D"
+        return None
+
+    presses = 0
+    last = None
+    for attempt in range(max_recompute + 1):
+        try:
+            nav = _build_nav(inst)
+        except Exception as e:
+            return f"path_to failed: {e}"
+        if nav["player"] is None:
+            return "path_to failed: could not locate player (object slot 0 inactive)"
+        start = (nav["player"]["x"], nav["player"]["y"])
+        last = start
+        if start == (target_x, target_y):
+            return f"{instance_id}: already at ({target_x},{target_y})"
+        path = _astar(nav, start, (target_x, target_y))
+        if path is None:
+            return (f"{instance_id}: no path from {start} to ({target_x},{target_y}) "
+                    f"— target is a wall, occupied, or unreachable")
+
+        cur = start
+        replanned = False
+        for nxt in path[1:]:
+            d = dir_for(cur, nxt)
+            # Up to two presses: the first may only turn in place if the player
+            # was facing another way; the second actually steps.
+            moved = False
+            for _ in range(2):
+                inst.send_locked({"cmd": "press", "mask": MASKS[d], "hold": 16, "release": 8})
+                presses += 1
+                ax, ay = _read_player_tile(inst)
+                last = (ax, ay)
+                if (ax, ay) == nxt:
+                    moved = True
+                    break
+                if (ax, ay) != cur:
+                    break   # diverged onto an unplanned tile — replan
+            if (ax, ay) == (target_x, target_y):
+                return f"{instance_id}: reached ({target_x},{target_y}) in {presses} presses"
+            if not moved:
+                replanned = True
+                break       # blocked or diverged → break to outer replan loop
+            cur = (ax, ay)
+        if not replanned and last == (target_x, target_y):
+            return f"{instance_id}: reached ({target_x},{target_y}) in {presses} presses"
+
+    return (f"{instance_id}: gave up after {max_recompute} replans at {last}; "
+            f"target ({target_x},{target_y}) not reached")
 
 
 # ── Tool: read_memory ────────────────────────────────────────────────────

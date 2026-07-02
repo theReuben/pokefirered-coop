@@ -35,6 +35,8 @@ WANTED_PATTERNS = [
     r"^gSaveblock1$",               # the actual SaveBlock1 struct (no game loaded → ptr is NULL)
     r"^gSaveBlock2Ptr$",            # pointer to SaveBlock2 (options, trainer info)
     r"^gObjectEvents$",             # object-event array base; [0] is the player avatar
+    r"^gBackupMapLayout$",          # runtime collision grid {s32 w; s32 h; u16 *map} — walkability source
+    r"^gMapHeader$",                # current map header; ->events->warps gives exit tiles
     # text-box state symbols (static — only found in ELF, not in map file)
     r"^sFirstTextPrinter$",         # non-NULL while a TextPrinter node is in the linked list
     r"^sGlobalScriptContextStatus$",# script context status byte (0=RUNNING 1=WAITING 2=SHUTDOWN)

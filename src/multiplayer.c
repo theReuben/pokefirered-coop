@@ -1261,13 +1261,12 @@ void Multiplayer_Update(void)
         }
     }
 
-    // When our own trainer battle ends, notify partner so they drop the busy state.
-    if (gMultiplayerState.sentBusyTrainer && !gMain.inBattle)
-    {
-        u8 freeByte = MP_PKT_TRAINER_FREE;
-        MpRing_Write(&gMpSendRing, &freeByte, MP_PKT_SIZE_TRAINER_FREE);
-        gMultiplayerState.sentBusyTrainer = FALSE;
-    }
+    // NOTE: the field-trainer lock is released in Multiplayer_OnBattleEnd, NOT
+    // here.  A `sentBusyTrainer && !gMain.inBattle` poll at this point used to
+    // fire during the pre-battle "!"+intro (which runs on the FIELD, inBattle
+    // still FALSE) and cleared the lock ~1 frame after SendTrainerBusy set it —
+    // before the battle even began — so the partner's vision-cone suppression
+    // never engaged (observed 2026-06-18 on the forest-trainer fixture).
 
     // Advance any in-flight async checkpoint save (no-op when idle).  Run
     // unconditionally so a save started before a disconnect still completes.
@@ -2607,6 +2606,25 @@ void Multiplayer_SendEventLog(void)
 
 void Multiplayer_OnBattleEnd(void)
 {
+    // Release the field-trainer lock the instant our battle ends.  It is set at
+    // spotting in Multiplayer_SendTrainerBusy and held through the approach/intro
+    // and the whole battle (the state beacon re-carries it every interval from
+    // both Multiplayer_Update pre-battle and Multiplayer_BattleTick during the
+    // battle).  This hook fires from SetBattleEndCallbacks right after
+    // gMain.inBattle is set FALSE, for non-link battles only — exactly the
+    // field-trainer case.  Clear the local flag UNCONDITIONALLY so a disconnect
+    // mid-battle can't strand it set (the beacon would re-broadcast a stuck lock
+    // on reconnect); only emit the explicit FREE packet while still connected.
+    if (gMultiplayerState.sentBusyTrainer)
+    {
+        gMultiplayerState.sentBusyTrainer = FALSE;
+        if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+        {
+            u8 freeByte = MP_PKT_TRAINER_FREE;
+            MpRing_Write(&gMpSendRing, &freeByte, MP_PKT_SIZE_TRAINER_FREE);
+        }
+    }
+
     if (gMultiplayerState.connState != MP_STATE_CONNECTED)
         return;
     // Async (one sector/frame), completed by Multiplayer_TickAsyncSave once
