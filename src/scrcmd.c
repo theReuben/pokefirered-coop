@@ -60,6 +60,7 @@
 #include "tv.h"
 #include "window.h"
 #include "list_menu.h"
+#include "load_save.h"
 #include "malloc.h"
 #include "battle.h"
 #include "constants/battle_frontier.h"
@@ -3414,6 +3415,12 @@ bool8 ScrCmd_waitcoopparty(struct ScriptContext *ctx)
     gMultiplayerState.gotPartnerParty      = FALSE;
     gMultiplayerState.partnerGotMyParty    = FALSE;
     gMultiplayerState.partySyncResendTimer = 0;
+    // Stash the full pre-battle party BEFORE the menu can reorder it.  The
+    // selection callback overwrites gPlayerParty[0..n-1] and battle setup
+    // loads partner mons into [MULTI_PARTY_SIZE..]; Multiplayer_OnBattleEnd
+    // writes battle results back into the stash and reloads it.
+    SavePlayerParty();
+    gMultiplayerState.coopPartyStashed = TRUE;
     gMain.savedCallback = CB2_CoopPartySelected;
     InitChooseHalfPartyForBattle(0);
     ScriptContext_Stop();

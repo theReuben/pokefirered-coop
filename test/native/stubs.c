@@ -269,6 +269,44 @@ u8 CreateTask(void (*func)(u8), u8 priority)
 // ---------------------------------------------------------------------------
 struct Pokemon gPlayerParty[PARTY_SIZE * 2];
 u8 gPlayerPartyCount;
+
+// Saved-party stash, mirroring load_save.c semantics: a PARTY_SIZE snapshot
+// separate from the live gPlayerParty.  Backs the coop stash/restore tests.
+struct Pokemon gSavedPlayerParty[PARTY_SIZE];
+static u8 sSavedPlayerPartyCount;
+
+void SavePlayerPartyMon(u32 index, struct Pokemon *mon)
+{
+    if (index < PARTY_SIZE)
+        gSavedPlayerParty[index] = *mon;
+}
+
+struct Pokemon *GetSavedPlayerPartyMon(u32 index)
+{
+    return &gSavedPlayerParty[index % PARTY_SIZE];
+}
+
+u8 *GetSavedPlayerPartyCount(void)
+{
+    return &sSavedPlayerPartyCount;
+}
+
+void SavePlayerParty(void)
+{
+    int i;
+    sSavedPlayerPartyCount = gPlayerPartyCount;
+    for (i = 0; i < PARTY_SIZE; i++)
+        gSavedPlayerParty[i] = gPlayerParty[i];
+}
+
+void LoadPlayerParty(void)
+{
+    int i;
+    gPlayerPartyCount = sSavedPlayerPartyCount;
+    for (i = 0; i < PARTY_SIZE; i++)
+        gPlayerParty[i] = gSavedPlayerParty[i];
+}
+
 struct MultiPartnerMenuPokemon gMultiPartnerParty[MULTI_PARTY_SIZE];
 u32 gBattleTypeFlags;
 

@@ -11,6 +11,7 @@
 #include "link.h"
 #include "task.h"
 #include "pokemon.h"
+#include "load_save.h"
 #include "battle_main.h"
 #include "party_menu.h"
 #include "overworld.h"
@@ -46,6 +47,14 @@ struct MpEventEntry {
 };
 EWRAM_DATA static struct MpEventEntry sMpEventLog[MP_EVENT_LOG_SIZE];
 EWRAM_DATA static u8 sMpEventLogCount;
+// Partner's synced battle party, held OUT of gPlayerParty until battle setup.
+// The partner's MP_PKT_PARTY_SYNC can arrive before the local player has even
+// opened their selection menu (the two scripts run unsynchronized), so writing
+// it straight into gPlayerParty[MULTI_PARTY_SIZE..] would clobber a >3-mon
+// local party before the waitcoopparty stash is taken.  Copied into
+// gPlayerParty by Multiplayer_SetupCoopBattle, restored out again by the
+// battle-end LoadPlayerParty.
+EWRAM_DATA static struct Pokemon sPartnerBattleParty[MULTI_PARTY_SIZE];
 
 // Address discovery table in IWRAM.  Populated once by Multiplayer_Init.
 // Tauri scans IWRAM for MP_DISCOVERY_MAGIC at index 0, then reads [1]–[5].
@@ -892,6 +901,8 @@ void Multiplayer_Init(void)
     gMultiplayerState.bossReadyBossId    = 0;
     gMultiplayerState.partnerBossId      = 0;
     gMultiplayerState.bossResendTimer    = 0;
+    gMultiplayerState.coopPartyStashed   = FALSE;
+    gMultiplayerState.coopSelectedCount  = 0;
     gMultiplayerState.pingTimer          = 0;
     gMultiplayerState.lastCkptMapGroup   = 0xFF;
     gMultiplayerState.lastCkptMapNum     = 0xFF;
@@ -2367,7 +2378,7 @@ void Multiplayer_HandleRemotePartySync(const u8 *data, u8 n_mons)
     for (i = 0; i < n_mons; i++)
     {
         struct MpWirePartyMon w;
-        struct Pokemon *mon = &gPlayerParty[MULTI_PARTY_SIZE + i];
+        struct Pokemon *mon = &sPartnerBattleParty[i];
 
         if (!Mp_DecodePartyMon(data + i * MP_PKT_PARTY_SYNC_MON_SIZE, &w))
             return;
@@ -2384,7 +2395,8 @@ void Multiplayer_HandleRemotePartySync(const u8 *data, u8 n_mons)
         gMultiPartnerParty[i].gender      = w.gender;
         gMultiPartnerParty[i].language    = w.language;
 
-        // Battle-engine copy in the partner half of gPlayerParty.  CreateMon
+        // Battle-engine copy, staged in sPartnerBattleParty until
+        // Multiplayer_SetupCoopBattle moves it into gPlayerParty.  CreateMon
         // does NOT compute stats (only CreateMonWithIVs does), so every stat
         // field must be written explicitly here — a mon left at 0 HP gets
         // flagged absent by TryDoEventsBeforeFirstTurn and battler 2 silently
@@ -2464,9 +2476,13 @@ void CB2_CoopPartySelected(void)
     for (i = 0; i < MAX_FRONTIER_PARTY_SIZE; i++)
     {
         u8 slot = gSelectedOrderFromParty[i];
-        if (slot == 0) break;
+        if (slot == 0 || n >= MULTI_PARTY_SIZE) break;
+        // Remember each pick's original party index so the battle-end restore
+        // can write its post-battle state back to the right stash slot.
+        gMultiplayerState.coopSelectedSlots[n] = slot - 1;
         scratch[n++] = gPlayerParty[slot - 1];
     }
+    gMultiplayerState.coopSelectedCount = n;
     // Write selected mons back to front of party; leave the rest unchanged
     // (battle engine only reads up to MULTI_PARTY_SIZE from gPlayerParty[0..]).
     for (i = 0; i < n; i++)
@@ -2538,10 +2554,18 @@ void Multiplayer_SetupCoopBattle(void)
     // stream — still lockstep, just not per-battle fresh.
     gMultiplayerState.coopRngState = gMultiplayerState.coopBattleSeed;
 
-    // If the party sync exchange happened (waitpartysync completed), gMultiPartnerParty
-    // and gPlayerParty[MULTI_PARTY_SIZE..] were already populated by Multiplayer_HandleRemotePartySync.
+    // If the party sync exchange happened (waitpartysync completed), copy the
+    // partner's decoded party from the side buffer into the battle-engine half
+    // of gPlayerParty.  This is the ONLY place partner mons enter gPlayerParty
+    // — the receive handler keeps them in sPartnerBattleParty so an early or
+    // re-sent PARTY_SYNC can never clobber local mons outside a battle.
     // Fall back to cloning the local player's party only when playing solo (no sync).
-    if (!gMultiplayerState.partnerPartySelectDone && gMultiplayerState.connState != MP_STATE_CONNECTED)
+    if (gMultiplayerState.gotPartnerParty)
+    {
+        for (i = 0; i < MULTI_PARTY_SIZE; i++)
+            gPlayerParty[MULTI_PARTY_SIZE + i] = sPartnerBattleParty[i];
+    }
+    else if (!gMultiplayerState.partnerPartySelectDone && gMultiplayerState.connState != MP_STATE_CONNECTED)
     {
         for (i = 0; i < MULTI_PARTY_SIZE && i < gPlayerPartyCount; i++)
         {
@@ -2623,6 +2647,23 @@ void Multiplayer_OnBattleEnd(void)
             u8 freeByte = MP_PKT_TRAINER_FREE;
             MpRing_Write(&gMpSendRing, &freeByte, MP_PKT_SIZE_TRAINER_FREE);
         }
+    }
+
+    // Restore the party a coop battle rearranged: write each selected mon's
+    // post-battle state (exp, level-ups, HP, status) back into its original
+    // stash slot, then reload the whole stash — non-participants come back
+    // and the partner's mons are evicted from gPlayerParty[MULTI_PARTY_SIZE..].
+    // Mirrors CB2_EndDebugBattle's INGAME_PARTNER handling.  Runs regardless
+    // of connState: a disconnect mid-battle (grace-timer AI fallback) must
+    // still restore, or the partner's mons stay in the local party forever.
+    if (gMultiplayerState.coopPartyStashed)
+    {
+        u8 i;
+        for (i = 0; i < gMultiplayerState.coopSelectedCount; i++)
+            SavePlayerPartyMon(gMultiplayerState.coopSelectedSlots[i], &gPlayerParty[i]);
+        LoadPlayerParty();
+        gMultiplayerState.coopPartyStashed = FALSE;
+        gMultiplayerState.coopSelectedCount = 0;
     }
 
     if (gMultiplayerState.connState != MP_STATE_CONNECTED)

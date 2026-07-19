@@ -293,7 +293,19 @@ struct MultiplayerState {
     u8  sentBusyTrainerLocalId;
     u8  sentBusyTrainerMapGroup;
     u8  sentBusyTrainerMapNum;
-    u8  _pad4[2];               // padding to keep the struct 4-byte aligned
+    u8  _pad4[2];               // padding kept as-is (battle_diag offsets)
+    // Coop-battle party stash/restore.  ScrCmd_waitcoopparty stashes the full
+    // pre-battle party via SavePlayerParty() before the selection menu can
+    // reorder gPlayerParty; CB2_CoopPartySelected records the original slot of
+    // each selected mon; Multiplayer_OnBattleEnd copies each selected mon's
+    // post-battle state back into its original stash slot, then
+    // LoadPlayerParty() — restoring non-participants and evicting the partner
+    // mons the battle engine placed in gPlayerParty[MULTI_PARTY_SIZE..].
+    // Session scratch, zeroed by Multiplayer_Init.
+    u8  coopPartyStashed;       // TRUE from waitcoopparty until battle-end restore
+    u8  coopSelectedCount;      // number of local mons selected (1..MULTI_PARTY_SIZE)
+    u8  coopSelectedSlots[MULTI_PARTY_SIZE]; // original gPlayerParty index per selection
+    u8  _pad5[3];               // padding to keep the struct 4-byte aligned
 };
 
 extern struct MultiplayerState gMultiplayerState;

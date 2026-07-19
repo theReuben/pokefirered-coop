@@ -5,6 +5,8 @@
 #include "constants/multiplayer.h"
 #include "constants/battle.h"
 #include "pokemon.h"
+#include "load_save.h"
+#include "party_menu.h"
 #include "battle.h"
 #include "random.h"
 #include <string.h>
@@ -1242,6 +1244,139 @@ static void TestMidBattlePartySyncIgnored(void)
     gBattleTypeFlags = 0;
 }
 
+// --- Coop party stash/restore (party-corruption fix, 2026-07-03) -----------
+
+static void FillMon(u8 idx, u8 pat)
+{
+    memset(&gPlayerParty[idx], pat, sizeof(struct Pokemon));
+}
+
+static bool32 MonIs(u8 idx, u8 pat)
+{
+    u16 i;
+    const u8 *p = (const u8 *)&gPlayerParty[idx];
+    for (i = 0; i < sizeof(struct Pokemon); i++)
+        if (p[i] != pat)
+            return FALSE;
+    return TRUE;
+}
+
+// A PARTY_SYNC received outside battle must stage the partner's mons in the
+// side buffer, NOT in gPlayerParty[MULTI_PARTY_SIZE..]: it can arrive before
+// the local player's waitcoopparty stash is taken (the two scripts run
+// unsynchronized), and writing through would corrupt a >3-mon local party.
+static void TestRemotePartySyncStagesOutsidePlayerParty(void)
+{
+    u8 pkt[MP_PKT_PARTY_SYNC_HDR + MP_PKT_PARTY_SYNC_MON_SIZE + MP_PKT_PARTY_SYNC_SEED_SIZE];
+    u16 i;
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    memset(pkt, 0, sizeof(pkt));
+    pkt[0] = MP_PKT_PARTY_SYNC;
+    pkt[1] = 1; // one mon
+
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED;
+    gBattleTypeFlags = 0; // overworld — local player may not have stashed yet
+    FillMon(MULTI_PARTY_SIZE + 0, 0xAA);
+    FillMon(MULTI_PARTY_SIZE + 1, 0xAB);
+    FillMon(MULTI_PARTY_SIZE + 2, 0xAC);
+
+    for (i = 0; i < sizeof(pkt); i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.gotPartnerParty, TRUE);
+    ASSERT_EQ(gMultiplayerState.partnerPartySelectDone, TRUE);
+    // Local party back half untouched — partner mons are staged elsewhere.
+    ASSERT_EQ(MonIs(MULTI_PARTY_SIZE + 0, 0xAA), TRUE);
+    ASSERT_EQ(MonIs(MULTI_PARTY_SIZE + 1, 0xAB), TRUE);
+    ASSERT_EQ(MonIs(MULTI_PARTY_SIZE + 2, 0xAC), TRUE);
+
+    // Battle setup is the single point where partner mons enter gPlayerParty.
+    // (The mock CreateMon/SetMonData are no-ops, so the staged mons carry the
+    // side buffer's zero-initialised bytes — observable as the sentinel
+    // patterns above being replaced by zeros.)
+    Multiplayer_SetupCoopBattle();
+    ASSERT_EQ(MonIs(MULTI_PARTY_SIZE + 0, 0x00), TRUE);
+    ASSERT_EQ(MonIs(MULTI_PARTY_SIZE + 1, 0x00), TRUE);
+    ASSERT_EQ(MonIs(MULTI_PARTY_SIZE + 2, 0x00), TRUE);
+}
+
+// End-to-end stash/restore: waitcoopparty stashes the 4-mon party, the player
+// selects only their 4th mon (destructive reorder overwrites slot 0), partner
+// mons land in the back half, the mon takes battle damage — and OnBattleEnd
+// puts everything back: non-participants restored, the participant keeps its
+// battle results in its ORIGINAL slot, partner mons evicted.  Runs
+// disconnected to prove restore does not depend on connState (grace-timer AI
+// fallback path).
+static void TestCoopBattleEndRestoresParty(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_DISCONNECTED;
+
+    gPlayerPartyCount = 4;
+    FillMon(0, 0xA1);
+    FillMon(1, 0xB2);
+    FillMon(2, 0xC3);
+    FillMon(3, 0xD4);
+    FillMon(4, 0x00);
+    FillMon(5, 0x00);
+
+    // ScrCmd_waitcoopparty's stash (the scrcmd itself is not compiled here;
+    // this mirrors its exact wiring).
+    SavePlayerParty();
+    gMultiplayerState.coopPartyStashed = TRUE;
+
+    // Player picks only party slot 4 (index 3).
+    memset(gSelectedOrderFromParty, 0, sizeof(gSelectedOrderFromParty));
+    gSelectedOrderFromParty[0] = 4;
+    CB2_CoopPartySelected();
+    ASSERT_EQ(gMultiplayerState.coopSelectedCount, 1);
+    ASSERT_EQ(gMultiplayerState.coopSelectedSlots[0], 3);
+    ASSERT_EQ(MonIs(0, 0xD4), TRUE); // destructive reorder happened
+
+    // Battle setup put partner mons in the back half (simulated) and the
+    // selected mon took damage during the battle.
+    FillMon(3, 0xEE);
+    FillMon(4, 0xEE);
+    FillMon(5, 0xEE);
+    ((u8 *)&gPlayerParty[0])[10] = 0x77;
+
+    Multiplayer_OnBattleEnd();
+
+    ASSERT_EQ(MonIs(1, 0xB2), TRUE);
+    ASSERT_EQ(MonIs(2, 0xC3), TRUE);
+    ASSERT_EQ(MonIs(4, 0x00), TRUE); // partner mons evicted
+    ASSERT_EQ(MonIs(5, 0x00), TRUE);
+    ASSERT_EQ(MonIs(0, 0xA1), TRUE); // original slot-0 mon resurrected
+    // The participant is back in its original slot WITH its battle results.
+    ASSERT_EQ(((u8 *)&gPlayerParty[3])[10], 0x77);
+    {
+        u16 i;
+        u8 ok = TRUE;
+        const u8 *p = (const u8 *)&gPlayerParty[3];
+        for (i = 0; i < sizeof(struct Pokemon); i++)
+            if (i != 10 && p[i] != 0xD4)
+                ok = FALSE;
+        ASSERT_EQ(ok, TRUE);
+    }
+    ASSERT_EQ(gPlayerPartyCount, 4);
+    ASSERT_EQ(gMultiplayerState.coopPartyStashed, FALSE);
+    ASSERT_EQ(gMultiplayerState.coopSelectedCount, 0);
+
+    // Second battle end without a new stash is a no-op.
+    FillMon(0, 0x55);
+    Multiplayer_OnBattleEnd();
+    ASSERT_EQ(MonIs(0, 0x55), TRUE);
+}
+
 static void TestMenuTickDrainsRecvAndBeacons(void)
 {
     u8 pkt[MP_PKT_SIZE_STATE_BEACON];
@@ -1473,6 +1608,10 @@ int main(void)
     TestPartySyncHandshakeNeedsMutualAck();
     TestMidBattlePartySyncIgnored();
     TestMenuTickDrainsRecvAndBeacons();
+
+    // Coop party stash/restore (party-corruption fix)
+    TestRemotePartySyncStagesOutsidePlayerParty();
+    TestCoopBattleEndRestoresParty();
 
     // Coop battle RNG lockstep
     TestCoopRngDeterministicStream();

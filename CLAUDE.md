@@ -295,7 +295,12 @@ Gym leaders and key story battles become **true co-op double battles** where bot
 2. After `boss_start`, a `waitcoopparty` script command opens the party selection menu on each player's screen — each player picks up to 3 Pokémon
 3. Each ROM sends `MP_PKT_PARTY_SYNC` with the selected party; both wait until both parties are received
 4. Both ROMs initiate a double battle simultaneously:
-   - `BATTLE_TYPE_DOUBLE | BATTLE_TYPE_MULTI | BATTLE_TYPE_LINK`
+   - `BATTLE_TYPE_COOP | BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER | BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE`
+     (amended 2026-07-03 to match `BattleSetup_StartCoopBattle`: no
+     `BATTLE_TYPE_LINK` — the link path would route battle-end through the
+     real link-cable teardown handshake, which the virtual relay cannot
+     complete; the non-link path also gives us the `Multiplayer_OnBattleEnd`
+     hook)
    - Battler 0 = local player (controlled normally)
    - Battler 1 = partner (driven by network — replaces `battle_controller_player_partner.c` AI)
    - Battlers 2 & 3 = gym leader's two Pokémon
@@ -323,7 +328,7 @@ Gym leaders and key story battles become **true co-op double battles** where bot
 
 **`waitcoopparty` script command (`SCR_OP_WAITCOOPPARTY = 0xE9`):**
 
-- State 0: open party selection menu (`InitChooseHalfPartyForBattle`), set savedCallback → `CB2_CoopPartySelected`, advance to state 1
+- State 0: `SavePlayerParty()` stash + set `coopPartyStashed` (added 2026-07-03 — the selection reorder and the partner mons loaded into `gPlayerParty[3..5]` are destructive; `Multiplayer_OnBattleEnd` writes each selected mon's post-battle state back to its original stash slot and `LoadPlayerParty()`s, so non-participants survive and partner mons are evicted), open party selection menu (`InitChooseHalfPartyForBattle`), set savedCallback → `CB2_CoopPartySelected`, advance to state 1
 - State 1: `SetupNativeScript(ctx, Multiplayer_NativePollPartySync)` — blocks until `partnerPartySelectDone`
 - `CB2_CoopPartySelected`: reorder `gPlayerParty[0..2]` from `gSelectedOrderFromParty[]`, call `Multiplayer_SendPartySync()`, set state→1, return to field
 

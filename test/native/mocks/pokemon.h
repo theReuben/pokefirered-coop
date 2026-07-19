@@ -53,4 +53,11 @@ u8   GetMonGender(struct Pokemon *mon);
 extern struct Pokemon gPlayerParty[PARTY_SIZE * 2];
 extern u8 gPlayerPartyCount;
 
+// Saved-party stash API (real declarations live in include/pokemon.h).
+// Stub implementations in stubs.c copy to/from gSavedPlayerParty[] so tests
+// can exercise the coop stash/restore path.
+struct Pokemon *GetSavedPlayerPartyMon(u32 index);
+u8 *GetSavedPlayerPartyCount(void);
+void SavePlayerPartyMon(u32 index, struct Pokemon *mon);
+
 #endif // GUARD_POKEMON_H
