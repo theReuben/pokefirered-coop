@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-07-02T23:51:10.730014Z",
+  "claim": "Route 1 entry, ghost NPC should be visible if spawned",
+  "box_open": false,
+  "printing": false,
+  "waiting_for_input": false,
+  "in_native_script": false,
+  "text": "TRAINER TIPS!?Press START to open the MENU!"
+}

@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-06-18T09:36:49.779710Z",
+  "claim": "p1 loaded p1_forest_trainer.ss1, pressed UP once, entered a deterministic single trainer battle vs bug catcher Sammy (gBattleTypeFlags=0x0C TRAINER, non-coop) while connected to p2.",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Hey, wait up!\nWhat's the hurry? Why the rush?"
+}

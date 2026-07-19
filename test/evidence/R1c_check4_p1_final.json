@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-07-03T00:16:10.089007Z",
+  "claim": "R1c: P1 after 10s idle with chaos, ghost sync maintained",
+  "box_open": false,
+  "printing": false,
+  "waiting_for_input": false,
+  "in_native_script": false,
+  "text": "TRAINER TIPS!?Press START to open the MENU!"
+}

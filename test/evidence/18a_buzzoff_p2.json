@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-06-18T15:03:28.393395Z",
+  "claim": "p2 A-presses Sammy while p1 battles it: 'Buzz off! I'm battling' busy-with-partner message, no conflicting battle (gBattleTypeFlags=0)",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": false,
+  "in_native_script": true,
+  "text": "Buzz off!\nI'm battling ???!"
+}
