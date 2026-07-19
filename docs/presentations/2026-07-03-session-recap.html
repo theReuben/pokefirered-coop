@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FireRed Co-Op — Session Recap · 2026-07-03</title>
+<style>
+  :root {
+    --bg: #10141f;
+    --panel: #1a2130;
+    --panel2: #202a3e;
+    --red: #e3350d;
+    --gold: #ffcb05;
+    --blue: #3b6dc7;
+    --green: #4caf7d;
+    --amber: #e8a33d;
+    --text: #e8ecf4;
+    --dim: #94a0b8;
+    --mono: "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  .slide {
+    display: none; position: absolute; inset: 0;
+    padding: 56px 84px 76px;
+    flex-direction: column;
+  }
+  .slide.active { display: flex; }
+  .slide::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 6px;
+    background: linear-gradient(90deg, var(--red) 0 33%, var(--gold) 33% 66%, var(--blue) 66% 100%);
+  }
+  h1 { font-size: 52px; line-height: 1.15; margin-bottom: 18px; }
+  h2 { font-size: 36px; margin-bottom: 8px; }
+  h2 .tag { font-size: 15px; vertical-align: middle; margin-left: 14px; }
+  .kicker { color: var(--gold); font-weight: 600; letter-spacing: 2.5px;
+    text-transform: uppercase; font-size: 14px; margin-bottom: 14px; }
+  .sub { color: var(--dim); font-size: 20px; margin-bottom: 28px; }
+  .body { flex: 1; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  ul { list-style: none; }
+  li { font-size: 20px; line-height: 1.5; padding: 7px 0 7px 30px; position: relative; }
+  li::before { content: "▸"; position: absolute; left: 4px; color: var(--gold); }
+  li li { font-size: 17px; color: var(--dim); padding: 3px 0 3px 26px; }
+  li li::before { content: "·"; color: var(--blue); }
+  strong { color: #fff; }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--panel2);
+    padding: 2px 7px; border-radius: 4px; color: #ffd97a; white-space: nowrap; }
+  .tag { display: inline-block; padding: 3px 12px; border-radius: 20px;
+    font-size: 13px; font-weight: 700; letter-spacing: 1px; }
+  .tag.fixed  { background: rgba(76,175,125,.15); color: var(--green); border: 1px solid var(--green); }
+  .tag.open   { background: rgba(232,163,61,.15); color: var(--amber); border: 1px solid var(--amber); }
+  .tag.tested { background: rgba(59,109,199,.2);  color: #7fa8e8;      border: 1px solid var(--blue); }
+  .cols { display: flex; gap: 28px; flex: 1; min-height: 0; }
+  .col { flex: 1; min-width: 0; }
+  .card { background: var(--panel); border: 1px solid #2c374d; border-radius: 12px;
+    padding: 20px 24px; }
+  .card h3 { font-size: 19px; margin-bottom: 10px; color: var(--gold); }
+  .card p, .card li { font-size: 16.5px; color: var(--text); }
+  .statrow { display: flex; gap: 22px; margin-top: 10px; }
+  .stat { flex: 1; background: var(--panel); border: 1px solid #2c374d;
+    border-radius: 12px; padding: 20px 10px; text-align: center; }
+  .stat .n { font-size: 40px; font-weight: 800; color: var(--gold); }
+  .stat .l { font-size: 13.5px; color: var(--dim); margin-top: 6px; line-height: 1.35; }
+  .shots { display: flex; gap: 20px; align-items: flex-start; }
+  .shot { text-align: center; }
+  .shot img { width: 336px; image-rendering: pixelated; border-radius: 6px;
+    border: 2px solid #2c374d; display: block; }
+  .shot .cap { font-size: 13.5px; color: var(--dim); margin-top: 8px; max-width: 336px; }
+  .flow { display: flex; align-items: stretch; gap: 0; margin-top: 8px; }
+  .step { flex: 1; background: var(--panel); border: 1px solid #2c374d;
+    border-radius: 10px; padding: 16px 18px; }
+  .step h4 { color: var(--gold); font-size: 16px; margin-bottom: 8px; }
+  .step p { font-size: 14.5px; color: var(--text); line-height: 1.45; }
+  .arrow { align-self: center; padding: 0 12px; color: var(--gold); font-size: 26px; }
+  .foot { position: absolute; bottom: 22px; left: 84px; right: 84px;
+    display: flex; justify-content: space-between; color: #5c6a85; font-size: 13px; }
+  .pageno::after { content: counter(page); }
+  .hint { position: fixed; bottom: 22px; right: 84px; color: #5c6a85; font-size: 13px; }
+  .verdict { border-left: 4px solid var(--green); background: rgba(76,175,125,.08);
+    padding: 14px 20px; border-radius: 0 10px 10px 0; font-size: 18px; }
+  .verdict.warn { border-color: var(--amber); background: rgba(232,163,61,.08); }
+  table { border-collapse: collapse; width: 100%; font-size: 16.5px; }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid #2c374d; }
+  th { color: var(--gold); font-size: 14px; letter-spacing: 1px; text-transform: uppercase; }
+  td code { font-size: 14px; }
+</style>
+</head>
+<body>
+
+<!-- 1 · TITLE -->
+<section class="slide active">
+  <div class="body" style="justify-content:center;">
+    <div class="kicker">Pokémon FireRed Co-Op Multiplayer</div>
+    <h1>Session Recap<br><span style="color:var(--gold)">2026-07-02 → 07-03</span></h1>
+    <p class="sub" style="font-size:24px; max-width:900px;">
+      The overnight diagnostics + party-corruption session: one serious latent bug
+      diagnosed and fixed, a self-serve test harness built, ghost sync proven
+      under packet loss, and one spec gap uncovered.
+    </p>
+    <div class="statrow" style="max-width:980px;">
+      <div class="stat"><div class="n">1</div><div class="l">critical bug fixed<br>(party corruption)</div></div>
+      <div class="stat"><div class="n">1,841</div><div class="l">native test assertions<br>passing (0 fail)</div></div>
+      <div class="stat"><div class="n">2</div><div class="l">scripted scenarios run<br>by haiku subagents</div></div>
+      <div class="stat"><div class="n">1</div><div class="l">open gap found<br>(starter_denied)</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 · AT A GLANCE -->
+<section class="slide">
+  <div class="kicker">Overview</div>
+  <h2>What the session delivered</h2>
+  <div class="body" style="margin-top:14px;">
+    <table>
+      <tr><th>Item</th><th>Status</th><th>Where it lives</th></tr>
+      <tr>
+        <td><strong>Co-op battle party corruption</strong> — three destructive paths through <code>gPlayerParty</code></td>
+        <td><span class="tag fixed">FIXED</span></td>
+        <td>stash / side-buffer / restore in <code>multiplayer.c</code> + <code>scrcmd.c</code></td>
+      </tr>
+      <tr>
+        <td><strong>Field-trainer lock lifecycle</strong> — release moved to <code>OnBattleEnd</code></td>
+        <td><span class="tag fixed">FIXED</span></td>
+        <td>commit <code>1a1416e9</code> (+ harness nav tools)</td>
+      </tr>
+      <tr>
+        <td><strong>Diagnostics harness for cheap models</strong> — scripted scenarios + skill</td>
+        <td><span class="tag fixed">SHIPPED</span></td>
+        <td><code>docs/TEST_PLAYBOOK.md</code>, <code>.claude/skills/coop-diag</code></td>
+      </tr>
+      <tr>
+        <td><strong>Ghost position sync (R1)</strong> — clean run + 30% packet-loss chaos run</td>
+        <td><span class="tag tested">VERIFIED</span></td>
+        <td><code>test/reports/R1_run1.md</code>, <code>R1c_run1.md</code> + evidence PNGs</td>
+      </tr>
+      <tr>
+        <td><strong><code>starter_denied</code> never reaches the ROM</strong> — spec-vs-impl gap</td>
+        <td><span class="tag open">OPEN</span></td>
+        <td>relay arbitrates, bridge drops it, ROM has no handler</td>
+      </tr>
+      <tr>
+        <td><strong>CLAUDE.md amended</strong> — real battle-type flags, <code>waitcoopparty</code> stash step</td>
+        <td><span class="tag fixed">DONE</span></td>
+        <td>spec now matches <code>BattleSetup_StartCoopBattle</code></td>
+      </tr>
+    </table>
+  </div>
+</section>
+
+<!-- 3 · PARTY CORRUPTION: THE BUG -->
+<section class="slide">
+  <div class="kicker">Headline fix · diagnosis</div>
+  <h2>Co-op battle party corruption <span class="tag fixed">FIXED</span></h2>
+  <p class="sub">A gap flagged on 06-17 turned out to be <em>worse</em> than recorded — three independent ways a boss double battle could permanently damage your party.</p>
+  <div class="body">
+    <div class="flow">
+      <div class="step">
+        <h4>① Destructive reorder</h4>
+        <p><code>CB2_CoopPartySelected</code> reorders <code>gPlayerParty[0..n]</code> in place. With more than 3 mons, selecting a subset <strong>permanently overwrote unselected lead mons</strong>.</p>
+      </div>
+      <div class="arrow">＋</div>
+      <div class="step">
+        <h4>② Early partner write</h4>
+        <p><code>HandleRemotePartySync</code> wrote the partner's mons straight into <code>gPlayerParty[3..5]</code> — possibly <strong>before you even opened your own menu</strong>, clobbering slots 3–5 of a big party pre-stash.</p>
+      </div>
+      <div class="arrow">＋</div>
+      <div class="step">
+        <h4>③ No restore</h4>
+        <p>After the battle, <strong>nothing put anything back</strong>. Partner mons stayed in your party; your evicted mons were gone.</p>
+      </div>
+    </div>
+    <div class="verdict warn" style="margin-top:18px;">
+      The two scripts run unsynchronized, so the corruption window existed on every
+      co-op boss battle with a party of 4+ — it just hadn't been hit in fixed-fixture testing.
+    </div>
+  </div>
+</section>
+
+<!-- 4 · PARTY CORRUPTION: THE FIX -->
+<section class="slide">
+  <div class="kicker">Headline fix · mechanism</div>
+  <h2>The fix: stash → side-buffer → restore</h2>
+  <p class="sub">Mirrors how vanilla handles <code>INGAME_PARTNER</code> battles (<code>CB2_EndDebugBattle</code>) — three parts, one lifecycle.</p>
+  <div class="body">
+    <div class="flow">
+      <div class="step">
+        <h4>Stash before menu</h4>
+        <p><code>ScrCmd_waitcoopparty</code> calls <code>SavePlayerParty()</code> before the selection menu opens; selected slot indices are recorded in <code>coopSelectedSlots[]</code>.</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <h4>Partner stays outside</h4>
+        <p>Partner party decodes into an EWRAM side buffer (<code>sPartnerBattleParty</code>) and only enters <code>gPlayerParty</code> inside <code>Multiplayer_SetupCoopBattle</code> — never earlier.</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <h4>Restore after battle</h4>
+        <p><code>Multiplayer_OnBattleEnd</code> writes each participant's post-battle exp/HP/status back to its <strong>original stash slot</strong>, then <code>LoadPlayerParty()</code>. Runs regardless of <code>connState</code> — the disconnect/grace path restores too.</p>
+      </div>
+    </div>
+    <ul style="margin-top:14px;">
+      <li>Non-participants survive untouched; partner mons are evicted cleanly.</li>
+      <li>New native tests: <code>TestRemotePartySyncStagesOutsidePlayerParty</code>, <code>TestCoopBattleEndRestoresParty</code>.</li>
+      <li>Full suite green: <strong>1210 + 49 + 39 + 236 + 307 assertions, 0 failures</strong>; ROM builds clean.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 5 · TRAINER LOCK -->
+<section class="slide">
+  <div class="kicker">Committed that night · <code>1a1416e9</code></div>
+  <h2>Field-trainer lock released at the right layer</h2>
+  <p class="sub">Follow-up to the #18a beacon work: the lock now releases in <code>Multiplayer_OnBattleEnd</code>, not the per-frame Update poll.</p>
+  <div class="body">
+    <div class="cols">
+      <div class="col">
+        <ul>
+          <li><strong>Why it matters:</strong> releasing from the Update poll raced the battle-end sequence — the beacon could re-carry a stale busy state after the battle was already over.</li>
+          <li><strong>Now:</strong> lock release is an explicit battle-lifecycle event, in the same hook that restores the party — one place where "the battle is over" is true.</li>
+          <li>Same commit added <strong>navigation tools for the harness</strong>: collision-map rendering and A*-driven <code>path_to</code> / <code>drive_to_tile</code>, so test agents stop guessing tile counts.</li>
+        </ul>
+        <div class="verdict" style="margin-top:16px;">
+          "Buzz off!" now correctly blocks the partner <em>during</em> the fight — and clears the moment it ends.
+        </div>
+      </div>
+      <div class="col shots">
+        <div class="shot">
+          <img src="../../test/evidence/forest_trainer_p1_battle.png" alt="P1 in trainer battle">
+          <div class="cap">P1 fighting bug catcher Sammy (Viridian Forest fixture)</div>
+        </div>
+        <div class="shot">
+          <img src="../../test/evidence/18a_buzzoff_p2.png" alt="P2 gets Buzz off message">
+          <div class="cap">P2 talking to the same trainer mid-battle: locked out</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 · DIAGNOSTICS HARNESS -->
+<section class="slide">
+  <div class="kicker">New capability</div>
+  <h2>Self-serve diagnostics for cheap models</h2>
+  <p class="sub">Two-instance co-op testing no longer needs an expensive model driving every button press.</p>
+  <div class="body">
+    <div class="cols">
+      <div class="col card">
+        <h3>docs/TEST_PLAYBOOK.md</h3>
+        <p>Scripted scenarios — <strong>R1</strong> (Route 1 ghost sync), <strong>F1</strong> (field-trainer lock), <strong>RB1</strong> (rival co-op battle) — each with exact save states, button sequences, and per-check PASS criteria. Chaos variants included.</p>
+      </div>
+      <div class="col card">
+        <h3>.claude/skills/coop-diag</h3>
+        <p>A skill that dispatches playbook scenarios to <strong>haiku subagents</strong>, which drive both emulator instances via MCP and write structured reports + evidence screenshots to <code>test/reports/</code> and <code>test/evidence/</code>.</p>
+      </div>
+      <div class="col card">
+        <h3>Proven in-session</h3>
+        <p>Haiku agents executed <strong>R1, R1c (chaos), F1, F1c</strong> unattended. The reports were good enough to separate a real-looking failure into "harness artifact" vs "actual bug" — see next slide.</p>
+      </div>
+    </div>
+    <ul>
+      <li><strong>Lesson encoded into the playbook:</strong> a long <code>wait</code> on one instance freezes the other → no heartbeats → the relay legitimately declares a disconnect. Waits must be interleaved. This masqueraded as a ghost-despawn bug until diagnosed.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 7 · R1 RESULTS -->
+<section class="slide">
+  <div class="kicker">Test results</div>
+  <h2>Ghost position sync: solid — even at 30% packet loss <span class="tag tested">VERIFIED</span></h2>
+  <div class="body">
+    <div class="cols">
+      <div class="col">
+        <ul>
+          <li><strong>R1 clean run:</strong> ghost spawns on connect, tracks the moving player, both directions.</li>
+          <li><strong>R1c chaos run</strong> (<code>set_link_chaos drop=0.3</code>): ghost persisted through idle and movement — the state beacon repaired every dropped packet. <strong>4/6 PASS, 0 FAIL</strong>.</li>
+          <li>The single clean-run "FAIL" (idle despawn) was the harness artifact from the previous slide, not a sync bug.</li>
+          <li>2 checks blocked by fixture layout (map-transition tile sits past tall grass → wild encounters), noted for the next playbook revision.</li>
+        </ul>
+        <div class="verdict" style="margin-top:16px;">
+          Report verdict: "Ghost position sync is fundamentally sound… resilient and ready."
+        </div>
+      </div>
+      <div class="col shots" style="flex-direction:column; gap:14px;">
+        <div class="shot">
+          <img src="../../test/evidence/R1_check1_p1.png" alt="P1 view with ghost">
+          <div class="cap">P1's screen: partner ghost visible on Route 1</div>
+        </div>
+        <div class="shot">
+          <img src="../../test/evidence/R1_check1_p2.png" alt="P2 view with ghost">
+          <div class="cap">P2's screen: mirror view, same moment</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 · STARTER_DENIED GAP -->
+<section class="slide">
+  <div class="kicker">Discovered · not yet fixed</div>
+  <h2>The <code>starter_denied</code> message goes nowhere <span class="tag open">OPEN</span></h2>
+  <p class="sub">A spec-vs-implementation gap that only bites on the real relay — invisible to all MCP testing.</p>
+  <div class="body">
+    <div class="flow">
+      <div class="step">
+        <h4>Relay ✓</h4>
+        <p>PartyKit server implements and tests <code>starter_denied</code>: on simultaneous same-species picks, first pick wins and the loser is told.</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <h4>Bridge ✗</h4>
+        <p><code>serial_bridge.rs</code> maps the message to <code>None</code> — it is silently dropped on the floor.</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <h4>ROM ✗</h4>
+        <p>No packet type, no handler. The slower player <strong>believes their pick succeeded</strong> → permanent starter desync between the two saves.</p>
+      </div>
+    </div>
+    <ul style="margin-top:14px;">
+      <li><strong>Why tests missed it:</strong> the in-process MCP relay doesn't arbitrate picks, so the losing path never executes locally.</li>
+      <li><strong>Fix directions on the table:</strong> (a) new relay→ROM packet across all 5 protocol layers whose handler reverts the pick and re-locks the ball, or (b) drop relay arbitration entirely — carry starter state on the beacon with a deterministic host-wins tiebreak.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 9 · WHERE WE LEFT OFF -->
+<section class="slide">
+  <div class="kicker">Handoff</div>
+  <h2>Where we left off</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="col card">
+        <h3>⚠ Uncommitted work</h3>
+        <p>The party-corruption fix, playbook, coop-diag skill, tests, and evidence are all <strong>still in the working tree</strong> (~283 insertions across 9 files + new docs/skills). Only the trainer-lock commit (<code>1a1416e9</code>) landed. First order of business: commit &amp; push.</p>
+      </div>
+      <div class="col card">
+        <h3>Next verification</h3>
+        <ul>
+          <li>Live <strong>RB1</strong> (rival co-op battle) run to verify the party restore in-emulator</li>
+          <li>User Tauri re-test of the 06-17 bug-sweep fixes (#15–#21)</li>
+        </ul>
+      </div>
+      <div class="col card">
+        <h3>Open items</h3>
+        <ul>
+          <li><code>starter_denied</code> bridge gap (this session's find)</li>
+          <li>Phase 6: Tauri end-to-end integration test</li>
+          <li>Phase 7: PartyKit live deployment verify</li>
+        </ul>
+      </div>
+    </div>
+    <div class="verdict" style="margin-top:6px;">
+      Bottom line: all 7 user-reported bugs from live play are code-complete, the worst latent
+      save-damaging bug is fixed and natively tested, and the project now has a repeatable,
+      cheap way to regression-test co-op sync.
+    </div>
+  </div>
+</section>
+
+<div class="hint">← → to navigate &nbsp;·&nbsp; <span id="pg"></span></div>
+
+<script>
+  const slides = [...document.querySelectorAll(".slide")];
+  let i = 0;
+  const pg = document.getElementById("pg");
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle("active", k === i));
+    pg.textContent = (i + 1) + " / " + slides.length;
+  }
+  addEventListener("keydown", e => {
+    if (["ArrowRight", " ", "PageDown"].includes(e.key)) show(i + 1);
+    if (["ArrowLeft", "PageUp"].includes(e.key)) show(i - 1);
+    if (e.key === "Home") show(0);
+    if (e.key === "End") show(slides.length - 1);
+  });
+  addEventListener("click", e => { if (!e.target.closest("a")) show(i + 1); });
+  show(0);
+</script>
+</body>
+</html>
