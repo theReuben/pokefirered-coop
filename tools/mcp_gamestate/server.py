@@ -234,7 +234,7 @@ _PKT_SIZES = {
     0x12: lambda b, i: 2 + b[i+1] * 58 + 4 if i + 2 <= len(b) else None,  # + trailing RNG seed
     0x13: 3, 0x14: 5, 0x15: 4, 0x16: 1, 0x17: 1,
     0x18: lambda b, i: 2 + b[i+1] * 4 if i + 2 <= len(b) else None,
-    0x19: 1, 0x1A: 9, 0x1B: 2, 0x1C: 6,
+    0x19: 1, 0x1A: 9, 0x1B: 2, 0x1C: 6, 0x1D: 4,
 }
 
 
@@ -285,6 +285,49 @@ def _chaos_filter(dst_id: str, hexstr: str) -> str:
     return "".join(out)
 
 
+# Starter arbitration state, mirroring the PartyKit relay's per-room
+# state.starters: species claimed per instance, or None.  Reset on session
+# teardown and on every load_savestate (each load starts a new scenario).
+_starter_claims: "dict[str, int | None]" = {"p1": None, "p2": None}
+
+
+def _starter_arbitrate(src: "Instance", src_id: str, dst_id: str, hexstr: str) -> str:
+    """Mirror the PartyKit relay's starter arbitration (first pick wins).
+
+    Scans src→dst traffic for MP_PKT_STARTER_PICK (0x0F).  The sender gets an
+    MP_PKT_STARTER_VERDICT (0x1D) answer injected into its recv ring: ok for
+    a recorded (or repeated) claim, denied when the partner already holds the
+    species — in which case the pick is NOT forwarded.  Verdicts bypass chaos
+    like the other relay-injected control packets (the real relay's verdict
+    rides reliable TCP).
+
+    Harness divergence from the real relay: a sender re-picking a DIFFERENT
+    species is treated as a fresh claim instead of being ignored — MCP
+    sessions reload save states mid-run, and honoring the newest pick keeps
+    rerun flows working without a server restart.
+    """
+    if not hexstr:
+        return hexstr
+    packets = _split_packets(hexstr)
+    if packets is None:
+        return hexstr  # unknown framing — never corrupt, just pass through
+    if not any(p.startswith("0f") for p in packets):
+        return hexstr
+    out = []
+    for pkt in packets:
+        if not pkt.startswith("0f"):
+            out.append(pkt)
+            continue
+        species = int(pkt[2:6], 16)
+        if _starter_claims.get(dst_id) == species:
+            src.inject_bytes("1D 00 " + pkt[2:4] + " " + pkt[4:6])
+            continue  # denied — partner owns it; do not forward
+        _starter_claims[src_id] = species
+        src.inject_bytes("1D 01 " + pkt[2:4] + " " + pkt[4:6])
+        out.append(pkt)
+    return "".join(out)
+
+
 def _relay_loop() -> None:
     """Continuously relay multiplayer packets and coop battle blocks between p1 and p2."""
     global _connected_pair, _host_instance
@@ -319,6 +362,7 @@ def _relay_loop() -> None:
                 _pending_inject.clear()
                 _disconnect_injected.clear()
                 _last_heard.clear()
+                _starter_claims.update({"p1": None, "p2": None})
                 continue
 
             # Inject MP_PKT_PARTNER_CONNECTED (0x0B) into both recv rings once
@@ -362,6 +406,10 @@ def _relay_loop() -> None:
                         dst.inject_bytes("0B")
                         dst.inject_bytes("1B 01" if _host_instance == dst.iid else "1B 02")
                         src.inject_bytes("1B 01" if _host_instance == src_id else "1B 02")
+                # Starter arbitration runs BEFORE chaos: the real relay sees
+                # every pick over reliable TCP; chaos models only the
+                # forwarded (partner-bound) leg.
+                new_bytes = _starter_arbitrate(src, src_id, dst_id, new_bytes)
                 # Chaos applies to newly drained packets only; pending bytes
                 # already passed the filter on a previous cycle.
                 new_bytes = _chaos_filter(dst_id, new_bytes)
@@ -768,6 +816,9 @@ def load_savestate(path: str, instance_id: str = "p1") -> str:
     # session handshake so the relay loop re-injects PARTNER_CONNECTED and
     # the role assignments on its next cycle.
     _connected_pair = False
+    # Every load starts a new scenario — stale starter claims from a previous
+    # run must not deny picks in this one.
+    _starter_claims.update({"p1": None, "p2": None})
     return f"Loaded '{p}' into '{instance_id}'. Wait ~300 frames before sending inputs."
 
 

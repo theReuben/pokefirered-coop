@@ -57,6 +57,7 @@ export type ServerMessage =
   | { type: "room_full" }
   | { type: "session_mismatch" }
   | { type: "starter_taken"; speciesId: number }
+  | { type: "starter_ok"; speciesId: number }
   | { type: "starter_denied"; speciesId: number }
   | { type: "item_give"; itemId: number; quantity: number }
   | { type: "flag_clear"; flagId: number }
@@ -236,8 +237,16 @@ export default class PokemonCoopServer implements Party.Server {
         break;
 
       case "starter_pick": {
-        // Already claimed — idempotent, ignore
-        if (this.state.starters[role] !== null) break;
+        // Already claimed by this player — idempotent: re-ack the same
+        // species (the ROM re-sends the pick after givemon, and a re-claim
+        // after a lost verdict deserves an answer); ignore a different one
+        // (picks cannot be changed).
+        if (this.state.starters[role] !== null) {
+          if (this.state.starters[role] === msg.speciesId) {
+            this.send(sender, { type: "starter_ok", speciesId: msg.speciesId });
+          }
+          break;
+        }
 
         const partnerRole: PlayerID = role === "host" ? "guest" : "host";
         if (this.state.starters[partnerRole] === msg.speciesId) {
@@ -247,6 +256,9 @@ export default class PokemonCoopServer implements Party.Server {
         }
 
         this.state.starters[role] = msg.speciesId;
+        // Positive verdict to the claimant: the ROM claims BEFORE givemon and
+        // blocks until it hears ok/denied (waitstarterclaim).
+        this.send(sender, { type: "starter_ok", speciesId: msg.speciesId });
         this.broadcast(sender, { type: "starter_taken", speciesId: msg.speciesId });
         break;
       }

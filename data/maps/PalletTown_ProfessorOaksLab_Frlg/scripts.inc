@@ -1213,7 +1213,27 @@ PalletTown_ProfessorOaksLab_EventScript_DeclinedStarter::
 	release
 	end
 
+@ The relay denied our claim: the partner confirmed this species first.  The
+@ verdict handler already recorded the partner's pick (ball hidden + object
+@ removed via ApplyPartnerStarterPick), so just explain and let the player
+@ pick a different ball.  Nothing was given, so there is nothing to revert.
+PalletTown_ProfessorOaksLab_EventScript_StarterClaimDenied::
+	hidemonpic
+	call EventScript_RestorePrevTextColor
+	msgbox PalletTown_ProfessorOaksLab_Text_PartnerTookBall
+	release
+	end
+
 PalletTown_ProfessorOaksLab_EventScript_ChoseStarter::
+	@ Claim the starter with the relay BEFORE anything irreversible happens
+	@ (removeobject/givemon).  If both players confirmed the same species
+	@ inside the propagation window, exactly one claim is granted; the loser
+	@ bounces here with the ball still on the table and no mon given.
+	copyvar VAR_0x8004, PLAYER_STARTER_NUM
+	special Multiplayer_ClaimStarter
+	waitstarterclaim
+	specialvar VAR_RESULT, Multiplayer_GetStarterClaimResult
+	goto_if_eq VAR_RESULT, 0, PalletTown_ProfessorOaksLab_EventScript_StarterClaimDenied
 	hidemonpic
 	removeobject VAR_LAST_TALKED
 	msgbox PalletTown_ProfessorOaksLab_Text_OakThisMonIsEnergetic

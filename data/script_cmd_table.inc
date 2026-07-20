@@ -258,6 +258,7 @@ gScriptCmdTable::
 	script_cmd_table_entry SCR_OP_DOCOOPTRAINERBATTLE           ScrCmd_docooptrainerbattle,         requests_effects=1  @ 0xe9
 	script_cmd_table_entry SCR_OP_WAITCOOPPARTY                ScrCmd_waitcoopparty,               requests_effects=1  @ 0xea
 	script_cmd_table_entry SCR_OP_WAITPARTYSYNC                ScrCmd_waitpartysync,               requests_effects=1  @ 0xeb
+	script_cmd_table_entry SCR_OP_WAITSTARTERCLAIM             ScrCmd_waitstarterclaim,            requests_effects=1  @ 0xec
 
 	.if ALLOCATE_SCRIPT_CMD_TABLE
 gScriptCmdTableEnd::

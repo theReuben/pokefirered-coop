@@ -505,6 +505,39 @@ static bool8 ProcessOneRecvPacket(void)
         }
         break;
 
+    case MP_PKT_STARTER_VERDICT:
+        if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_STARTER_VERDICT - 1)
+            return FALSE;
+        {
+            u8 verdict = 0, hi = 0, lo = 0;
+            u16 species;
+            Mp_Pop(&gMpRecvRing, &verdict);
+            Mp_Pop(&gMpRecvRing, &hi);
+            Mp_Pop(&gMpRecvRing, &lo);
+            species = ((u16)hi << 8) | lo;
+            // Only honor a verdict for the claim currently pending — a stray
+            // or duplicate verdict (e.g. the relay's idempotent ok answer to
+            // the post-givemon SendStarterPick) must not flip settled state.
+            if (gMultiplayerState.starterClaimState == MP_CLAIM_PENDING
+                && species == gMultiplayerState.starterClaimSpecies)
+            {
+                if (verdict != 0)
+                {
+                    gMultiplayerState.starterClaimState = MP_CLAIM_GRANTED;
+                }
+                else
+                {
+                    gMultiplayerState.starterClaimState = MP_CLAIM_DENIED;
+                    // A denial means the partner owns this species — record it
+                    // now (locks the ball, persists VAR_PARTNER_STARTER) so
+                    // the bounce is immediate even if their starter_taken is
+                    // still in flight.
+                    ApplyPartnerStarterPick(species);
+                }
+            }
+        }
+        break;
+
     case MP_PKT_STATE_BEACON:
         if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_STATE_BEACON - 1)
             return FALSE;
@@ -921,6 +954,9 @@ void Multiplayer_Init(void)
     gMultiplayerState.myStarterSpecies      = 0;
     gMultiplayerState.partnerStarterSpecies = 0;
     gMultiplayerState.starterResendTimer    = 0;
+    gMultiplayerState.starterClaimState     = MP_CLAIM_IDLE;
+    gMultiplayerState.starterClaimSpecies   = 0;
+    gMultiplayerState.starterClaimTimer     = 0;
     gMultiplayerState.isInScript         = FALSE;
     gMultiplayerState.partnerIsInScript  = FALSE;
     gMultiplayerState.posFrameCounter    = 0;
@@ -1712,6 +1748,90 @@ bool8 Multiplayer_NativePollPartnerStarterPick(void)
     // A dropped initial pick exchange is repaired by the state beacon.
     return (bool8)(gMultiplayerState.connState != MP_STATE_CONNECTED
                 || gMultiplayerState.partnerStarterSpecies != 0);
+}
+
+// Claim a starter before it is given.  The pick script calls this (via
+// special) right after the player's YES, with the ball slot in
+// gSpecialVar_0x8004, and then blocks in waitstarterclaim until the claim
+// resolves.  The wire message IS the ordinary MP_PKT_STARTER_PICK — the relay
+// already arbitrates it (first pick wins); what is new is that we now wait
+// for its verdict BEFORE givemon, when bouncing is still cheap.
+void Multiplayer_ClaimStarter(void)
+{
+    u16 slot = gSpecialVar_0x8004;
+    u16 species;
+    u8 pkt[MP_PKT_SIZE_STARTER_PICK];
+
+    if (slot > 2)
+    {
+        // Malformed script argument: fail open (grant) — identical to the
+        // pre-claim behavior — rather than soft-locking the pick scene.
+        gMultiplayerState.starterClaimState = MP_CLAIM_GRANTED;
+        gMultiplayerState.starterClaimSpecies = 0;
+        return;
+    }
+    species = Multiplayer_GetRandomizedStarter((u8)slot);
+    gMultiplayerState.starterClaimSpecies = species;
+    gMultiplayerState.starterClaimTimer = 0;
+
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED)
+    {
+        gMultiplayerState.starterClaimState = MP_CLAIM_GRANTED; // solo rules
+        return;
+    }
+    if (gMultiplayerState.partnerStarterSpecies == species)
+    {
+        // Partner's pick already arrived — no relay round-trip needed.
+        gMultiplayerState.starterClaimState = MP_CLAIM_DENIED;
+        return;
+    }
+    gMultiplayerState.starterClaimState = MP_CLAIM_PENDING;
+    pkt[0] = MP_PKT_STARTER_PICK;
+    pkt[1] = (u8)(species >> 8);
+    pkt[2] = (u8)(species);
+    MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STARTER_PICK);
+}
+
+bool8 Multiplayer_NativePollStarterClaim(void)
+{
+    if (gMultiplayerState.starterClaimState == MP_CLAIM_GRANTED
+     || gMultiplayerState.starterClaimState == MP_CLAIM_DENIED)
+        return TRUE;
+    if (gMultiplayerState.starterClaimState != MP_CLAIM_PENDING)
+    {
+        // waitstarterclaim without a preceding claim: fail open.
+        gMultiplayerState.starterClaimState = MP_CLAIM_GRANTED;
+        return TRUE;
+    }
+    // Denial repair: the winner's species reaches us via starter_taken or the
+    // beacon even if the relay's verdict packet is lost.
+    if (gMultiplayerState.partnerStarterSpecies == gMultiplayerState.starterClaimSpecies
+     && gMultiplayerState.starterClaimSpecies != 0)
+    {
+        gMultiplayerState.starterClaimState = MP_CLAIM_DENIED;
+        return TRUE;
+    }
+    // Partner gone mid-claim: solo rules, take it.
+    if (gMultiplayerState.connState != MP_STATE_CONNECTED)
+    {
+        gMultiplayerState.starterClaimState = MP_CLAIM_GRANTED;
+        return TRUE;
+    }
+    // Backstop: relay alive but no verdict and no partner pick after ~10 s.
+    // Granting matches the pre-claim behavior; the conflict this could in
+    // principle let through also requires the partner's taken/beacon stream
+    // to be silent, which the heartbeat timeout would have caught first.
+    if (++gMultiplayerState.starterClaimTimer >= MP_CLAIM_TIMEOUT_FRAMES)
+    {
+        gMultiplayerState.starterClaimState = MP_CLAIM_GRANTED;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+u16 Multiplayer_GetStarterClaimResult(void)
+{
+    return (gMultiplayerState.starterClaimState == MP_CLAIM_DENIED) ? 0 : 1;
 }
 
 void Multiplayer_SendBossReady(u8 bossId)

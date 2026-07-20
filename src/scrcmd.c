@@ -3401,6 +3401,16 @@ bool8 ScrCmd_waitstarterpick(struct ScriptContext *ctx)
     return TRUE;
 }
 
+// Suspends the script until the pending starter claim resolves (granted or
+// denied).  Must follow a Multiplayer_ClaimStarter special; runs BEFORE
+// givemon so a lost same-species race bounces without side effects.
+bool8 ScrCmd_waitstarterclaim(struct ScriptContext *ctx)
+{
+    Script_RequestEffects(SCREFF_V1);
+    SetupNativeScript(ctx, Multiplayer_NativePollStarterClaim);
+    return TRUE;
+}
+
 // Opens the party-selection menu so the player chooses up to 3 mons for the co-op
 // boss battle.  Sets savedCallback to CB2_CoopPartySelected (which sends the sync
 // packet and resumes the script via CB2_ReturnToFieldContinueScript).

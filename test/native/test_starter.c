@@ -376,6 +376,168 @@ static void TestRederiveBallFlagsOwnPickPersists(void)
     ASSERT_EQ(BallFlagSet(FLAG_HIDE_CHARMANDER_BALL), TRUE);
 }
 
+// ---- Starter claim (claim-before-give handshake) ----------------------------
+
+extern u16 gSpecialVar_0x8004; // defined in stubs.c
+
+static void PushVerdict(u8 verdict, u16 species)
+{
+    Mp_Push(&gMpRecvRing, MP_PKT_STARTER_VERDICT);
+    Mp_Push(&gMpRecvRing, verdict);
+    Mp_Push(&gMpRecvRing, (u8)(species >> 8));
+    Mp_Push(&gMpRecvRing, (u8)(species & 0xFF));
+}
+
+static void TestClaimOfflineGrantsImmediately(void)
+{
+    ResetForStarterTest();
+    gMultiplayerState.connState = MP_STATE_DISCONNECTED;
+    gSpecialVar_0x8004 = 1; // Squirtle ball
+
+    Multiplayer_ClaimStarter();
+
+    ASSERT_EQ(gMultiplayerState.starterClaimState, MP_CLAIM_GRANTED);
+    ASSERT_EQ(Multiplayer_NativePollStarterClaim(), TRUE);
+    ASSERT_EQ(Multiplayer_GetStarterClaimResult(), 1);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0); // nothing sent solo
+}
+
+static void TestClaimConnectedSendsPickAndPends(void)
+{
+    u8 b;
+    ResetForStarterTest();
+    gSpecialVar_0x8004 = 2; // Charmander ball
+
+    Multiplayer_ClaimStarter();
+
+    ASSERT_EQ(gMultiplayerState.starterClaimState, MP_CLAIM_PENDING);
+    ASSERT_EQ(gMultiplayerState.starterClaimSpecies, SPECIES_CHARMANDER);
+    ASSERT_EQ(Multiplayer_NativePollStarterClaim(), FALSE); // still waiting
+    ASSERT_EQ(Mp_Available(&gMpSendRing), (u8)MP_PKT_SIZE_STARTER_PICK);
+    Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, MP_PKT_STARTER_PICK);
+    Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, (u8)(SPECIES_CHARMANDER >> 8));
+    Mp_Pop(&gMpSendRing, &b); ASSERT_EQ(b, (u8)(SPECIES_CHARMANDER & 0xFF));
+}
+
+static void TestClaimGrantedByVerdictPacket(void)
+{
+    ResetForStarterTest();
+    gSpecialVar_0x8004 = 0; // Bulbasaur ball
+    Multiplayer_ClaimStarter();
+
+    PushVerdict(1, SPECIES_BULBASAUR);
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.starterClaimState, MP_CLAIM_GRANTED);
+    ASSERT_EQ(Multiplayer_GetStarterClaimResult(), 1);
+    // A grant must NOT touch the partner-pick record.
+    ASSERT_EQ(gMultiplayerState.partnerStarterSpecies, 0);
+}
+
+static void TestClaimDeniedByVerdictPacketLocksBall(void)
+{
+    ResetForStarterTest();
+    gSpecialVar_0x8004 = 0; // Bulbasaur ball
+    Multiplayer_ClaimStarter();
+
+    PushVerdict(0, SPECIES_BULBASAUR);
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.starterClaimState, MP_CLAIM_DENIED);
+    ASSERT_EQ(Multiplayer_GetStarterClaimResult(), 0);
+    // A denial means the partner owns the species: recorded + ball hidden.
+    ASSERT_EQ(gMultiplayerState.partnerStarterSpecies, SPECIES_BULBASAUR);
+    ASSERT_EQ(VarGet(VAR_PARTNER_STARTER), SPECIES_BULBASAUR);
+    ASSERT_EQ(FlagGet(FLAG_HIDE_BULBASAUR_BALL), TRUE);
+}
+
+static void TestClaimDeniedByPartnerTakenRepair(void)
+{
+    // Lost verdict: the winner's starter_taken (or beacon) carrying the same
+    // species must resolve the pending claim as denied.
+    ResetForStarterTest();
+    gSpecialVar_0x8004 = 1; // Squirtle ball
+    Multiplayer_ClaimStarter();
+
+    Mp_Push(&gMpRecvRing, MP_PKT_STARTER_PICK);
+    Mp_Push(&gMpRecvRing, (u8)(SPECIES_SQUIRTLE >> 8));
+    Mp_Push(&gMpRecvRing, (u8)(SPECIES_SQUIRTLE & 0xFF));
+    Multiplayer_Update();
+
+    ASSERT_EQ(Multiplayer_NativePollStarterClaim(), TRUE);
+    ASSERT_EQ(gMultiplayerState.starterClaimState, MP_CLAIM_DENIED);
+    ASSERT_EQ(Multiplayer_GetStarterClaimResult(), 0);
+}
+
+static void TestClaimNotDeniedByDifferentPartnerPick(void)
+{
+    // Partner picking a DIFFERENT species must not deny our pending claim.
+    ResetForStarterTest();
+    gSpecialVar_0x8004 = 1; // Squirtle ball
+    Multiplayer_ClaimStarter();
+
+    Mp_Push(&gMpRecvRing, MP_PKT_STARTER_PICK);
+    Mp_Push(&gMpRecvRing, (u8)(SPECIES_CHARMANDER >> 8));
+    Mp_Push(&gMpRecvRing, (u8)(SPECIES_CHARMANDER & 0xFF));
+    Multiplayer_Update();
+
+    ASSERT_EQ(Multiplayer_NativePollStarterClaim(), FALSE); // still pending
+    ASSERT_EQ(gMultiplayerState.starterClaimState, MP_CLAIM_PENDING);
+}
+
+static void TestClaimGrantedOnDisconnectMidWait(void)
+{
+    ResetForStarterTest();
+    gSpecialVar_0x8004 = 0;
+    Multiplayer_ClaimStarter();
+    ASSERT_EQ(Multiplayer_NativePollStarterClaim(), FALSE);
+
+    gMultiplayerState.connState = MP_STATE_DISCONNECTED;
+
+    ASSERT_EQ(Multiplayer_NativePollStarterClaim(), TRUE);
+    ASSERT_EQ(gMultiplayerState.starterClaimState, MP_CLAIM_GRANTED);
+}
+
+static void TestClaimTimeoutBackstopGrants(void)
+{
+    int i;
+    ResetForStarterTest();
+    gSpecialVar_0x8004 = 0;
+    Multiplayer_ClaimStarter();
+
+    for (i = 0; i < MP_CLAIM_TIMEOUT_FRAMES - 1; i++)
+        ASSERT_EQ(Multiplayer_NativePollStarterClaim(), FALSE);
+    ASSERT_EQ(Multiplayer_NativePollStarterClaim(), TRUE);
+    ASSERT_EQ(gMultiplayerState.starterClaimState, MP_CLAIM_GRANTED);
+}
+
+static void TestStrayVerdictIgnoredWhenNotPending(void)
+{
+    // The relay's idempotent ok answer to the post-givemon SendStarterPick
+    // (or any stray verdict) must not flip settled claim state or fabricate
+    // partner picks.
+    ResetForStarterTest();
+
+    PushVerdict(0, SPECIES_BULBASAUR);
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.starterClaimState, MP_CLAIM_IDLE);
+    ASSERT_EQ(gMultiplayerState.partnerStarterSpecies, 0);
+}
+
+static void TestVerdictForWrongSpeciesIgnored(void)
+{
+    // A verdict naming a species we did not claim is stale/foreign: ignore.
+    ResetForStarterTest();
+    gSpecialVar_0x8004 = 0; // claim Bulbasaur
+    Multiplayer_ClaimStarter();
+
+    PushVerdict(0, SPECIES_CHARMANDER);
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.starterClaimState, MP_CLAIM_PENDING);
+}
+
 // ---- Entry point -----------------------------------------------------------
 
 int main(void)
@@ -399,5 +561,15 @@ int main(void)
     TestRederiveBallFlagsFreshState();
     TestRederiveBallFlagsPartnerPickPersists();
     TestRederiveBallFlagsOwnPickPersists();
+    TestClaimOfflineGrantsImmediately();
+    TestClaimConnectedSendsPickAndPends();
+    TestClaimGrantedByVerdictPacket();
+    TestClaimDeniedByVerdictPacketLocksBall();
+    TestClaimDeniedByPartnerTakenRepair();
+    TestClaimNotDeniedByDifferentPartnerPick();
+    TestClaimGrantedOnDisconnectMidWait();
+    TestClaimTimeoutBackstopGrants();
+    TestStrayVerdictIgnoredWhenNotPending();
+    TestVerdictForWrongSpeciesIgnored();
     TEST_SUMMARY();
 }

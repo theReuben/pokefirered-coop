@@ -182,6 +182,7 @@ const PKT_STATE_BEACON:         u8 = 0x1A; // 9 bytes: type + gender + starter_h
                                            //          + turn_seq + move_slot + target + flags
 const PKT_ROLE_ASSIGN:          u8 = 0x1B; // 2 bytes: type + role (1=host, 2=guest); relay -> ROM only
 const PKT_TRAINER_APPROACH:     u8 = 0x1C; // 6 bytes: type + localId + mapGroup + mapNum + direction + distance
+const PKT_STARTER_VERDICT:      u8 = 0x1D; // 4 bytes: type + verdict (1=ok/0=denied) + species_hi + species_lo; relay -> ROM only
 
 const PARTY_SYNC_MON_SIZE:   usize = 58; // serialized MpWirePartyMon (full battle fidelity)
 const PARTY_SYNC_SEED_SIZE:  usize = 4;  // trailing u32 battle RNG seed (big-endian)
@@ -512,6 +513,7 @@ fn packet_size(raw: &[u8], pos: usize) -> usize {
         PKT_STATE_BEACON         => 9,
         PKT_ROLE_ASSIGN          => 2,
         PKT_TRAINER_APPROACH     => 6,
+        PKT_STARTER_VERDICT      => 4,
         _ => 0,
     }
 }
@@ -727,6 +729,17 @@ fn json_to_packet(msg: &Value) -> Option<Vec<u8>> {
             Some(vec![PKT_STARTER_PICK, (species_id >> 8) as u8, species_id as u8])
         }
 
+        // Relay's answer to our starter claim — the ROM blocks in
+        // waitstarterclaim (before givemon) until this arrives.
+        "starter_ok" => {
+            let species_id = msg.get("speciesId")?.as_u64()? as u16;
+            Some(vec![PKT_STARTER_VERDICT, 1, (species_id >> 8) as u8, species_id as u8])
+        }
+        "starter_denied" => {
+            let species_id = msg.get("speciesId")?.as_u64()? as u16;
+            Some(vec![PKT_STARTER_VERDICT, 0, (species_id >> 8) as u8, species_id as u8])
+        }
+
         // Opaque raw packet from the partner bridge — full ROM packet bytes.
         "raw" => from_hex(msg.get("bytes")?.as_str()?),
 
@@ -749,8 +762,7 @@ fn json_to_packet(msg: &Value) -> Option<Vec<u8>> {
 
         // boss_waiting is server telling us to wait — ROM already polls bossReadyBossId.
         // room_full / session_mismatch are handled by the frontend.
-        "boss_waiting" | "room_full" | "session_mismatch"
-        | "starter_denied" => None,
+        "boss_waiting" | "room_full" | "session_mismatch" => None,
 
         other => {
             log::debug!("serial_bridge: unhandled inbound message type: {other}");
@@ -833,6 +845,7 @@ mod tests {
         assert_eq!(packet_size(&[PKT_TRAINER_FREE],                       0), 1);
         assert_eq!(packet_size(&[PKT_STATE_BEACON, 0, 0, 0, 0, 0, 0, 0, 0], 0), 9);
         assert_eq!(packet_size(&[PKT_ROLE_ASSIGN, 1],                     0), 2);
+        assert_eq!(packet_size(&[PKT_STARTER_VERDICT, 1, 0, 0],           0), 4);
         // Variable: party sync with 2 mons = 2 + 2*58 + 4 (trailing RNG seed)
         let mut ps = vec![PKT_PARTY_SYNC, 2];
         ps.resize(122, 0);
@@ -841,6 +854,19 @@ mod tests {
         let mut ev = vec![PKT_EVENT_LOG, 3];
         ev.resize(14, 0);
         assert_eq!(packet_size(&ev, 0), 14);
+    }
+
+    #[test]
+    fn starter_verdict_inbound_mappings() {
+        // starter_ok / starter_denied must reach the ROM as MP_PKT_STARTER_VERDICT
+        // (0x1D) — starter_denied was silently dropped here until 2026-07-20,
+        // which let simultaneous same-species picks desync the slower player.
+        let ok = json_to_packet(&json!({ "type": "starter_ok", "speciesId": 4 }))
+            .expect("starter_ok must map to a packet");
+        assert_eq!(ok, vec![PKT_STARTER_VERDICT, 1, 0x00, 0x04]);
+        let denied = json_to_packet(&json!({ "type": "starter_denied", "speciesId": 260 }))
+            .expect("starter_denied must map to a packet");
+        assert_eq!(denied, vec![PKT_STARTER_VERDICT, 0, 0x01, 0x04]);
     }
 
     #[test]

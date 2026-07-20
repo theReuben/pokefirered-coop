@@ -41,6 +41,14 @@
                                            // + direction + distance). One-shot, cosmetic: a drop
                                            // just skips one animation, so it rides NO beacon
                                            // (a re-carry would wrongly re-trigger the "!").
+#define MP_PKT_STARTER_VERDICT      0x1D   // 4 bytes — relay→ROM answer to a starter claim
+                                           // (the MP_PKT_STARTER_PICK the script sends BEFORE
+                                           // givemon): verdict (1=ok, 0=denied) + species hi/lo.
+                                           // The relay is authoritative on simultaneous
+                                           // same-species picks (spec: first pick wins).
+                                           // Loss recovery needs no resend timer: the winner's
+                                           // species reaches the loser via starter_taken/beacon,
+                                           // and the claim poll reads partner==claimed as denial.
 
 // Boss IDs sent in MP_PKT_BOSS_READY packets (ordered by game progression)
 #define BOSS_ID_BROCK       1
@@ -117,6 +125,22 @@
                                                // cached battle turn; repairs a dropped MP_PKT_BATTLE_TURN)
 #define MP_PKT_SIZE_ROLE_ASSIGN             2  // type + role (MP_ROLE_HOST/GUEST)
 #define MP_PKT_SIZE_TRAINER_APPROACH        6  // type + localId + mapGroup + mapNum + direction + distance
+#define MP_PKT_SIZE_STARTER_VERDICT         4  // type + verdict (1=ok/0=denied) + species_hi + species_lo
+
+// Starter-claim handshake state (gMultiplayerState.starterClaimState).
+// ScrCmd_waitstarterclaim blocks the pick script between the player's YES and
+// givemon until the claim resolves, so a lost same-species race bounces
+// cleanly ("your partner already chose that one") instead of handing out a
+// duplicate mon that can never be reverted.
+#define MP_CLAIM_IDLE     0
+#define MP_CLAIM_PENDING  1
+#define MP_CLAIM_GRANTED  2
+#define MP_CLAIM_DENIED   3
+
+// Frames a PENDING claim waits before granting as a backstop (~10 s).  Only
+// reachable if the relay's verdict AND the partner's starter_taken/beacon all
+// fail to arrive while the connection still looks alive.
+#define MP_CLAIM_TIMEOUT_FRAMES 600
 
 // Party-sync ack rides bit 7 of the beacon's gender byte (pkt[1]); the low
 // bits stay the player gender.  The sender sets it once it has received the

@@ -306,6 +306,17 @@ struct MultiplayerState {
     u8  coopSelectedCount;      // number of local mons selected (1..MULTI_PARTY_SIZE)
     u8  coopSelectedSlots[MULTI_PARTY_SIZE]; // original gPlayerParty index per selection
     u8  _pad5[3];               // padding to keep the struct 4-byte aligned
+    // Starter-claim handshake (see MP_CLAIM_* in constants/multiplayer.h).
+    // Multiplayer_ClaimStarter sends the pick as a claim BEFORE givemon and
+    // sets PENDING; resolved to GRANTED/DENIED by MP_PKT_STARTER_VERDICT, by
+    // the partner's starter_taken/beacon carrying the same species (denial
+    // repair), by disconnect (grant — solo rules), or by timeout (grant
+    // backstop).  Session scratch, zeroed by Multiplayer_Init.
+    u8  starterClaimState;      // MP_CLAIM_*
+    u8  _pad6;
+    u16 starterClaimSpecies;    // species being claimed; valid while not IDLE
+    u16 starterClaimTimer;      // frames spent PENDING (timeout backstop)
+    u8  _pad7[2];               // padding to keep the struct 4-byte aligned
 };
 
 extern struct MultiplayerState gMultiplayerState;
@@ -520,5 +531,13 @@ u16 Multiplayer_IsBall1TakenByPartner(void);
 u16 Multiplayer_IsBall2TakenByPartner(void);
 // Returns TRUE if partner has picked (or we're offline) — used by waitstarterpick.
 bool8 Multiplayer_NativePollPartnerStarterPick(void);
+// Claim a starter BEFORE givemon: reads the ball slot (0-2) from
+// gSpecialVar_0x8004, sends the pick to the relay as a claim, and arms the
+// waitstarterclaim poll.  Grants immediately when offline.
+void Multiplayer_ClaimStarter(void);
+// Returns TRUE once the claim resolved (GRANTED or DENIED) — used by waitstarterclaim.
+bool8 Multiplayer_NativePollStarterClaim(void);
+// Returns 1 if the resolved claim was granted, 0 if denied — for specialvar branching.
+u16 Multiplayer_GetStarterClaimResult(void);
 
 #endif // GUARD_MULTIPLAYER_H

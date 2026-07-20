@@ -236,6 +236,9 @@ void TestResetGameVars(void)
     memset(sGameVars, 0, sizeof(sGameVars));
 }
 
+// Script special-var used by Multiplayer_ClaimStarter (ball slot argument).
+u16 gSpecialVar_0x8004;
+
 // AddBagItem stub — records the last call for test assertions.
 u16 gTestLastAddBagItemId    = 0;
 u16 gTestLastAddBagItemCount = 0;

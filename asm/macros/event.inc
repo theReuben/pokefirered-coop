@@ -326,6 +326,13 @@
 	.byte SCR_OP_WAITPARTYSYNC
 	.endm
 
+	@ Native poll: blocks script until the pending starter claim resolves.
+	@ Must follow a Multiplayer_ClaimStarter special; runs BEFORE givemon so a
+	@ lost same-species race bounces without side effects.
+	.macro waitstarterclaim
+	.byte SCR_OP_WAITSTARTERCLAIM
+	.endm
+
 	@ Blocks script execution for frames. (Pokemon Emerald runs at just shy of 60 frames per second.)
 	.macro delay frames:req
 	.byte SCR_OP_DELAY

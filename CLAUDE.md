@@ -82,6 +82,7 @@ All messages are JSON over WebSocket. The ROM side packs/unpacks binary packets 
 - `battle_turn` — partner's turn selection
 - `partner_connected` / `partner_disconnected`
 - `starter_taken` — partner has claimed a starter (species ID); lock that ball in the lab
+- `starter_ok` / `starter_denied` — relay's verdict on the sender's own starter claim (species ID); the ROM blocks in `waitstarterclaim` before `givemon` until one arrives (both map to `MP_PKT_STARTER_VERDICT` 0x1D)
 - `session_settings` — host's session settings (randomize_encounters bool, sent on connect)
 
 ## Repository Structure (Key Paths)
@@ -214,6 +215,18 @@ Everywhere the rival's starting species is hardcoded (battle setup, overworld sc
 **Edge cases:**
 - If one player is not yet connected when the other approaches the balls, both balls remain available and the unconnected player's pick defaults so the rival always gets one.
 - If both players somehow pick simultaneously before `starter_taken` arrives, the relay server is authoritative: first `starter_pick` received wins; the server sends a `starter_denied` back to the slower player with the conflicting species.
+- (Amended 2026-07-20 — implemented as a **claim-before-give handshake**: on
+  the player's YES the script sends `starter_pick` as a claim and blocks in
+  `waitstarterclaim` (native poll) BEFORE `givemon`. The relay answers the
+  claimant `starter_ok` / `starter_denied`; the Tauri bridge translates both
+  into `MP_PKT_STARTER_VERDICT` (0x1D, 4 bytes: verdict + species). Denied →
+  the script bounces with "your partner already chose that one", the ball
+  locks, nothing was given so nothing needs reverting. A lost denial repairs
+  without a resend timer: the winner's species reaches the loser via
+  `starter_taken`/state-beacon and the claim poll reads partner==claimed as
+  denial; a ~10 s grant backstop covers total verdict silence. The
+  post-givemon `Multiplayer_SendStarterPick` remains as the durable announce;
+  the relay re-acks repeated same-species picks idempotently.)
 
 ---
 

@@ -445,6 +445,46 @@ describe("Starter picking", () => {
     const guest = connect(server, room, new MockConnection("c2"));
     expect(guest.last("starter_taken")).toEqual({ type: "starter_taken", speciesId: 7 });
   });
+
+  it("answers the claimant with starter_ok (positive verdict for waitstarterclaim)", () => {
+    const { server, room } = makeServer();
+    const host = connect(server, room, new MockConnection("c1"));
+    connect(server, room, new MockConnection("c2"));
+    send(server, host, { type: "starter_pick", speciesId: 1 });
+    expect(host.last("starter_ok")).toEqual({ type: "starter_ok", speciesId: 1 });
+  });
+
+  it("conflict loser gets starter_denied and no starter_ok", () => {
+    const { server, room } = makeServer();
+    const host = connect(server, room, new MockConnection("c1"));
+    const guest = connect(server, room, new MockConnection("c2"));
+    send(server, host, { type: "starter_pick", speciesId: 4 });
+    send(server, guest, { type: "starter_pick", speciesId: 4 });
+    expect(guest.last("starter_denied")).toEqual({ type: "starter_denied", speciesId: 4 });
+    expect(guest.received("starter_ok")).toHaveLength(0);
+    expect(host.last("starter_ok")).toEqual({ type: "starter_ok", speciesId: 4 });
+  });
+
+  it("re-pick of the same species re-acks starter_ok (lost-verdict recovery)", () => {
+    const { server, room } = makeServer();
+    const host = connect(server, room, new MockConnection("c1"));
+    connect(server, room, new MockConnection("c2"));
+    send(server, host, { type: "starter_pick", speciesId: 1 });
+    send(server, host, { type: "starter_pick", speciesId: 1 }); // e.g. post-givemon resend
+    expect(host.received("starter_ok")).toHaveLength(2);
+  });
+
+  it("re-pick of a DIFFERENT species is ignored (no ok, no state change)", () => {
+    const { server, room } = makeServer();
+    const host = connect(server, room, new MockConnection("c1"));
+    const guest = connect(server, room, new MockConnection("c2"));
+    send(server, host, { type: "starter_pick", speciesId: 1 });
+    send(server, host, { type: "starter_pick", speciesId: 7 }); // change attempt
+    expect(host.received("starter_ok")).toHaveLength(1); // only the first
+    // Guest can still claim species 7 — host's change attempt recorded nothing.
+    send(server, guest, { type: "starter_pick", speciesId: 7 });
+    expect(guest.last("starter_ok")).toEqual({ type: "starter_ok", speciesId: 7 });
+  });
 });
 
 describe("Session settings", () => {

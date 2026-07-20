@@ -666,6 +666,8 @@ gSpecials::
 	def_special Multiplayer_IsConnected
 	def_special Multiplayer_IsPartnerWaitingForBoss_RivalOaksLab
 	def_special Multiplayer_SendStarterPick
+	def_special Multiplayer_ClaimStarter
+	def_special Multiplayer_GetStarterClaimResult
 	def_special Multiplayer_GetStarterForBall0
 	def_special Multiplayer_GetStarterForBall1
 	def_special Multiplayer_GetStarterForBall2
