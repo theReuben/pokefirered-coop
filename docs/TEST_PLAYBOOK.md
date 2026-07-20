@@ -101,10 +101,15 @@ Parameter BATTLER ∈ {p1, p2}; ROAMER = the other. Run BOTH directions
    overworld again, the battle is over. If the local mon faints instead,
    record it — whiteout also ends the battle and still exercises the
    release.
-7. `wait(240)` both. CHECK-4 (lock release): drive ROAMER through the cone
-   again — this time Sammy SHOULD spot ROAMER (`!`, dialogue opens). This
-   proves TRAINER_FREE arrived. Immediately after the `!`, you may end the
-   scenario (no need to fight the second battle) — report what happened.
+7. `wait(240)` both. CHECK-4 (lock release): read memory on both sides —
+   BATTLER's `sentBusyTrainer` (gMultiplayerState+58 = 0x030015B6) must be
+   0x00 and ROAMER's `partnerHasBusyTrainer` (gMultiplayerState+54 =
+   0x030015B2) must be 0x00 within ~2 s of the battle ending. Do NOT use
+   the old behavioral form ("Sammy spots the roamer") — the
+   trainer-defeated flag is in the synced range, so after the BATTLER wins,
+   Sammy is defeated on BOTH instances and spots nobody (amended
+   2026-07-20, F1c run 1). For the engagement direction, the same
+   addresses read 0x01 during the battle.
 8. CHECK-5 (ghost snap): after BATTLER's battle ended, ROAMER's map shows
    BATTLER's ghost back at BATTLER's real tile (no multi-second slide).
 9. Screenshots at checks 2, 3, 4.
