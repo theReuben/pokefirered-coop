@@ -42,9 +42,24 @@
     firered` BUILD_EXIT=0; `make build-states` regenerated memory_map.lua +
     all states; RB1 executed twice end-to-end in the two-instance MCP
     harness with `check_battle_sync` PASS at intro and after turn 1 both
-    runs. NOT re-verified: F1 lock release in-emulator against the new hook
-    site (beacon recv-side repair covers the partner regardless; worth an
-    F1c pass when convenient).
+    runs.
+  - **F1c chaos pass (same day, later): 9/9 PASS, both role directions**
+    (test/reports/F1c_run1.md). Lock engage/suppress/mirror/release + ghost
+    snap under set_link_chaos(drop=0.3, seed=1); release verified by memory
+    reads (sentBusyTrainer 0x030015B6 / partnerHasBusyTrainer 0x030015B2)
+    because the behavioral re-spot check can't fire — the trainer-defeated
+    flag syncs, so a beaten Sammy spots nobody on either instance. Playbook
+    CHECK-4 amended accordingly. This closes the last in-emulator gap from
+    the 06-17 #18 work.
+  - **History note:** commit 51f5a957c1 briefly contained the hook fix
+    under a docs message (PowerShell quoting ate the first commit); split
+    into 95a1f63fa8 (fix) + 1860d91fea (reports) via force-push same hour.
+  - **Release v0.5.2 tagged** (current main incl. all of today's fixes);
+    the release workflow builds the app with the new ROM and redeploys the
+    PartyKit relay (live edge answered "ok" pre-deploy). Lands as a DRAFT
+    release per workflow default. Evening manual checklist:
+    docs/MANUAL_TEST_PLAN_2026-07-20.md; ROM also bundled to
+    tauri-app/src-tauri/rom/ for `npm run tauri dev`.
 - **Prior Session Summary (2026-07-03, diagnostics + party-corruption fix):**
   - **Coop-battle party corruption (FIXED, native-tested, ROM built — live RB1 verify this session).** The latent gap flagged 2026-06-17 was WORSE than recorded: (1) `CB2_CoopPartySelected` destructively reorders `gPlayerParty[0..n-1]` — with a >3-mon party, selecting a subset permanently overwrites unselected lead mons; (2) `Multiplayer_HandleRemotePartySync` wrote partner mons straight into `gPlayerParty[3..5]`, and could do so BEFORE the local player even reached their menu (the two scripts run unsynchronized) — clobbering slots 3-5 of a big party pre-stash; (3) nothing restored anything after the battle. Fix (3 parts, mirrors vanilla `CB2_EndDebugBattle` INGAME_PARTNER handling): partner party now decodes into an EWRAM side buffer (`sPartnerBattleParty`) and enters `gPlayerParty` only in `Multiplayer_SetupCoopBattle`; `ScrCmd_waitcoopparty` stashes via `SavePlayerParty()` before the menu; `Multiplayer_OnBattleEnd` writes each participant's post-battle state (exp/HP/status) back to its ORIGINAL stash slot (`coopSelectedSlots[]`, recorded at selection) then `LoadPlayerParty()`s — runs regardless of connState so the disconnect/grace path also restores. New tests: `TestRemotePartySyncStagesOutsidePlayerParty`, `TestCoopBattleEndRestoresParty` (suite now 1210+49+39+236+307, 0 fail).
   - **Diagnostics harness for cheap models:** `docs/TEST_PLAYBOOK.md` (scripted R1/F1/RB1 scenarios with per-check PASS criteria) + `.claude/skills/coop-diag` skill. Haiku subagents executed R1/R1c and F1/F1c from it; reports in `test/reports/`.
