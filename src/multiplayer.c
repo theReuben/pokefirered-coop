@@ -2179,6 +2179,23 @@ u32 Multiplayer_CanonicalPlayerTarget(u32 canonicalIdx)
     return canonicalIdx * 2;
 }
 
+// Canonical order for iterating candidate battlers during opponent-AI
+// deliberation.  The AI's per-target scoring loop consumes lockstep RNG
+// draws *inside* each (attacker, target) evaluation; iterating targets in
+// LOCAL battler order feeds those draws to opposite physical matchups on
+// the two mirrored sims, desyncing both the draw values and — because the
+// draw count per matchup is branch-dependent — the stream position itself.
+// Iterating in this canonical order (host's player mon, opponent-left,
+// guest's player mon, opponent-right) makes step k the same physical
+// matchup on both sims.  Opponent battlers 1/3 are unmirrored; even steps
+// route through Multiplayer_CanonicalPlayerTarget.
+u32 Multiplayer_CoopAiEvalBattler(u32 step)
+{
+    if (step & 1)
+        return step;
+    return Multiplayer_CanonicalPlayerTarget(step >> 1);
+}
+
 void Multiplayer_SendBattleTurn(u8 moveSlot, u8 target, u8 flags)
 {
     // One fresh sequence number per logical turn; 0 is reserved for "no turn"

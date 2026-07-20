@@ -436,6 +436,10 @@ bool32 Multiplayer_IsCoopBattle(void);
 // resolve to the same physical mon on both instances despite the mirrored
 // battler layout. See the definition for the host/guest mapping.
 u32 Multiplayer_CanonicalPlayerTarget(u32 canonicalIdx);
+// Canonical battler-iteration order for opponent-AI target evaluation
+// (host: 0,1,2,3 — guest: 2,1,0,3), so per-matchup lockstep RNG draws and
+// tie arrays line up physically on both sims. See the definition.
+u32 Multiplayer_CoopAiEvalBattler(u32 step);
 // Coop battle lockstep RNG: next 16-bit draw from the dedicated xorshift32
 // stream (seeded from coopBattleSeed in Multiplayer_SetupCoopBattle).
 u16 Multiplayer_CoopBattleRandom16(void);

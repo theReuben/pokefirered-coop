@@ -131,7 +131,7 @@ enum Move GetAIChosenMove(enum BattlerId battlerId)
 
 bool32 AI_RandLessThan(u32 val)
 {
-    if ((Random() % 0xFF) < val)
+    if (RandomUniform(RNG_AI_RAND_LESS_THAN, 0, 0xFE) < val)
         return TRUE;
     return FALSE;
 }
@@ -2169,7 +2169,7 @@ bool32 ShouldTryOHKO(enum BattlerId battlerAtk, enum BattlerId battlerDef, enum 
     u32 accuracy = gAiLogicData->moveAccuracy[battlerAtk][battlerDef][gAiThinkingStruct->movesetIndex];
 
     gPotentialItemEffectBattler = battlerDef;
-    if (holdEffect == HOLD_EFFECT_FOCUS_BAND && (Random() % 100) < gAiLogicData->holdEffectParams[battlerDef])
+    if (holdEffect == HOLD_EFFECT_FOCUS_BAND && RandomUniform(RNG_AI_TRY_OHKO, 0, 99) < gAiLogicData->holdEffectParams[battlerDef])
         return FALSE;   //probabilistically speaking, focus band should activate so dont OHKO
     else if (holdEffect == HOLD_EFFECT_FOCUS_SASH && AI_BattlerAtMaxHp(battlerDef))
         return FALSE;
@@ -2187,7 +2187,7 @@ bool32 ShouldTryOHKO(enum BattlerId battlerAtk, enum BattlerId battlerDef, enum 
         u32 odds = accuracy + (gBattleMons[battlerAtk].level - gBattleMons[battlerDef].level);
         if (MoveHasIncreasedAccByTenOnSameType(move) && !IS_BATTLER_OF_TYPE(battlerAtk, GetMoveType(move)))
             odds -= 10;
-        if (Random() % 100 + 1 < odds && gBattleMons[battlerAtk].level >= gBattleMons[battlerDef].level)
+        if (RandomUniform(RNG_AI_TRY_OHKO, 1, 100) < odds && gBattleMons[battlerAtk].level >= gBattleMons[battlerDef].level)
             return TRUE;
     }
     return FALSE;
@@ -2303,7 +2303,7 @@ s32 ProtectChecks(enum BattlerId battlerAtk, enum BattlerId battlerDef, enum Mov
     {
         if (predictedMove != MOVE_NONE && predictedMove != MOVE_UNAVAILABLE && !IsBattleMoveStatus(predictedMove))
             score += DECENT_EFFECT;
-        else if (Random() % 256 < 100)
+        else if (RandomUniform(RNG_AI_PROTECT, 0, 255) < 100)
             score += WEAK_EFFECT;
     }
     else

@@ -1214,6 +1214,51 @@ static void TestTrainerKeysDontCollideWithWildKeys(void)
     gCoopSettings.randomizeEncounters = 0;
 }
 
+// ---- Coop AI: canonical target-evaluation order ---------------------------
+
+// Local battler -> physical mon identity: player-side battlers (0/2) are
+// mirrored between the sims (each runs its own player as 0), opponent-side
+// battlers (1/3) are shared. Canonical identity below = "as seen by host".
+static u8 PhysicalIdOnGuest(u8 localBattler)
+{
+    if (localBattler == 0) return 2;
+    if (localBattler == 2) return 0;
+    return localBattler;
+}
+
+static void TestCoopAiEvalOrderPhysicallyAligned(void)
+{
+    u8 hostOrder[4], guestOrder[4];
+
+    ResetAll();
+    gMultiplayerState.role = MP_ROLE_HOST;
+    for (u32 i = 0; i < 4; i++)
+        hostOrder[i] = Multiplayer_CoopAiEvalBattler(i);
+    gMultiplayerState.role = MP_ROLE_GUEST;
+    for (u32 i = 0; i < 4; i++)
+        guestOrder[i] = Multiplayer_CoopAiEvalBattler(i);
+
+    // Host iterates local order; guest swaps the player-side pair.
+    ASSERT_EQ(hostOrder[0], 0);
+    ASSERT_EQ(hostOrder[1], 1);
+    ASSERT_EQ(hostOrder[2], 2);
+    ASSERT_EQ(hostOrder[3], 3);
+    ASSERT_EQ(guestOrder[0], 2);
+    ASSERT_EQ(guestOrder[1], 1);
+    ASSERT_EQ(guestOrder[2], 0);
+    ASSERT_EQ(guestOrder[3], 3);
+
+    // The property the lockstep depends on: step k names the SAME physical
+    // mon on both sims, so per-matchup RNG draws align.
+    for (u32 i = 0; i < 4; i++)
+        ASSERT_EQ(hostOrder[i], PhysicalIdOnGuest(guestOrder[i]));
+
+    // No role assigned (single-player fallback): host mapping is the default.
+    gMultiplayerState.role = MP_ROLE_NONE;
+    for (u32 i = 0; i < 4; i++)
+        ASSERT_EQ(Multiplayer_CoopAiEvalBattler(i), hostOrder[i]);
+}
+
 static void TestIsConnectedReflectsState(void)
 {
     ResetAll();
@@ -1293,6 +1338,7 @@ int main(void)
     TestBadgeFlagInFullSync();
     TestBossReadyRequiresMatchingId();
     TestTrainerKeysDontCollideWithWildKeys();
+    TestCoopAiEvalOrderPhysicallyAligned();
     TestIsConnectedReflectsState();
     // Registered last: these call ResetAll() (which nulls gSaveBlock1Ptr) and
     // set up their own fixture, so they must not run mid-suite where later

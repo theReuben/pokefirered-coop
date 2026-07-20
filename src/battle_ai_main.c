@@ -894,9 +894,20 @@ static u32 ChooseMoveOrAction_Doubles(enum BattlerId battler)
     u32 mostViableTargetsNo;
     u32 mostViableMovesNo;
     s32 mostMovePoints;
+    // Coop: evaluate candidate targets in role-canonical order, not local
+    // battler order.  Scoring consumes lockstep RNG per (attacker, target)
+    // matchup with a branch-dependent draw count; the mirrored sims (local
+    // player = battler 0 on each) must spend those draws on the same physical
+    // matchup at the same stream position or the shared stream desyncs and
+    // every later roll — including target picks — diverges.  Canonical order
+    // also builds mostViableTargetsArray physically aligned, so the score-tie
+    // roll below lands on the same mon for ANY tie composition.
+    bool32 coopCanonOrder = Multiplayer_IsCoopBattle()
+                         && GetBattlerSide(battler) == B_SIDE_OPPONENT;
 
-    for (enum BattlerId battlerIndex = 0; battlerIndex < MAX_BATTLERS_COUNT; battlerIndex++)
+    for (u32 evalStep = 0; evalStep < MAX_BATTLERS_COUNT; evalStep++)
     {
+        enum BattlerId battlerIndex = coopCanonOrder ? Multiplayer_CoopAiEvalBattler(evalStep) : evalStep;
         if (gBattleMons[battlerIndex].hp == 0)
         {
             actionOrMoveIndex[battlerIndex] = 0xFF;
@@ -976,22 +987,28 @@ static u32 ChooseMoveOrAction_Doubles(enum BattlerId battler)
         }
     }
 
-    mostMovePoints = bestMovePointsForTarget[0];
-    mostViableTargetsArray[0] = 0;
-    mostViableTargetsNo = 1;
-
-    for (enum BattlerId battlerIndex = 1; battlerIndex < MAX_BATTLERS_COUNT; battlerIndex++)
+    // Scan in the same order the targets were evaluated (canonical when coop)
+    // so the tie array's slot k names the same physical mon on both sims.
     {
-        if (mostMovePoints == bestMovePointsForTarget[battlerIndex])
+        enum BattlerId firstIndex = coopCanonOrder ? Multiplayer_CoopAiEvalBattler(0) : 0;
+        mostMovePoints = bestMovePointsForTarget[firstIndex];
+        mostViableTargetsArray[0] = firstIndex;
+        mostViableTargetsNo = 1;
+
+        for (u32 evalStep = 1; evalStep < MAX_BATTLERS_COUNT; evalStep++)
         {
-            mostViableTargetsArray[mostViableTargetsNo] = battlerIndex;
-            mostViableTargetsNo++;
-        }
-        if (mostMovePoints < bestMovePointsForTarget[battlerIndex])
-        {
-            mostMovePoints = bestMovePointsForTarget[battlerIndex];
-            mostViableTargetsArray[0] = battlerIndex;
-            mostViableTargetsNo = 1;
+            enum BattlerId battlerIndex = coopCanonOrder ? Multiplayer_CoopAiEvalBattler(evalStep) : evalStep;
+            if (mostMovePoints == bestMovePointsForTarget[battlerIndex])
+            {
+                mostViableTargetsArray[mostViableTargetsNo] = battlerIndex;
+                mostViableTargetsNo++;
+            }
+            if (mostMovePoints < bestMovePointsForTarget[battlerIndex])
+            {
+                mostMovePoints = bestMovePointsForTarget[battlerIndex];
+                mostViableTargetsArray[0] = battlerIndex;
+                mostViableTargetsNo = 1;
+            }
         }
     }
 
@@ -999,20 +1016,11 @@ static u32 ChooseMoveOrAction_Doubles(enum BattlerId battler)
     gBattleTestRunnerState->data.trial.targetTieCount = mostViableTargetsNo;
 #endif
 
-    {
-        u32 tieRoll = RandomUniform(RNG_AI_SCORE_TIE_DOUBLES_TARGET, 0, mostViableTargetsNo - 1);
-        gBattlerTarget = mostViableTargetsArray[tieRoll];
-        // Coop: when an opponent's move ties between the two player mons, the
-        // winning battler INDEX names opposite physical mons on the two sims
-        // (mirrored layout). mostViableTargetsArray is built ascending, so a
-        // {0,2} tie has tieRoll 0->battler 0, 1->battler 2 — the same index
-        // semantics as the canonical map. Re-resolve so both sims hit one mon.
-        if (Multiplayer_IsCoopBattle()
-         && GetBattlerSide(battler) == B_SIDE_OPPONENT
-         && mostViableTargetsNo == 2
-         && mostViableTargetsArray[0] == 0 && mostViableTargetsArray[1] == 2)
-            gBattlerTarget = Multiplayer_CanonicalPlayerTarget(tieRoll);
-    }
+    // Coop tie handling needs no special case here: with canonical build
+    // order above, mostViableTargetsArray[tieRoll] already names the same
+    // physical mon on both sims for any tie composition (this replaces the
+    // old {0,2}-only remap, which missed mixed player/opponent ties).
+    gBattlerTarget = mostViableTargetsArray[RandomUniform(RNG_AI_SCORE_TIE_DOUBLES_TARGET, 0, mostViableTargetsNo - 1)];
     gAiBattleData->chosenTarget[battler] = gBattlerTarget;
 
     return actionOrMoveIndex[gBattlerTarget];
@@ -2458,7 +2466,7 @@ static s32 AI_CheckBadMove(enum BattlerId battlerAtk, enum BattlerId battlerDef,
                 {
                     ADJUST_SCORE(-10); //Don't protect if you're going to faint after protecting
                 }
-                else if (gBattleMons[battlerAtk].volatiles.consecutiveMoveUses == 1 && Random() % 100 < 50)
+                else if (gBattleMons[battlerAtk].volatiles.consecutiveMoveUses == 1 && RandomPercentage(RNG_AI_PROTECT, 50))
                 {
                     if (isBattle1v1)
                         ADJUST_SCORE(-6);
@@ -6472,7 +6480,7 @@ static s32 AI_Risky(enum BattlerId battlerAtk, enum BattlerId battlerDef, enum M
             switch (additionalEffect->moveEffect)
             {
             case MOVE_EFFECT_ALL_STATS_UP:
-                if (Random() & 1)
+                if (RandomUniform(RNG_AI_RISKY_ALL_STATS_UP, 0, 1))
                     ADJUST_SCORE(AVERAGE_RISKY_EFFECT);
                 break;
             default:

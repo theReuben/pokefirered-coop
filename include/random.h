@@ -242,6 +242,13 @@ enum RandomTag
     RNG_FISHING_BITE,
     RNG_FISHING_GEN3_STICKY,
     RNG_WILD_MON_TARGET,
+    // Coop: AI-scoring rolls must be tagged — untagged Random() draws from
+    // the free-running shared stream and diverges between the two lockstep
+    // battle sims (see Multiplayer_CoopAiEvalBattler).
+    RNG_AI_RAND_LESS_THAN,
+    RNG_AI_TRY_OHKO,
+    RNG_AI_PROTECT,
+    RNG_AI_RISKY_ALL_STATS_UP,
 };
 
 #define RandomWeighted(tag, ...) \

@@ -9,7 +9,62 @@
 ## Current State
 - **Active Phase:** 9
 - **Active Step:** 9.1
-- **Last Session Summary (2026-07-20, RB1 live verify + dead-hook fix):**
+- **Last Session Summary (2026-07-20 evening, coop AI lockstep fix — user-reported remote desync):**
+  - **User report (live Tauri play on v0.5.2): coop double battle desynced —
+    the enemy's left/right target resolved by screen position, not mon; the
+    trigger was the AI targeting a player character.** v0.5.2 already
+    contained 59cb0a4ca5 (`Multiplayer_CanonicalPlayerTarget` at the two
+    index-based RNG target sites), so this was a residual hole.
+  - **Mechanism (diagnosed in code, then fixed):** 59cb0a4ca5's stated
+    assumption "non-tie AI selection already converges because score follows
+    mon identity" is false. `ChooseMoveOrAction_Doubles` evaluates candidate
+    targets in LOCAL battler order, and scoring consumes lockstep-tagged RNG
+    *inside* each (attacker, target) evaluation (`RNG_AI_ASSUME_STATUS_*`,
+    `RNG_AI_SHOULD_RECOVER`, per-target `RNG_AI_SCORE_TIE_DOUBLES_MOVE`, …)
+    with a branch-dependent draw count. On the mirrored sims (local player =
+    battler 0 on each) the same stream positions feed OPPOSITE physical
+    matchups, and the draw-count mismatch desyncs the stream position itself
+    — after which every roll in the battle (including the canonicalized
+    target sites) returns different values on the two sims. Two smaller
+    holes: the tie remap only covered a tie of exactly {0,2} (mixed
+    player/opponent-score ties still picked by raw index), and several AI
+    scoring sites drew untagged `Random()` (bypasses the coop stream
+    entirely).
+  - **Fix (one commit):** (1) `Multiplayer_CoopAiEvalBattler(step)` — coop
+    opponent-side AI iterates targets in role-canonical order (host 0,1,2,3;
+    guest 2,1,0,3) in BOTH the evaluation loop and the best-target scan, so
+    step k is the same physical matchup on both sims and the tie array is
+    physically aligned for any tie composition; the {0,2}-only remap is
+    removed as superseded. (2) Untagged `Random()` converted to new tagged
+    draws (`RNG_AI_RAND_LESS_THAN`, `RNG_AI_TRY_OHKO`, `RNG_AI_PROTECT`,
+    `RNG_AI_RISKY_ALL_STATS_UP`) in AI_RandLessThan, ShouldTryOHKO,
+    ProtectChecks, protect double-use, all-stats-up risky roll. Safari-flee
+    and tera-predict sites left untagged (unreachable in coop). Non-coop
+    behavior byte-equivalent (identity order; RandomUniform falls through to
+    the default stream). CLAUDE.md RNG-lockstep section amended.
+  - **Verified (named):** native suite 2488 assertions 0 fail incl. new
+    `TestCoopAiEvalOrderPhysicallyAligned`; `make firered` clean; states
+    rebuilt. Live MCP RB1: run 1 clean — check_battle_sync PASS, gBattleMons
+    dumps (0x220 bytes) byte-identical mirror after each AI turn (enemy used
+    a status move both turns = the exact draw pattern that used to desync),
+    battle to victory, both to overworld. Run 2 with chaos drop=0.3 seed=1
+    (379k packets dropped): 6 turns, per-turn dumps identical throughout,
+    and the enemy AI made single-target picks on turns 4/5 hitting the SAME
+    physical mon (Charmander) on both sims — the exact user-reported
+    surface. Charmander's faint and the battle end agreed on both.
+  - **Pre-existing observations (not regressions, not fixed):** (1) partner
+    mons reconstructed from `MP_PKT_PARTY_SYNC` have zero IV words (by
+    design — wire format carries stats, not IVs); (2) one u32 at battler
+    struct offset +0x80 of the enemy mon differs per instance and mutates
+    per turn (differs at baseline too, before any AI code runs; player-mon
+    slots agree) — worth identifying someday; (3) **open chaos-window bug in
+    the boss-ready handshake:** with drop=0.3, one run had p2 proceed to
+    party selection while p1's `waitbossstart` never converged (~40 s) — p2
+    had left the ready state, so the beacon no longer carried it. Repro'd
+    once, then avoided by stepping both players onto triggers promptly.
+    Needs its own diagnosis (likely: beacon must keep advertising
+    "ready/started boss X" until the battle actually starts).
+- **Previous Session Summary (2026-07-20, RB1 live verify + dead-hook fix):**
   - **Committed and pushed the 2026-07-03 session's uncommitted work** (party
     stash/restore fix 8f6ac50520, diagnostics playbook+skill+evidence
     3cc2c7d710, docs a5405b60ad). Native suite re-run before commit:
