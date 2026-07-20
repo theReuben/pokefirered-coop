@@ -10,11 +10,19 @@
 - **Active Phase:** 9
 - **Active Step:** 9.1
 - **Last Session Summary (2026-07-20 evening, coop AI lockstep fix — user-reported remote desync):**
-  - **User report (live Tauri play on v0.5.2): coop double battle desynced —
-    the enemy's left/right target resolved by screen position, not mon; the
-    trigger was the AI targeting a player character.** v0.5.2 already
-    contained 59cb0a4ca5 (`Multiplayer_CanonicalPlayerTarget` at the two
-    index-based RNG target sites), so this was a residual hole.
+  - **User report (live Tauri play on release v0.1.27 = a9837e3777): coop
+    double battle desynced — the enemy's left/right target resolved by
+    screen position, not mon; the trigger was the AI targeting a player
+    character.** v0.1.27 already contained 59cb0a4ca5
+    (`Multiplayer_CanonicalPlayerTarget` at the two index-based RNG target
+    sites), so this was a residual hole.
+  - **Versioning correction:** the real release line is the GitHub v0.1.x
+    releases (latest v0.1.27, published 2026-07-20 17:42Z). The "v0.5.2
+    release cut" recorded by the morning session is a LOCAL-scheme tag
+    (e823b6542c, one commit before v0.1.27) that never became a GitHub
+    release; stray v0.4.0/v0.5.0/v0.5.1 tags from early June also exist on
+    the remote. Candidates for deletion — not removed, pending user
+    decision.
   - **Mechanism (diagnosed in code, then fixed):** 59cb0a4ca5's stated
     assumption "non-tie AI selection already converges because score follows
     mon identity" is false. `ChooseMoveOrAction_Doubles` evaluates candidate
