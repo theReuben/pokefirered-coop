@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-07-20T00:31:22.981542Z",
+  "claim": "P1 overworld after coop rival battle with the fixed OnBattleEnd hook; gPlayerParty[3] zeroed and coopPartyStashed cleared on both instances",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": false,
+  "in_native_script": true,
+  "text": "Aaaaaaa? Okay! I'll make my\nPOK?MON battle to toughen it up!?Aaaaaaa! Gramps!\nSmell you later!"
+}

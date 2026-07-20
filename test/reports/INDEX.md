@@ -4,6 +4,8 @@
 |------|----------|-------|--------|--------|-------|
 | 2026-07-03 | R1 | No | 3/6 PASS, 1 FAIL, 2 BLOCKED | test/reports/R1_run1.md | Ghost despawn after 10s idle; map transition inaccessible |
 | 2026-07-03 | R1c | Yes (0.3 drop) | 4/6 PASS, 0 FAIL, 2 BLOCKED | test/reports/R1c_run1.md | Heartbeat resilient to packet loss; same map navigation block |
+| 2026-07-20 | RB1 | No | 4/5 PASS, 1 FAIL | test/reports/RB1_run1.md | Battle entry/sync/turns all PASS; party restore FAIL — Multiplayer_OnBattleEnd hooked on link-only path, never runs |
+| 2026-07-20 | RB1 (run 2) | No | 5/5 PASS | test/reports/RB1_run2.md | Hook moved to ReturnFromBattleToOverworld; partner evicted, stash cleared, exp preserved on both sides |
 
 ## Summary
 

@@ -9,7 +9,43 @@
 ## Current State
 - **Active Phase:** 9
 - **Active Step:** 9.1
-- **Last Session Summary (2026-07-03, diagnostics + party-corruption fix):**
+- **Last Session Summary (2026-07-20, RB1 live verify + dead-hook fix):**
+  - **Committed and pushed the 2026-07-03 session's uncommitted work** (party
+    stash/restore fix 8f6ac50520, diagnostics playbook+skill+evidence
+    3cc2c7d710, docs a5405b60ad). Native suite re-run before commit:
+    1841 assertions, 0 fail.
+  - **RB1 run 1 (live, MCP harness): battle entry/sync/turn lockstep all
+    PASS — but the party restore FAILED.** Mechanism (verified in code, not
+    inferred): `Multiplayer_OnBattleEnd` was called only from
+    `SetBattleEndCallbacks` (battle_controller_player.c), a controller func
+    installed only by `PlayerHandleEndLinkBattle` — i.e. only for
+    `BATTLE_TYPE_LINK` battles. Coop battles are non-link BY DESIGN and end
+    via `ReturnFromBattleToOverworld` (battle_main.c), so the hook was dead
+    for every battle type it was written for. Dead with it: (1) the coop
+    party restore (partner mon stayed in gPlayerParty[3], coopPartyStashed
+    stuck TRUE), (2) the field-trainer lock release moved there by
+    1a1416e9a9 (partner would stay "Buzz off!"-locked forever after any
+    field battle — the send-side beacon keeps re-carrying busy=1), (3) the
+    post-battle auto-checkpoint save. The hook's own comment asserted the
+    opposite ("fires ... for non-link battles only") — rule-1 reminder that
+    comments are hypotheses. Full diagnosis in test/reports/RB1_run1.md.
+  - **Fix: moved the `Multiplayer_OnBattleEnd()` call to
+    `ReturnFromBattleToOverworld` right after `gMain.inBattle = FALSE`** —
+    the single point every non-link battle (wild/field-trainer/coop) passes
+    through, after evolutions and after all battle results are written to
+    gPlayerParty. Removed from battle_controller_player.c.
+  - **RB1 run 2 (same scenario, fixed ROM): 5/5 PASS.** Post-battle on both
+    instances: gPlayerParty[3] zeroed (partner evicted), coopPartyStashed/
+    coopSelectedCount cleared, local mon personality unchanged with Lv 5→6
+    and maxHP gain preserved through the stash. test/reports/RB1_run2.md.
+  - **Verified:** native suite (1841/1841) before each commit; `make
+    firered` BUILD_EXIT=0; `make build-states` regenerated memory_map.lua +
+    all states; RB1 executed twice end-to-end in the two-instance MCP
+    harness with `check_battle_sync` PASS at intro and after turn 1 both
+    runs. NOT re-verified: F1 lock release in-emulator against the new hook
+    site (beacon recv-side repair covers the partner regardless; worth an
+    F1c pass when convenient).
+- **Prior Session Summary (2026-07-03, diagnostics + party-corruption fix):**
   - **Coop-battle party corruption (FIXED, native-tested, ROM built — live RB1 verify this session).** The latent gap flagged 2026-06-17 was WORSE than recorded: (1) `CB2_CoopPartySelected` destructively reorders `gPlayerParty[0..n-1]` — with a >3-mon party, selecting a subset permanently overwrites unselected lead mons; (2) `Multiplayer_HandleRemotePartySync` wrote partner mons straight into `gPlayerParty[3..5]`, and could do so BEFORE the local player even reached their menu (the two scripts run unsynchronized) — clobbering slots 3-5 of a big party pre-stash; (3) nothing restored anything after the battle. Fix (3 parts, mirrors vanilla `CB2_EndDebugBattle` INGAME_PARTNER handling): partner party now decodes into an EWRAM side buffer (`sPartnerBattleParty`) and enters `gPlayerParty` only in `Multiplayer_SetupCoopBattle`; `ScrCmd_waitcoopparty` stashes via `SavePlayerParty()` before the menu; `Multiplayer_OnBattleEnd` writes each participant's post-battle state (exp/HP/status) back to its ORIGINAL stash slot (`coopSelectedSlots[]`, recorded at selection) then `LoadPlayerParty()`s — runs regardless of connState so the disconnect/grace path also restores. New tests: `TestRemotePartySyncStagesOutsidePlayerParty`, `TestCoopBattleEndRestoresParty` (suite now 1210+49+39+236+307, 0 fail).
   - **Diagnostics harness for cheap models:** `docs/TEST_PLAYBOOK.md` (scripted R1/F1/RB1 scenarios with per-check PASS criteria) + `.claude/skills/coop-diag` skill. Haiku subagents executed R1/R1c and F1/F1c from it; reports in `test/reports/`.
   - **R1 (ghost position sync) PASS incl. chaos.** The one clean-run "FAIL" (idle despawn) was a harness artifact: a long `wait` on one instance freezes the other → no heartbeats → relay legitimately declares disconnect. Playbook now mandates interleaved waits.
