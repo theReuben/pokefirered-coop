@@ -1,12 +1,14 @@
 # Manual test plan — evening of 2026-07-20
 
-Everything below runs on the build cut from `main` today (tag `v0.5.2`).
+Everything below runs on the build cut from `main` today — **use `v0.1.28`**
+(the earlier `v0.5.2` tag was off-scheme and has been deleted; v0.1.28
+additionally contains the evening's coop AI lockstep fix, see section F).
 The release workflow also redeploys the PartyKit relay, so both app and
 relay are current.
 
 ## Getting the build
 
-1. GitHub → Releases → `v0.5.2` (it lands as a **draft** — that's the
+1. GitHub → Releases → `v0.1.28` (it lands as a **draft** — that's the
    workflow default; the assets are downloadable for you as repo owner, or
    hit "Publish" first if you prefer).
 2. Install/unpack on both machines (or two copies on one machine).
@@ -82,7 +84,30 @@ sweepers).
       the other side's AI takes over after ~30 s; when the battle ends the
       party must STILL restore correctly.
 
-### E. Follower ghost diagnostic (2 min, when you see it)
+### E. Coop battle AI targeting — the evening's desync fix (10 min)
+Your report from this afternoon's session: the enemy attacked by screen
+position, not mon, and the battle diverged. Root cause was deeper than the
+June target fix — the AI's *deliberation itself* consumed lockstep RNG in
+mirrored order, desyncing the whole stream. Fixed and MCP-verified (clean +
+30% packet loss); this is the live confirmation.
+- [ ] In any coop double battle (rival redo or Brock), let the enemy act
+      for **at least 4-5 turns** — don't rush the kill. Every enemy move,
+      target, and damage number must match on both screens (same mon hit —
+      it appears on OPPOSITE sides of the two screens; that's correct).
+- [ ] Especially watch enemy STATUS moves (Growl/Tail Whip/leer): those
+      were the draws that desynced the stream. Stat-fall messages must name
+      the same mons on both screens.
+- [ ] If either screen ever shows a different move/target/HP than the
+      other: note the turn number and both screens' text — that's a repro
+      we can replay in the harness.
+- [ ] **Known open issue (don't file as new):** if one player gets stuck on
+      "Waiting for partner… Press B to cancel" at a boss trigger while the
+      other is already in party selection, that's the boss-ready chaos
+      window (found tonight, not yet fixed). Workaround: stuck player
+      presses B, BOTH walk off the triggers, then step on again within a
+      second or two of each other.
+
+### F. Follower ghost diagnostic (2 min, when you see it)
 - [ ] **#21**: if the partner has a follower Pokémon, its ghost should be a
       Pokémon sprite. The fix makes a bad sprite *despawn* rather than
       render as a tree/NPC. So: follower ghost briefly VANISHING =
