@@ -2634,9 +2634,12 @@ void Multiplayer_OnBattleEnd(void)
     // spotting in Multiplayer_SendTrainerBusy and held through the approach/intro
     // and the whole battle (the state beacon re-carries it every interval from
     // both Multiplayer_Update pre-battle and Multiplayer_BattleTick during the
-    // battle).  This hook fires from SetBattleEndCallbacks right after
-    // gMain.inBattle is set FALSE, for non-link battles only — exactly the
-    // field-trainer case.  Clear the local flag UNCONDITIONALLY so a disconnect
+    // battle).  This hook fires from ReturnFromBattleToOverworld (battle_main.c)
+    // right after gMain.inBattle is set FALSE — the point every NON-link battle
+    // passes through.  (It was previously hooked in SetBattleEndCallbacks, a
+    // controller func only link battles ever install — dead for every battle
+    // type we care about; found live in RB1 run 1, 2026-07-20.)
+    // Clear the local flag UNCONDITIONALLY so a disconnect
     // mid-battle can't strand it set (the beacon would re-broadcast a stuck lock
     // on reconnect); only emit the explicit FREE packet while still connected.
     if (gMultiplayerState.sentBusyTrainer)

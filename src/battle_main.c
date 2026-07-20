@@ -5783,6 +5783,12 @@ static void ReturnFromBattleToOverworld(void)
     gSpecialVar_Result = gBattleOutcome;
     gMain.inBattle = FALSE;
     gMain.callback1 = gPreBattleCallback1;
+    // Every non-link battle (wild, field trainer, coop double) funnels through
+    // here; the link-battle teardown takes the controller ENDLINKBATTLE path
+    // instead and never reaches this point with gReceivedRemoteLinkPlayers set.
+    // Runs after evolutions and after all battle results are written to
+    // gPlayerParty, which the coop party restore inside depends on.
+    Multiplayer_OnBattleEnd();
 
     if (gBattleTypeFlags & BATTLE_TYPE_ROAMER)
     {
