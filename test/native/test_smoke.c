@@ -2,6 +2,8 @@
 #include "global.h"
 #include "multiplayer.h"
 #include "constants/event_objects.h"
+#include "constants/battle.h"   // BATTLE_TYPE_COOP (boss-ready beacon linger test)
+#include "battle.h"             // gBattleTypeFlags
 #include <string.h>
 
 // Declared in stubs.c so tests can control spawn behaviour.
@@ -1018,16 +1020,56 @@ static void TestBossReadyConnectedWaitsForPartner(void)
 
 static void TestBossReadyBothReadyProceeds(void)
 {
-    // Once partner sends BOSS_READY, CheckBossStart returns 1
+    // Once partner sends BOSS_READY, CheckBossStart returns 1.
     ResetAll();
     gMultiplayerState.connState       = MP_STATE_CONNECTED;
     gMultiplayerState.bossReadyBossId = BOSS_ID_BROCK;
     gMultiplayerState.partnerBossId   = BOSS_ID_BROCK; // simulate received BOSS_READY
 
     ASSERT_EQ(Multiplayer_ScriptCheckBossStart(), 1);
-    // Both cleared after start
+    // Chaos-window fix (2026-07-21): connected path must NOT clear ready on pass.
+    // The state beacon (pkt[4]=bossReadyBossId) is the only loss-recovery channel
+    // for a partner that hasn't yet received our BOSS_READY, so we keep
+    // advertising through party selection until the battle actually starts.
+    ASSERT_EQ(gMultiplayerState.bossReadyBossId, BOSS_ID_BROCK);
+    ASSERT_EQ(gMultiplayerState.partnerBossId, BOSS_ID_BROCK);
+
+    // Multiplayer_SetupCoopBattle is where the handshake actually clears (the
+    // party exchange by then proves the partner also passed waitbossstart).
+    Multiplayer_SetupCoopBattle();
     ASSERT_EQ(gMultiplayerState.bossReadyBossId, 0);
     ASSERT_EQ(gMultiplayerState.partnerBossId, 0);
+}
+
+static void TestBossReadyBeaconIgnoredDuringCoopBattle(void)
+{
+    // Chaos-window fix, linger guard: a late beacon carrying the partner's
+    // still-advertised bossReadyBossId must NOT re-arm partnerBossId once we are
+    // already in the coop battle, or it would strand a stale ready post-battle
+    // (the beacon never clears partnerBossId).  Convergence only happens in the
+    // pre-battle party-selection window.
+    Multiplayer_Init();
+    ResetDispatch();
+    gSaveBlock1Ptr = &sTestSave;
+    gMultiplayerState.connState     = MP_STATE_CONNECTED;
+    gMultiplayerState.partnerBossId = 0;
+    gBattleTypeFlags = BATTLE_TYPE_COOP; // pretend the coop battle is running
+
+    // Beacon body (opcode is stripped by the dispatcher): gender, starterHi,
+    // starterLo, bossId=BROCK, then 4 idle turn bytes.
+    Mp_Push(&gMpRecvRing, MP_PKT_STATE_BEACON);
+    Mp_Push(&gMpRecvRing, 0);
+    Mp_Push(&gMpRecvRing, 0);
+    Mp_Push(&gMpRecvRing, 0);
+    Mp_Push(&gMpRecvRing, BOSS_ID_BROCK);
+    Mp_Push(&gMpRecvRing, 0);
+    Mp_Push(&gMpRecvRing, 0);
+    Mp_Push(&gMpRecvRing, 0);
+    Mp_Push(&gMpRecvRing, 0);
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.partnerBossId, 0); // ignored mid-battle
+    gBattleTypeFlags = 0;
 }
 
 static void TestBossReadyKeepsMatchingPartnerReady(void)
@@ -1329,6 +1371,7 @@ int main(void)
     TestCoopBattlePendingClearedOnScriptEnd();
     TestBossReadyConnectedWaitsForPartner();
     TestBossReadyBothReadyProceeds();
+    TestBossReadyBeaconIgnoredDuringCoopBattle();
     TestBossReadyKeepsMatchingPartnerReady();
     TestBossReadyResetsMismatchingPartnerReady();
     TestBossReadyCancelClearsState();

@@ -566,7 +566,14 @@ static bool8 ProcessOneRecvPacket(void)
             // ready in the same frame as the ready itself, and clearing here
             // would undo it before the script poll observes it.  Clearing
             // stays event-driven (BOSS_CANCEL / disconnect / mismatch reset).
-            if (bossId != 0)
+            // Only converge readiness while OUT of a coop battle (the pre-battle
+            // party-selection window is where a dropped BOSS_READY is repaired).
+            // Once the battle is running both sides have already passed, and the
+            // sender keeps advertising its ready until its own SetupCoopBattle —
+            // applying that here would strand a stale partnerBossId post-battle
+            // (the beacon never clears it).  Those same bytes are turn data mid
+            // coop battle anyway, guarded by turnSeq below.
+            if (bossId != 0 && !Multiplayer_IsCoopBattle())
                 gMultiplayerState.partnerBossId = bossId;
             // Repair a dropped MP_PKT_BATTLE_TURN: the sender re-carries its
             // cached turn in every beacon while in a coop battle.  The seq
@@ -2032,6 +2039,16 @@ void Multiplayer_OnScriptEnd(void)
     // flag into the next script's trainer encounter.
     gMultiplayerState.coopBattlePending = FALSE;
 
+    // Same rationale for the boss-ready state itself.  ScriptCheckBossStart now
+    // HOLDS bossReadyBossId past the pass (so the state beacon keeps repairing a
+    // partner that missed our BOSS_READY under packet loss — chaos-window fix).
+    // A gym clears it in Multiplayer_SetupCoopBattle, but a barrier with no
+    // trainerbattle (the escort) never gets there, so clear at script end — the
+    // handshake always lives within one script, and by its end the local side has
+    // long since passed.  Redundant (harmless) for the gym path.
+    gMultiplayerState.bossReadyBossId = 0;
+    gMultiplayerState.partnerBossId   = 0;
+
     if (gMultiplayerState.connState != MP_STATE_CONNECTED)
         return;
 
@@ -2139,14 +2156,29 @@ u16 Multiplayer_ScriptCheckBossStart(void)
     if (!partnerReady)
         return 0; // still waiting
 
-    // Both ready (or solo) — clear state and tell the script to start battle.
-    gMultiplayerState.bossReadyBossId = 0;
-    gMultiplayerState.partnerBossId   = 0;
-    // Mark the next trainerbattle to route through the coop double-battle
-    // path.  Solo runs (not connected) keep the flag clear so the existing
-    // single-player battle script fires normally.
+    // Both ready (or solo).  Mark the next trainerbattle to route through the
+    // coop double-battle path.  Solo runs (not connected) keep the flag clear so
+    // the existing single-player battle script fires normally.
     if (gMultiplayerState.connState == MP_STATE_CONNECTED)
+    {
         gMultiplayerState.coopBattlePending = TRUE;
+        // Do NOT clear bossReadyBossId here.  The state beacon re-carries it
+        // (pkt[4]) every interval and it is the ONLY loss-recovery channel for a
+        // partner that has not yet received our BOSS_READY.  Clearing the instant
+        // THIS side passes stops the beacon advertising "ready" while the partner
+        // may still be at partnerBossId==0 under packet loss — the partner then
+        // hangs at waitbossstart forever (chaos-window bug, 2026-07-21).  Both
+        // sides hold their ready through party selection; Multiplayer_SetupCoopBattle
+        // clears it once the battle actually starts, by which point the completed
+        // party exchange proves the partner has also passed waitbossstart.
+    }
+    else
+    {
+        // Solo: no coop battle, so Multiplayer_SetupCoopBattle never runs.  Clear
+        // here or the stale ready leaks into the next boss trigger.
+        gMultiplayerState.bossReadyBossId = 0;
+        gMultiplayerState.partnerBossId   = 0;
+    }
     return 1;
 }
 
@@ -2683,6 +2715,15 @@ void Multiplayer_SetupCoopBattle(void)
     for (i = 0; i < MAX_RFU_PLAYERS; i++)
         gLinkPlayers[i].version = VERSION_EMERALD;
     gReceivedRemoteLinkPlayers = TRUE;
+
+    // Boss-ready handshake is complete: the battle engine is being set up, so
+    // the party exchange finished, which proves the partner also passed
+    // waitbossstart.  Held until here (not cleared in ScriptCheckBossStart) so
+    // the state beacon kept re-advertising our readiness to a partner that may
+    // not have received our BOSS_READY under packet loss.  Clear now — during
+    // the battle pkt[4] must read 0 (the turn re-carry owns pkt[5..8]).
+    gMultiplayerState.bossReadyBossId = 0;
+    gMultiplayerState.partnerBossId   = 0;
 
     // Fresh turn-sequence space for this battle.  Both sides reset here, so
     // seq 1 is always the first turn of the current battle.  An early turn
