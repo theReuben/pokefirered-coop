@@ -58,12 +58,10 @@ static mut ENCOUNTER_SEED: u32 = 0;
 static mut TICK_COUNT:    u64 = 0;
 static mut PACKETS_SENT:  u64 = 0;
 static mut PACKETS_RECV:  u64 = 0;
-// Role received from relay: 0=none, 1=host, 2=guest
+// Role received from relay: 0=none, 1=host, 2=guest.  Re-asserted into
+// gMultiplayerState.role every frame by the role heartbeat in tick() — the
+// relay sends `role` only once, but Multiplayer_Init zeroes it afterward.
 static mut RECEIVED_ROLE: u8  = 0;
-// Set once the role has been written into the ROM's recv ring as a
-// MP_PKT_ROLE_ASSIGN packet (the relay only sends `role` once, possibly
-// before the ROM's rings exist).
-static mut ROLE_DELIVERED: bool = false;
 
 /// Call once from start_emulator to prime the encounter seed for this session.
 pub fn set_encounter_seed(seed: u32) {
@@ -80,7 +78,6 @@ pub fn reset_discovery() {
         BLOCK_EXCHANGE_ADDR    = 0;
         PARTNER_CONNECTED      = false;
         RECEIVED_ROLE          = 0;
-        ROLE_DELIVERED         = false;
         PACKETS_SENT           = 0;
         PACKETS_RECV           = 0;
         TICK_COUNT             = 0;
@@ -216,7 +213,7 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
                 }
                 Some("role") => {
                     let role_str = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
-                    let role_num: u8 = match role_str { "host" => 1, "guest" => 2, _ => 0 };
+                    let role_num = role_str_to_num(role_str);
                     unsafe { RECEIVED_ROLE = role_num; }
                     if role_str == "guest" {
                         unsafe { PARTNER_CONNECTED = true; }
@@ -259,7 +256,7 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
             }
             Some("role") => {
                 let role_str = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
-                let role_num: u8 = match role_str { "host" => 1, "guest" => 2, _ => 0 };
+                let role_num = role_str_to_num(role_str);
                 unsafe { RECEIVED_ROLE = role_num; }
                 log::info!("serial_bridge: received role={}", role_str);
                 if role_str == "guest" {
@@ -280,20 +277,29 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
         if let Some(pkt) = json_to_packet(&msg) {
             unsafe { PACKETS_RECV += 1; }
             push_recv_ring(emu, &pkt);
-            if pkt[0] == PKT_ROLE_ASSIGN {
-                unsafe { ROLE_DELIVERED = true; }
-            }
         }
     }
 
-    // Catch-up role delivery: the relay sends `role` exactly once at connect,
-    // which can land before Multiplayer_Init runs (pre-discovery inbound is
-    // dropped).  Replay it from RECEIVED_ROLE once the ring is live so the ROM
-    // never misses its role assignment.  Idempotent on the ROM side.
-    unsafe {
-        if !ROLE_DELIVERED && RECEIVED_ROLE != 0 {
-            push_recv_ring(emu, &[PKT_ROLE_ASSIGN, RECEIVED_ROLE]);
-            ROLE_DELIVERED = true;
+    // Role heartbeat: write gMultiplayerState.role (+0 from base) directly every
+    // frame, exactly like the connState heartbeat below.  The relay sends `role`
+    // only once at connect, but Multiplayer_Init — which runs on continue AND
+    // new-game (and on every save-state reload) — zeroes gMultiplayerState.role
+    // AFTER that one delivery.  A one-shot latch here never re-asserted it, so
+    // role sat at MP_ROLE_NONE for the rest of the session.  That is silent in
+    // the overworld but corrupts co-op boss battles: Multiplayer_CanonicalPlayerTarget
+    // falls back to the HOST mapping when role==NONE, so BOTH mirrored sims
+    // resolve the enemy AI's shared-RNG target index to their own battler 0 —
+    // the boss attacks a different physical Pokemon on each screen and the
+    // battle desyncs (reliability rides the heartbeat, not a one-shot).
+    // A direct write is equivalent to the packet: the ROM's MP_PKT_ROLE_ASSIGN
+    // handler only sets this byte.  MP_ROLE_HOST=1, MP_ROLE_GUEST=2, NONE=0.
+    let want_role = unsafe { RECEIVED_ROLE };
+    if want_role != 0 {
+        let role_addr = unsafe { MULTIPLAYER_STATE_ADDR }; // role is at +0
+        let cur_role = emu.read_bytes(role_addr, 1);
+        if !cur_role.is_empty() && cur_role[0] != want_role {
+            log::info!("serial_bridge: role {} → {} (re-assert)", cur_role[0], want_role);
+            emu.write_bytes(role_addr, &[want_role]);
         }
     }
 
@@ -650,6 +656,17 @@ fn packet_to_json(pkt: &[u8]) -> Option<Value> {
     }
 }
 
+/// Map a relay `role` message's string to the ROM's MP_ROLE_* byte, which the
+/// role heartbeat in tick() re-asserts into gMultiplayerState.role every frame.
+/// MP_ROLE_NONE=0, MP_ROLE_HOST=1, MP_ROLE_GUEST=2.
+fn role_str_to_num(role_str: &str) -> u8 {
+    match role_str {
+        "host"  => 1,
+        "guest" => 2,
+        _       => 0,
+    }
+}
+
 // ── JSON → Packet (relay → ROM) ───────────────────────────────────────────────
 //
 // Packets written to the recv ring are raw ROM format: [type][data...] — NO length byte.
@@ -914,6 +931,18 @@ mod tests {
         assert_eq!(json_to_packet(&guest).unwrap(), vec![PKT_ROLE_ASSIGN, 2]);
         let junk = serde_json::json!({ "type": "role", "role": "wat" });
         assert!(json_to_packet(&junk).is_none());
+    }
+
+    #[test]
+    fn role_str_maps_to_rom_role_byte() {
+        // The value the heartbeat re-asserts into gMultiplayerState.role.
+        // Must match the ROM's MP_ROLE_* constants (NONE=0, HOST=1, GUEST=2).
+        assert_eq!(role_str_to_num("host"),  1);
+        assert_eq!(role_str_to_num("guest"), 2);
+        // Anything else is "no role" — the heartbeat gates on != 0 and never
+        // writes it, so a garbled message can't clobber a live role.
+        assert_eq!(role_str_to_num(""),      0);
+        assert_eq!(role_str_to_num("wat"),   0);
     }
 
     #[test]

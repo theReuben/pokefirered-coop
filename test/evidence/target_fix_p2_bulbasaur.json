@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-07-22T00:43:06.790959Z",
+  "claim": "RB1 with correct roles (guest): rival Squirtle chosenTarget[1]=2 = battler2 = partner Bulbasaur (same physical mon as p1)",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

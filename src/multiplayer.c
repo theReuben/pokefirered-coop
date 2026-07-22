@@ -2169,8 +2169,16 @@ bool32 Multiplayer_IsCoopBattle(void)
 // physical mon on this instance, so a lockstep roll hits one mon on both sides.
 //   HOST : canon 0 -> battler 0 (local), canon 1 -> battler 2 (partner)
 //   GUEST: canon 0 -> battler 2 (partner), canon 1 -> battler 0 (local)
-// MP_ROLE_NONE has no partner sim to agree with, so the host mapping is a safe
-// deterministic default (never reached in a real role-assigned session).
+// MP_ROLE_NONE falls through to the host mapping — which means if BOTH sims
+// read NONE they agree on the WRONG resolution (both pick their own battler 0,
+// different physical mons) and the boss AI desyncs.  This is not hypothetical:
+// Multiplayer_Init (run on continue/new-game and every save-state reload)
+// zeroes gMultiplayerState.role AFTER the relay's one-shot role assignment, so
+// role read NONE for whole sessions until the transport was made to re-assert
+// it every frame (serial_bridge.rs + tools/mcp_gamestate/server.py role
+// heartbeat, 2026-07-21).  The contract is now: the transport keeps role
+// non-NONE for the life of the connection; this fallback only covers the
+// single-player / pre-connect case where there is no partner sim to disagree.
 u32 Multiplayer_CanonicalPlayerTarget(u32 canonicalIdx)
 {
     canonicalIdx &= 1;

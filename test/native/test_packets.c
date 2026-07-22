@@ -1524,6 +1524,56 @@ static void TestRecvRoleAssignSetsRole(void)
 
 // ---- Entry point ----------------------------------------------------------
 
+// The core coop double-battle invariant: a *canonical* player-target index
+// (0 = host's player, 1 = guest's player, agreed by both sims) must resolve to
+// the SAME physical mon on the host sim and the guest sim.  Each sim runs its
+// LOCAL player as battler 0 and the partner as battler 2, so the two roles MUST
+// map a canonical index to DIFFERENT local battler ids.  If both roles ever
+// share one mapping (the MP_ROLE_NONE fallback, which happens when the
+// transport stops re-asserting role), both sims pick their own battler 0 and
+// the boss AI attacks a different physical mon on each screen — the targeting
+// desync this test set guards against.
+static void TestCoopCanonicalTargetRoleConsistent(void)
+{
+    Multiplayer_Init();
+
+    gMultiplayerState.role = MP_ROLE_HOST;
+    ASSERT_EQ(Multiplayer_CanonicalPlayerTarget(0), 0); // host's player = local b0
+    ASSERT_EQ(Multiplayer_CanonicalPlayerTarget(1), 2); // guest's player = partner b2
+
+    gMultiplayerState.role = MP_ROLE_GUEST;
+    ASSERT_EQ(Multiplayer_CanonicalPlayerTarget(0), 2); // host's player = partner b2
+    ASSERT_EQ(Multiplayer_CanonicalPlayerTarget(1), 0); // guest's player = local b0
+
+    // Host and guest MUST disagree on the local id for a given canonical index;
+    // equal mappings would be the desync bug (both hitting their own battler 0).
+    gMultiplayerState.role = MP_ROLE_HOST;
+    u32 hostCanon0 = Multiplayer_CanonicalPlayerTarget(0);
+    gMultiplayerState.role = MP_ROLE_GUEST;
+    u32 guestCanon0 = Multiplayer_CanonicalPlayerTarget(0);
+    ASSERT(hostCanon0 != guestCanon0);
+}
+
+// AI deliberation must iterate the SAME physical matchup at each step on both
+// sims so the lockstep RNG stream stays aligned.  Opponent battlers (odd steps)
+// are unmirrored; player battlers (even steps) route through the canonical map.
+static void TestCoopAiEvalBattlerOrder(void)
+{
+    Multiplayer_Init();
+
+    gMultiplayerState.role = MP_ROLE_HOST;
+    ASSERT_EQ(Multiplayer_CoopAiEvalBattler(0), 0); // host's player
+    ASSERT_EQ(Multiplayer_CoopAiEvalBattler(1), 1); // opponent left
+    ASSERT_EQ(Multiplayer_CoopAiEvalBattler(2), 2); // guest's player
+    ASSERT_EQ(Multiplayer_CoopAiEvalBattler(3), 3); // opponent right
+
+    gMultiplayerState.role = MP_ROLE_GUEST;
+    ASSERT_EQ(Multiplayer_CoopAiEvalBattler(0), 2); // host's player = local b2
+    ASSERT_EQ(Multiplayer_CoopAiEvalBattler(1), 1);
+    ASSERT_EQ(Multiplayer_CoopAiEvalBattler(2), 0); // guest's player = local b0
+    ASSERT_EQ(Multiplayer_CoopAiEvalBattler(3), 3);
+}
+
 int main(void)
 {
     // Ring buffer
@@ -1616,6 +1666,10 @@ int main(void)
     // Coop battle RNG lockstep
     TestCoopRngDeterministicStream();
     TestRandomOverridesRouteByBattleType();
+
+    // Coop battle target canonicalization (role-wipe targeting-desync guard)
+    TestCoopCanonicalTargetRoleConsistent();
+    TestCoopAiEvalBattlerOrder();
 
     TEST_SUMMARY();
 }

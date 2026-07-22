@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-07-22T00:43:06.095254Z",
+  "claim": "RB1 with correct roles (host): rival Squirtle chosenTarget[1]=0 = battler0 = Bulbasaur (Tail Whip move idx 1)",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

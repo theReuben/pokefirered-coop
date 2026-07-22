@@ -442,6 +442,36 @@ def _relay_loop() -> None:
                     # Inject PARTNER_DISCONNECTED (0x0C) into the partner's recv ring.
                     partner_inst.inject_bytes("0C")
 
+            # Role heartbeat — mirror the Tauri bridge's per-frame role
+            # re-assertion (serial_bridge.rs).  The relay assigns `role` once at
+            # connect (0x1B above), but Multiplayer_Init — which runs on
+            # continue/new-game and on EVERY save-state reload — zeroes
+            # gMultiplayerState.role afterward.  Left unhealed, role sits at
+            # MP_ROLE_NONE and the coop boss-battle target canonicalization
+            # (Multiplayer_CanonicalPlayerTarget) silently falls back to the
+            # host mapping on BOTH mirrored sims, so the enemy AI resolves its
+            # shared-RNG target index to each sim's OWN battler 0 — it attacks a
+            # different physical mon on each screen and the battle desyncs.
+            # Re-assert conditionally (read, write only on mismatch) so a wipe
+            # self-heals within a relay cycle.  MCP reruns reload save states
+            # constantly, so this also keeps role correct across reloads without
+            # a server restart.  MP_ROLE_HOST=1, MP_ROLE_GUEST=2; the role byte
+            # is gMultiplayerState+0 (connState is +1).
+            if _connected_pair:
+                for iid, inst in instance_map.items():
+                    base = inst.addrs.get("gMultiplayerState", 0)
+                    if not base:
+                        continue
+                    want = 1 if _host_instance == iid else 2
+                    rr = inst.try_send_locked(
+                        {"cmd": "read_range", "addr": base, "count": 1, "width": 8})
+                    if rr and rr.get("ok"):
+                        vals = rr.get("values", [])
+                        cur = int(vals[0], 16) if vals else 0
+                        if cur != want:
+                            inst.try_send_locked(
+                                {"cmd": "write_u8", "addr": base, "value": want})
+
             # Block-exchange relay (coop boss battle SendBlock data).
             # p1 sendReady → copy data to p2 recvReady with fromPlayerIdx=0
             r = p1.try_send_locked({"cmd": "read_block_exchange"})
