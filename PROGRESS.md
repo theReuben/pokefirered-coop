@@ -9,7 +9,37 @@
 ## Current State
 - **Active Phase:** 9
 - **Active Step:** 9.1
-- **Last Session Summary (2026-07-20 evening, coop AI lockstep fix — user-reported remote desync):**
+- **Last Session Summary (2026-07-22, boss-ready chaos-window fix + transition-stall investigation):**
+  - **Boss-ready chaos window — FIXED + committed/pushed (`57a8226ab8`).**
+    Mechanism: `Multiplayer_ScriptCheckBossStart` cleared
+    `bossReadyBossId`/`partnerBossId` the instant the local side passed
+    `waitbossstart`; the state beacon carries `bossReadyBossId` (pkt[4]) and
+    is the ONLY loss-recovery channel for a dropped `BOSS_READY`, so clearing
+    it early stranded a partner that missed the original packet at
+    `partnerBossId==0` (~40s+ hang under packet loss). Fix HOLDS the ready
+    until the handshake provably completed on both sides:
+    `ScriptCheckBossStart` connected path only sets `coopBattlePending`;
+    `Multiplayer_SetupCoopBattle` clears at battle start (completed party
+    exchange proves partner passed); `Multiplayer_OnScriptEnd` clears for the
+    escort barrier (no trainerbattle → never reaches SetupCoopBattle); beacon
+    receiver converges `partnerBossId` only while `!IsCoopBattle()`. ROM-only
+    (no packet-format change → rule-4 layers untouched). Native 255/255
+    (rewritten `TestBossReadyBothReadyProceeds` hold-then-clear + new
+    `TestBossReadyBeaconIgnoredDuringCoopBattle`). ROM build clean.
+    **Live drop=0.3 convergence run (rule 5) BLOCKED:** cold-booted MCP
+    instances would not auto-pair this session (connState 0, partnerMap 0xFF,
+    though the relay shuttled packets) — MCP server process predates the
+    07-21 server.py connect/heartbeat change, un-restartable mid-session.
+    Fixture for the pending live run: rivals-lab pair
+    (`Multiplayer_BossReady_RivalOaksLab` → `waitbossstart`).
+  - **Transition stall ("slow load on stairs/areas") — NOT present.** The old
+    stall was the synchronous checkpoint save; async since `36ace88d9e`
+    (2026-06-17, ancestor of v0.1.27). Async save ticks from `CB2_Overworld`,
+    not the warp-fade CB2 chain, so it's off the transition critical path; no
+    synchronous `TrySavingData` on the warp/stairs path. Empirically measured
+    a live Pewter-Gym door warp at ~17–24 game-frames (~0.3–0.4s), black-load
+    ≤6 frames = near-instant. Evidence: test/recordings/transition_timing_probe.mp4.
+- **Prior Session Summary (2026-07-20 evening, coop AI lockstep fix — user-reported remote desync):**
   - **User report (live Tauri play on release v0.1.27 = a9837e3777): coop
     double battle desynced — the enemy's left/right target resolved by
     screen position, not mon; the trigger was the AI targeting a player
