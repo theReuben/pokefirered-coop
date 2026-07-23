@@ -1377,6 +1377,53 @@ static void TestCoopBattleEndRestoresParty(void)
     ASSERT_EQ(MonIs(0, 0x55), TRUE);
 }
 
+// Pressing B in the coop party-select menu offers "Cancel battle?"; YES clears
+// the selection but still runs the exit callback (CB2_CoopPartySelected).  The
+// coop script is already committed to the trainerbattle, so an empty selection
+// must NOT proceed (it would send a 0-mon PARTY_SYNC and desync the double
+// battle); the guard re-opens the menu instead.  Verified by code inspection +
+// this test — the live path is blocked by the MCP main-loop wedge on this box.
+static void TestCoopPartyCancelReopensMenu(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gMultiplayerState.connState = MP_STATE_CONNECTED; // committed coop battle
+
+    gPlayerPartyCount = 3;
+    FillMon(0, 0xA1);
+    FillMon(1, 0xB2);
+    FillMon(2, 0xC3);
+
+    memset(&gMpSendRing, 0, sizeof(gMpSendRing));
+    gMpSendRing.magic = MP_RING_MAGIC;
+    gStubReopenCount  = 0;
+    gStubLastCallback = NULL;
+    gMultiplayerState.partnerPartySelectDone = FALSE; // must stay FALSE on cancel
+
+    // Cancel: ClearSelectedPartyOrder() has zeroed the order before the callback.
+    memset(gSelectedOrderFromParty, 0, sizeof(gSelectedOrderFromParty));
+    CB2_CoopPartySelected();
+
+    ASSERT_EQ(gMultiplayerState.coopSelectedCount, 0);
+    ASSERT_EQ(gStubReopenCount, 1);                          // menu re-opened
+    ASSERT_EQ(Mp_Available(&gMpSendRing), 0);                // no empty PARTY_SYNC
+    ASSERT_EQ(gMultiplayerState.partnerPartySelectDone, FALSE);
+    ASSERT_EQ(gStubLastCallback == NULL, TRUE);              // did not resume script
+
+    // Positive control: one mon chosen proceeds normally and sends the sync.
+    gStubReopenCount = 0;
+    memset(gSelectedOrderFromParty, 0, sizeof(gSelectedOrderFromParty));
+    gSelectedOrderFromParty[0] = 2; // party slot index 1
+    CB2_CoopPartySelected();
+    ASSERT_EQ(gMultiplayerState.coopSelectedCount, 1);
+    ASSERT_EQ(gStubReopenCount, 0);                          // did NOT re-open
+    ASSERT_EQ(Mp_Available(&gMpSendRing) > 0, TRUE);         // PARTY_SYNC sent
+    ASSERT_EQ(gStubLastCallback != NULL, TRUE);              // resumed via callback
+}
+
 static void TestMenuTickDrainsRecvAndBeacons(void)
 {
     u8 pkt[MP_PKT_SIZE_STATE_BEACON];
@@ -1662,6 +1709,7 @@ int main(void)
     // Coop party stash/restore (party-corruption fix)
     TestRemotePartySyncStagesOutsidePlayerParty();
     TestCoopBattleEndRestoresParty();
+    TestCoopPartyCancelReopensMenu();
 
     // Coop battle RNG lockstep
     TestCoopRngDeterministicStream();

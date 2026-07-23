@@ -339,8 +339,13 @@ void CreateMon(struct Pokemon *mon, u16 species, u8 level, u32 personality,
 u8 gSelectedOrderFromParty[MAX_FRONTIER_PARTY_SIZE];
 struct Main gMain; // zeroed; tests set inBattle manually when needed
 
-void InitChooseHalfPartyForBattle(u8 unused) { (void)unused; }
-void SetMainCallback2(MainCallback callback) { (void)callback; }
+// Observable recorders so tests can assert the coop party-select cancel guard
+// re-opens the menu instead of proceeding into battle with an empty party.
+u32 gStubReopenCount = 0;
+MainCallback gStubLastCallback = NULL;
+
+void InitChooseHalfPartyForBattle(u8 unused) { (void)unused; gStubReopenCount++; }
+void SetMainCallback2(MainCallback callback) { gStubLastCallback = callback; }
 void CB2_ReturnToFieldContinueScript(void) {}
 
 const struct UCoords32 gDirectionToVectors[4]; // zeroed; tests don't call movement code

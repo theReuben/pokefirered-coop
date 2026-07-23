@@ -2660,6 +2660,30 @@ void CB2_CoopPartySelected(void)
         scratch[n++] = gPlayerParty[slot - 1];
     }
     gMultiplayerState.coopSelectedCount = n;
+
+    // n == 0 means the player backed out of the selection: pressing B offers a
+    // "Cancel battle?" prompt for the FACILITY_MULTI_OR_EREADER menu, and YES
+    // runs ClearSelectedPartyOrder() then still invokes THIS exit callback
+    // (Task_ClosePartyMenuAndSetCB2 always calls gPartyMenu.exitCallback; the
+    // gPartyMenuUseExitCallback flag is not consulted at the close site).  But
+    // the coop script is already past waitbossstart and committed to the
+    // trainerbattle — there is no abort path back to the overworld from here,
+    // and resuming would send a 0-mon PARTY_SYNC and start the double battle
+    // with no mon on this side (a desync the partner cannot recover from, since
+    // NativePollPartySync has no cancel escape).  Re-open the selection so at
+    // least one mon is brought.  This makes cancel a no-op inside a committed
+    // coop battle, mirroring the min-1 rule the CONFIRM path already enforces
+    // (Task_ValidateChosenHalfParty -> PARTY_MSG_NO_MON_FOR_BATTLE).  Returning
+    // before the VAR_FRONTIER_FACILITY reset below keeps the facility set for
+    // the re-opened menu across repeated cancels.
+    if (n == 0)
+    {
+        VarSet(VAR_FRONTIER_FACILITY, FACILITY_MULTI_OR_EREADER);
+        gMain.savedCallback = CB2_CoopPartySelected;
+        InitChooseHalfPartyForBattle(0);
+        return;
+    }
+
     // Write selected mons back to front of party; leave the rest unchanged
     // (battle engine only reads up to MULTI_PARTY_SIZE from gPlayerParty[0..]).
     for (i = 0; i < n; i++)
