@@ -42,6 +42,7 @@ static void PlayerPartnerHandleTrainerSlide(enum BattlerId battler);
 static void PlayerPartnerHandleTrainerSlideBack(enum BattlerId battler);
 static void PlayerPartnerHandleChooseAction(enum BattlerId battler);
 static void PlayerPartnerHandleChooseMove(enum BattlerId battler);
+static void PlayerPartnerHandleOpenBag(enum BattlerId battler);
 static void PlayerPartnerHandleChoosePokemon(enum BattlerId battler);
 static void PlayerPartnerHandleIntroTrainerBallThrow(enum BattlerId battler);
 static void PlayerPartnerHandleDrawPartyStatusSummary(enum BattlerId battler);
@@ -71,7 +72,7 @@ static void (*const sPlayerPartnerBufferCommands[CONTROLLER_CMDS_COUNT])(enum Ba
     [CONTROLLER_CHOOSEACTION]             = PlayerPartnerHandleChooseAction,
     [CONTROLLER_YESNOBOX]                 = BtlController_Empty,
     [CONTROLLER_CHOOSEMOVE]               = PlayerPartnerHandleChooseMove,
-    [CONTROLLER_OPENBAG]                  = BtlController_Empty,
+    [CONTROLLER_OPENBAG]                  = PlayerPartnerHandleOpenBag,
     [CONTROLLER_CHOOSEPOKEMON]            = PlayerPartnerHandleChoosePokemon,
     [CONTROLLER_23]                       = BtlController_Empty,
     [CONTROLLER_HEALTHBARUPDATE]          = BtlController_HandleHealthBarUpdate,
@@ -281,15 +282,71 @@ static void PlayerPartnerHandleTrainerSlideBack(enum BattlerId battler)
     BtlController_HandleTrainerSlideBack(battler, 35, FALSE);
 }
 
+// Poll the transport for the partner's cached turn.  Returns:
+//   COOP_TURN_READY    — a turn is cached (battleTurnReceived); caller reads it.
+//   COOP_TURN_WAIT     — no turn yet; caller must return and re-run next frame.
+//   COOP_TURN_FALLBACK — partner has been silent past the grace window; caller
+//                        should drive this action with AI.
+// The grace timer only advances while DISCONNECTED — a connected-but-slow
+// partner is waited on indefinitely (their turn is coming).  This is the single
+// wait/grace point; downstream ChooseMove/ChoosePokemon gate on a cached turn so
+// the grace window is never double-counted.
+enum { COOP_TURN_READY, COOP_TURN_WAIT, COOP_TURN_FALLBACK };
+static u8 PartnerCoopPollTurn(void)
+{
+    Multiplayer_PollPackets();
+    if (gMultiplayerState.battleTurnReceived)
+        return COOP_TURN_READY;
+    if (Multiplayer_IsConnected())
+        return COOP_TURN_WAIT;
+    gMultiplayerState.battleGraceTimer++;
+    if (gMultiplayerState.battleGraceTimer < 1800) // 30 s
+        return COOP_TURN_WAIT;
+    gMultiplayerState.battleGraceTimer = 0;
+    gMultiplayerState.battleTurnSent   = FALSE;
+    return COOP_TURN_FALLBACK;
+}
+
 static void PlayerPartnerHandleChooseAction(enum BattlerId battler)
 {
     if (Multiplayer_IsCoopBattle())
     {
-        // In co-op, battler 1 always fights — move selection is synced via network.
-        // Switching on KO is handled by PlayerPartnerHandleChoosePokemon (AI fallback).
-        BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_USE_MOVE, 0);
-        BtlController_Complete(battler);
-        return;
+        // The partner's whole turn (move / switch / bag / after-faint replace)
+        // is synced.  The action byte of the cached turn decides which B_ACTION
+        // we emit; the downstream handler (CHOOSEMOVE / CHOOSEPOKEMON / OPENBAG)
+        // consumes the payload — so do NOT clear battleTurnReceived here.
+        switch (PartnerCoopPollTurn())
+        {
+        case COOP_TURN_WAIT:
+            return; // re-run next frame
+        case COOP_TURN_FALLBACK:
+            // Partner gone: let the AI choose the whole action (may switch/item).
+            AI_TrySwitchOrUseItem(battler);
+            BtlController_Complete(battler);
+            return;
+        case COOP_TURN_READY:
+        default:
+        {
+            u8 action;
+            switch (gMultiplayerState.battleTurnAction)
+            {
+            case MP_TURN_ACT_SWITCH:
+            case MP_TURN_ACT_REPLACE:
+                action = B_ACTION_SWITCH;
+                break;
+            case MP_TURN_ACT_ITEM:
+                action = B_ACTION_USE_ITEM;
+                break;
+            case MP_TURN_ACT_MOVE:
+            default:
+                action = B_ACTION_USE_MOVE;
+                break;
+            }
+            BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, action, 0);
+            BtlController_Complete(battler);
+            return;
+        }
+        }
     }
     AI_TrySwitchOrUseItem(battler);
     BtlController_Complete(battler);
@@ -299,34 +356,16 @@ static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
 {
     u32 chosenMoveIndex;
 
-    if (Multiplayer_IsCoopBattle())
+    // Consume the cached MOVE turn set up by ChooseAction.  Gate on a cached
+    // turn OR still-connected: a disconnected fallback (ChooseAction ran AI and
+    // emitted USE_MOVE) has no cached turn and drops straight to the AI path,
+    // so the grace window is not re-counted here.
+    if (Multiplayer_IsCoopBattle()
+        && (gMultiplayerState.battleTurnReceived || Multiplayer_IsConnected()))
     {
-        // Poll for the partner's move selection sent via MP_PKT_BATTLE_TURN.
         Multiplayer_PollPackets();
         if (!gMultiplayerState.battleTurnReceived)
-        {
-            // If the partner disconnected mid-battle, wait up to 30 seconds (1800
-            // frames) before using an AI fallback so the battle doesn't freeze.
-            if (!Multiplayer_IsConnected())
-            {
-                gMultiplayerState.battleGraceTimer++;
-                if (gMultiplayerState.battleGraceTimer < 1800)
-                    return; // still within grace period — keep waiting
-
-                // Grace period expired: pick move 0 targeting first live opponent.
-                {
-                    u8 foe = GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT);
-                    if (gAbsentBattlerFlags & (1u << foe))
-                        foe = GetBattlerAtPosition(B_POSITION_OPPONENT_RIGHT);
-                    gMultiplayerState.battleGraceTimer = 0;
-                    gMultiplayerState.battleTurnSent   = FALSE;
-                    BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT,
-                                                      0u | ((u32)foe << 8));
-                    BtlController_Complete(battler);
-                }
-            }
-            return; // re-run next frame (or after Complete above)
-        }
+            return; // connected, partner's move not here yet — re-run next frame
 
         gMultiplayerState.battleTurnReceived = FALSE;
         // battleTurnSent intentionally NOT cleared here: receiving the
@@ -341,7 +380,7 @@ static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
         return;
     }
 
-    // AI path (solo or non-coop): unchanged from original.
+    // AI path (solo, non-coop, or disconnected fallback): unchanged from original.
     {
         struct ChooseMoveStruct *moveInfo = (struct ChooseMoveStruct *)(&gBattleResources->bufferA[battler][4]);
 
@@ -375,9 +414,60 @@ static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
     }
 }
 
+// Partner "Bag" item use.  Reached when ChooseAction emitted B_ACTION_USE_ITEM
+// from a cached ITEM turn (or when the AI fallback chose an item — chosenItem is
+// already populated by AI_TrySwitchOrUseItem, matching OpponentHandleChooseItem).
+// Mirrors battle_controller_recorded_player.c's RecordedPlayerHandleChooseItem —
+// the engine's own headless-replay path for a synced item selection.
+static void PlayerPartnerHandleOpenBag(enum BattlerId battler)
+{
+    if (Multiplayer_IsCoopBattle()
+        && gMultiplayerState.battleTurnReceived
+        && gMultiplayerState.battleTurnAction == MP_TURN_ACT_ITEM)
+    {
+        gBattleStruct->chosenItem[battler]     = gMultiplayerState.battleTurnItemId;
+        gBattleStruct->itemPartyIndex[battler] = gMultiplayerState.battleTurnItemTarget;
+        gBattleStruct->itemMoveIndex[battler]  = gMultiplayerState.battleTurnItemMove;
+        gMultiplayerState.battleTurnReceived   = FALSE;
+    }
+    BtlController_EmitOneReturnValue(battler, B_COMM_TO_ENGINE, gBattleStruct->chosenItem[battler]);
+    BtlController_Complete(battler);
+}
+
 static void PlayerPartnerHandleChoosePokemon(enum BattlerId battler)
 {
     s32 chosenMonId;
+
+    // Synced switch / after-faint replacement.  ChooseAction leaves a SWITCH
+    // turn cached (battleTurnReceived, action==SWITCH); an after-faint
+    // replacement calls us directly (no ChooseAction) so we may still be
+    // waiting for a REPLACE turn — poll for it here, with the same grace/AI
+    // fallback as ChooseAction.  battleTurnPartyIdx is already remapped onto our
+    // partner half (gPlayerParty[3..5]) by Multiplayer_HandleBattleAction.
+    if (Multiplayer_IsCoopBattle()
+        && gBattleResources->bufferA[battler][1] != PARTY_ACTION_CHOOSE_FAINTED_MON)
+    {
+        u8 st = gMultiplayerState.battleTurnReceived ? COOP_TURN_READY : PartnerCoopPollTurn();
+        if (st == COOP_TURN_WAIT)
+            return; // re-run next frame
+        if (st == COOP_TURN_READY
+            && (gMultiplayerState.battleTurnAction == MP_TURN_ACT_SWITCH
+                || gMultiplayerState.battleTurnAction == MP_TURN_ACT_REPLACE))
+        {
+            chosenMonId = gMultiplayerState.battleTurnPartyIdx;
+            gMultiplayerState.battleTurnReceived = FALSE;
+            gBattleStruct->AI_monToSwitchIntoId[battler] = PARTY_SIZE;
+            gBattleStruct->monToSwitchIntoId[battler] = chosenMonId;
+            #if TESTING
+            TestRunner_Battle_CheckSwitch(battler, chosenMonId);
+            #endif
+            BtlController_EmitChosenMonReturnValue(battler, B_COMM_TO_ENGINE, chosenMonId, NULL);
+            BtlController_Complete(battler);
+            return;
+        }
+        // COOP_TURN_FALLBACK (partner gone) falls through to the AI path below.
+    }
+
     // Choosing Revival Blessing target
     if (gBattleResources->bufferA[battler][1] == PARTY_ACTION_CHOOSE_FAINTED_MON)
     {

@@ -22,15 +22,17 @@
 #define MP_PKT_PARTY_SYNC           0x12   // 2+n*58+4 bytes — partner's selected party (MpWirePartyMon * n)
                                            // + 4-byte battle RNG seed (host-generated; guests send 0)
 #define MP_PKT_FOLLOWER_GFX         0x13   // 3 bytes — partner's follower OBJ_EVENT_GFX id (0 = no follower)
-#define MP_PKT_BATTLE_TURN          0x14   // 5 bytes — co-op turn: seq + move slot + target + flags
+#define MP_PKT_BATTLE_TURN          0x14   // 7 bytes — co-op turn: seq + action + p0..p3.
+                                           // action tags the union (move/switch/replace/item);
+                                           // p0..p3 are action-specific (see MP_TURN_ACT_* below).
 #define MP_PKT_TRAINER_BUSY         0x15   // 4 bytes — player started a trainer battle (localId + mapGroup + mapNum)
 #define MP_PKT_PING                 0x16   // 1 byte — heartbeat keep-alive (ROM→relay)
 #define MP_PKT_TRAINER_FREE         0x19   // 1 byte — player's trainer battle ended (win or loss)
 #define MP_PKT_HOST_MIGRATE         0x17   // 1 byte — relay→ROM: you are now host
 #define MP_PKT_EVENT_LOG            0x18   // variable — async event log batch
-#define MP_PKT_STATE_BEACON         0x1A   // 9 bytes — periodic idempotent session state
+#define MP_PKT_STATE_BEACON         0x1A   // 11 bytes — periodic idempotent session state
                                            // (gender + my starter species + boss-ready id
-                                           // + cached battle turn: seq/move/target/flags);
+                                           // + cached battle turn: seq/action/p0..p3);
                                            // converges any dropped one-shot exchange
 #define MP_PKT_ROLE_ASSIGN          0x1B   // 2 bytes — relay→ROM: session role (MP_ROLE_HOST/GUEST).
                                            // Without it both ROMs sit at MP_ROLE_NONE, so
@@ -112,20 +114,35 @@
 #define MP_PKT_SIZE_GENDER                  2  // type + gender
 #define MP_PKT_SIZE_NAME                    (1 + PLAYER_NAME_LENGTH)  // type + 7 name bytes
 #define MP_PKT_SIZE_FOLLOWER_GFX            3  // type + gfx_hi + gfx_lo
-#define MP_PKT_SIZE_BATTLE_TURN             5  // type + seq + move_slot + target + flags
+#define MP_PKT_SIZE_BATTLE_TURN             7  // type + seq + action + p0 + p1 + p2 + p3
                                                // seq: 1-255 (never 0), +1 per logical turn;
-                                               // receiver dedups so beacon repeats are harmless
+                                               // receiver dedups so beacon repeats are harmless.
+                                               // action tags the payload union (MP_TURN_ACT_*):
+                                               //   MOVE:    p0=move_slot p1=target  p2=gimmick p3=0
+                                               //   SWITCH:  p0=party_idx(0-2 sender-local)  p1..p3=0
+                                               //   REPLACE: p0=party_idx(0-2 sender-local)  p1..p3=0
+                                               //   ITEM:    p0=item_hi p1=item_lo p2=target p3=move_slot
 #define MP_PKT_SIZE_TRAINER_BUSY            4  // type + localId + mapGroup + mapNum
 // Fixed sizes for new packets
 #define MP_PKT_SIZE_PING                    1  // type only
 #define MP_PKT_SIZE_HOST_MIGRATE            1  // type only
 #define MP_PKT_SIZE_TRAINER_FREE            1  // type only
-#define MP_PKT_SIZE_STATE_BEACON            9  // type + gender + starter_hi + starter_lo + boss_ready_id
-                                               // + turn_seq + move_slot + target + flags (turn_seq 0 = no
+#define MP_PKT_SIZE_STATE_BEACON            11 // type + gender + starter_hi + starter_lo + boss_ready_id
+                                               // + turn_seq + action + p0 + p1 + p2 + p3 (turn_seq 0 = no
                                                // cached battle turn; repairs a dropped MP_PKT_BATTLE_TURN)
 #define MP_PKT_SIZE_ROLE_ASSIGN             2  // type + role (MP_ROLE_HOST/GUEST)
 #define MP_PKT_SIZE_TRAINER_APPROACH        6  // type + localId + mapGroup + mapNum + direction + distance
 #define MP_PKT_SIZE_STARTER_VERDICT         4  // type + verdict (1=ok/0=denied) + species_hi + species_lo
+
+// Co-op battle turn action tags (MP_PKT_BATTLE_TURN / beacon `action` byte).
+// A co-op double battle runs the local player as one player-side battler and
+// the network partner as the other; every reachable turn action must ride the
+// same packet or the partner's controller stalls / diverges.  MOVE was the
+// original (and only) synced action; SWITCH/REPLACE/ITEM close that gap.
+#define MP_TURN_ACT_MOVE     0  // p0=move_slot, p1=target, p2=gimmick flag
+#define MP_TURN_ACT_SWITCH   1  // voluntary "Pokémon" switch; p0=party_idx (sender-local 0-2)
+#define MP_TURN_ACT_REPLACE  2  // forced after-faint replacement; p0=party_idx (sender-local 0-2)
+#define MP_TURN_ACT_ITEM     3  // "Bag" item use; p0/p1=item id hi/lo, p2=target party idx, p3=move slot
 
 // Starter-claim handshake state (gMultiplayerState.starterClaimState).
 // ScrCmd_waitstarterclaim blocks the pick script between the player's YES and

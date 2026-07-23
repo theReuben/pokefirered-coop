@@ -283,10 +283,11 @@ describe("Raw packet relay", () => {
     const host = connect(server, room, new MockConnection("c1"));
     const guest = connect(server, room, new MockConnection("c2"));
     const inboxBefore = host.inbox.length;
-    // 0x1A state beacon: gender=1, starter=0x0007, bossReady=0x0e
-    send(server, host, { type: "raw", bytes: "1a0100070e" });
+    // 0x1A state beacon (11 bytes): gender=1, starter=0x0007, bossReady=0x0e,
+    // turn seq/action/p0..p3 = 0. Opaque to the relay — forwarded byte-for-byte.
+    send(server, host, { type: "raw", bytes: "1a0100070e000000000000" });
     expect(host.inbox.length).toBe(inboxBefore); // not echoed to sender
-    expect(guest.last("raw")).toEqual({ type: "raw", bytes: "1a0100070e" });
+    expect(guest.last("raw")).toEqual({ type: "raw", bytes: "1a0100070e000000000000" });
   });
 
   it("forwards trainer-approach (0x1C) raw bytes to partner only", () => {

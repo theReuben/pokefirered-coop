@@ -1610,6 +1610,16 @@ static void WaitForMonSelection(enum BattlerId battler)
         else
             BtlController_EmitChosenMonReturnValue(battler, B_COMM_TO_ENGINE, PARTY_SIZE, NULL);
 
+        // Mirror the local player's switch/replacement to the partner instance
+        // so battler-2 (the partner) sends in the same mon; without this the
+        // partner controller AI-picks its own replacement and diverges.  Only a
+        // real selection (exit callback set) is sent; a cancelled voluntary
+        // switch sends nothing.  SEND_OUT distinguishes forced after-faint
+        // replacement from a voluntary "Pokémon" switch.
+        if (Multiplayer_IsCoopBattle() && gPartyMenuUseExitCallback == TRUE)
+            Multiplayer_SendBattleSwitch(gSelectedMonPartyId,
+                                         gBattleResources->bufferA[battler][1] == PARTY_ACTION_SEND_OUT);
+
         if (gBattleResources->bufferA[battler][1] == PARTY_ACTION_SEND_OUT)
             PrintLinkStandbyMsg();
 
@@ -1632,6 +1642,15 @@ static void CompleteWhenChoseItem(enum BattlerId battler)
 {
     if (gMain.callback2 == BattleMainCB2 && !gPaletteFade.active)
     {
+        // Mirror the local player's Bag item use to the partner instance so
+        // battler-2 replays the same item on the same target; the bag menu has
+        // already stashed the target party slot / move sub-selection under this
+        // battler (gBattlerInMenuId == battler when the bag was opened).  The
+        // receiver remaps the target party index onto its partner half.
+        if (Multiplayer_IsCoopBattle())
+            Multiplayer_SendBattleItem(gSpecialVar_ItemId,
+                                       gBattleStruct->itemPartyIndex[battler],
+                                       gBattleStruct->itemMoveIndex[battler]);
         BtlController_EmitOneReturnValue(battler, B_COMM_TO_ENGINE, gSpecialVar_ItemId);
         BtlController_Complete(battler);
     }

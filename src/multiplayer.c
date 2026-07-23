@@ -543,15 +543,20 @@ static bool8 ProcessOneRecvPacket(void)
             return FALSE;
         {
             u8 gender = 0, hi = 0, lo = 0, bossId = 0;
-            u8 turnSeq = 0, moveSlot = 0, target = 0, flags = 0;
+            // Turn slot pkt[5..10]: seq + action + p0..p3.  Outside a coop
+            // battle the same bytes multiplex the busy-trainer state in
+            // pkt[5..8] (seq=localId, action=mapGroup, p0=mapNum, p1=present).
+            u8 turnSeq = 0, action = 0, p0 = 0, p1 = 0, p2 = 0, p3 = 0;
             Mp_Pop(&gMpRecvRing, &gender);
             Mp_Pop(&gMpRecvRing, &hi);
             Mp_Pop(&gMpRecvRing, &lo);
             Mp_Pop(&gMpRecvRing, &bossId);
             Mp_Pop(&gMpRecvRing, &turnSeq);
-            Mp_Pop(&gMpRecvRing, &moveSlot);
-            Mp_Pop(&gMpRecvRing, &target);
-            Mp_Pop(&gMpRecvRing, &flags);
+            Mp_Pop(&gMpRecvRing, &action);
+            Mp_Pop(&gMpRecvRing, &p0);
+            Mp_Pop(&gMpRecvRing, &p1);
+            Mp_Pop(&gMpRecvRing, &p2);
+            Mp_Pop(&gMpRecvRing, &p3);
             // Bit 7 of the gender byte is the party-sync ack: the partner has
             // received our party this battle, so we can stop resending.  Latch
             // it (cleared per battle in ScrCmd_waitcoopparty) so a reordered
@@ -581,7 +586,7 @@ static bool8 ProcessOneRecvPacket(void)
             // beacons no-ops.  Gate on our own battle state so an overworld
             // instance never buffers a stale turn for a future battle.
             if (turnSeq != 0 && Multiplayer_IsCoopBattle())
-                Multiplayer_HandleBattleTurn(turnSeq, moveSlot, target, flags);
+                Multiplayer_HandleBattleAction(turnSeq, action, p0, p1, p2, p3);
             // Trainer-lock repair (overworld only — in a coop battle those same
             // bytes are turn data, and neither side can hold an overworld
             // trainer lock then).  Idempotent last-writer-wins: present bit set
@@ -592,11 +597,13 @@ static bool8 ProcessOneRecvPacket(void)
             // duration it is fighting and clear only afterward.
             if (!Multiplayer_IsCoopBattle())
             {
-                if (flags & MP_BEACON_BUSYTRAINER_BIT)
+                // Busy-trainer bytes stay in pkt[5..8]: seq=localId,
+                // action=mapGroup, p0=mapNum, p1=present-bit.
+                if (p1 & MP_BEACON_BUSYTRAINER_BIT)
                 {
                     gMultiplayerState.partnerBusyTrainerLocalId  = turnSeq;
-                    gMultiplayerState.partnerBusyTrainerMapGroup = moveSlot;
-                    gMultiplayerState.partnerBusyTrainerMapNum   = target;
+                    gMultiplayerState.partnerBusyTrainerMapGroup = action;
+                    gMultiplayerState.partnerBusyTrainerMapNum   = p0;
                     gMultiplayerState.partnerHasBusyTrainer      = TRUE;
                 }
                 else
@@ -633,12 +640,14 @@ static bool8 ProcessOneRecvPacket(void)
         if (Mp_Available(&gMpRecvRing) < MP_PKT_SIZE_BATTLE_TURN - 1)
             return FALSE;
         {
-            u8 seq = 0, moveSlot = 0, target = 0, flags = 0;
+            u8 seq = 0, action = 0, p0 = 0, p1 = 0, p2 = 0, p3 = 0;
             Mp_Pop(&gMpRecvRing, &seq);
-            Mp_Pop(&gMpRecvRing, &moveSlot);
-            Mp_Pop(&gMpRecvRing, &target);
-            Mp_Pop(&gMpRecvRing, &flags);
-            Multiplayer_HandleBattleTurn(seq, moveSlot, target, flags);
+            Mp_Pop(&gMpRecvRing, &action);
+            Mp_Pop(&gMpRecvRing, &p0);
+            Mp_Pop(&gMpRecvRing, &p1);
+            Mp_Pop(&gMpRecvRing, &p2);
+            Mp_Pop(&gMpRecvRing, &p3);
+            Multiplayer_HandleBattleAction(seq, action, p0, p1, p2, p3);
         }
         break;
 
@@ -1084,10 +1093,14 @@ static void TickPingAndBeacon(void)
         // "no cached turn" on the wire.
         if (Multiplayer_IsCoopBattle() && gMultiplayerState.battleTurnSent)
         {
-            pkt[5] = gMultiplayerState.battleTurnSeqOut;
-            pkt[6] = gMultiplayerState.battleTurnSentMoveSlot;
-            pkt[7] = gMultiplayerState.battleTurnSentTarget;
-            pkt[8] = gMultiplayerState.battleTurnSentFlags;
+            // Full tagged action so the beacon repairs SWITCH/REPLACE/ITEM
+            // turns, not just MOVE: seq + action + p0..p3.
+            pkt[5]  = gMultiplayerState.battleTurnSeqOut;
+            pkt[6]  = gMultiplayerState.battleTurnSentAction;
+            pkt[7]  = gMultiplayerState.battleTurnSentMoveSlot;
+            pkt[8]  = gMultiplayerState.battleTurnSentTarget;
+            pkt[9]  = gMultiplayerState.battleTurnSentFlags;
+            pkt[10] = gMultiplayerState.battleTurnSentP3;
         }
         else if (gMultiplayerState.sentBusyTrainer)
         {
@@ -1095,17 +1108,22 @@ static void TickPingAndBeacon(void)
             // field-trainer lock here: a dropped MP_PKT_TRAINER_BUSY re-arms and
             // a dropped TRAINER_FREE clears on the partner within one beacon
             // interval.  The present bit (byte 8) disambiguates from a coop turn.
-            pkt[5] = gMultiplayerState.sentBusyTrainerLocalId;
-            pkt[6] = gMultiplayerState.sentBusyTrainerMapGroup;
-            pkt[7] = gMultiplayerState.sentBusyTrainerMapNum;
-            pkt[8] = MP_BEACON_BUSYTRAINER_BIT;
+            // Stays in pkt[5..8] (matching the parse); pkt[9..10] zeroed.
+            pkt[5]  = gMultiplayerState.sentBusyTrainerLocalId;
+            pkt[6]  = gMultiplayerState.sentBusyTrainerMapGroup;
+            pkt[7]  = gMultiplayerState.sentBusyTrainerMapNum;
+            pkt[8]  = MP_BEACON_BUSYTRAINER_BIT;
+            pkt[9]  = 0;
+            pkt[10] = 0;
         }
         else
         {
-            pkt[5] = 0;
-            pkt[6] = 0;
-            pkt[7] = 0;
-            pkt[8] = 0;
+            pkt[5]  = 0;
+            pkt[6]  = 0;
+            pkt[7]  = 0;
+            pkt[8]  = 0;
+            pkt[9]  = 0;
+            pkt[10] = 0;
         }
         MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_STATE_BEACON);
     }
@@ -2236,19 +2254,62 @@ u32 Multiplayer_CoopAiEvalBattler(u32 step)
     return Multiplayer_CanonicalPlayerTarget(step >> 1);
 }
 
-void Multiplayer_SendBattleTurn(u8 moveSlot, u8 target, u8 flags)
+// Remap a sender-local gPlayerParty index onto our index space.  In a coop
+// double battle each instance runs its own mons at gPlayerParty[0..2] and the
+// partner's at gPlayerParty[3..5]; the sender's own switch/replacement target
+// (0-2) is a partner-half mon (3-5) for us, and vice versa.  This is the
+// party-slot analogue of the 0<->2 battler-target mirror.  The PARTY_SIZE
+// sentinel (and any out-of-range value) passes through unchanged.
+static u8 CoopRemapPartyIndex(u8 idx)
 {
-    // One fresh sequence number per logical turn; 0 is reserved for "no turn"
-    // on the wire (beacon), so skip it on wraparound.
+    if (idx < MULTI_PARTY_SIZE)
+        return idx + MULTI_PARTY_SIZE;
+    if (idx < PARTY_SIZE)
+        return idx - MULTI_PARTY_SIZE;
+    return idx;
+}
+
+// Generic tagged-action send.  action is MP_TURN_ACT_*; p0..p3 are the
+// action-specific payload bytes.  Assigns one fresh sequence number per logical
+// turn (0 reserved for "no turn" on the beacon) and caches the full payload so
+// Multiplayer_ResendBattleTurn / the state beacon can re-carry it for loss
+// recovery.
+void Multiplayer_SendBattleAction(u8 action, u8 p0, u8 p1, u8 p2, u8 p3)
+{
     u8 seq = (u8)(gMultiplayerState.battleTurnSeqOut + 1);
     if (seq == 0)
         seq = 1;
     gMultiplayerState.battleTurnSeqOut       = seq;
     gMultiplayerState.battleTurnSent         = TRUE;
-    gMultiplayerState.battleTurnSentMoveSlot = moveSlot;
-    gMultiplayerState.battleTurnSentTarget   = target;
-    gMultiplayerState.battleTurnSentFlags    = flags;
+    gMultiplayerState.battleTurnSentAction   = action;
+    // p0..p2 reuse the existing Sent{MoveSlot,Target,Flags} fields (frozen
+    // battle_diag offsets); p3 rides the new battleTurnSentP3.
+    gMultiplayerState.battleTurnSentMoveSlot = p0;
+    gMultiplayerState.battleTurnSentTarget   = p1;
+    gMultiplayerState.battleTurnSentFlags    = p2;
+    gMultiplayerState.battleTurnSentP3       = p3;
     Multiplayer_ResendBattleTurn();
+}
+
+// MOVE-only wrapper — existing move-confirm call sites keep their signature.
+void Multiplayer_SendBattleTurn(u8 moveSlot, u8 target, u8 flags)
+{
+    Multiplayer_SendBattleAction(MP_TURN_ACT_MOVE, moveSlot, target, flags, 0);
+}
+
+// Voluntary "Pokémon" switch or forced after-faint replacement.
+void Multiplayer_SendBattleSwitch(u8 partyIdx, bool8 isReplace)
+{
+    Multiplayer_SendBattleAction(isReplace ? MP_TURN_ACT_REPLACE : MP_TURN_ACT_SWITCH,
+                                 partyIdx, 0, 0, 0);
+}
+
+// "Bag" item use.  16-bit item id split hi/lo across p0/p1; p2 = target party
+// index, p3 = move slot sub-selection (Ether/PP restore).
+void Multiplayer_SendBattleItem(u16 itemId, u8 target, u8 moveSlot)
+{
+    Multiplayer_SendBattleAction(MP_TURN_ACT_ITEM, (u8)(itemId >> 8), (u8)(itemId & 0xFF),
+                                 target, moveSlot);
 }
 
 // Re-emit the cached turn with its original seq.  Used by the reconnect path
@@ -2261,13 +2322,22 @@ void Multiplayer_ResendBattleTurn(void)
         return;
     pkt[0] = MP_PKT_BATTLE_TURN;
     pkt[1] = gMultiplayerState.battleTurnSeqOut;
-    pkt[2] = gMultiplayerState.battleTurnSentMoveSlot;
-    pkt[3] = gMultiplayerState.battleTurnSentTarget;
-    pkt[4] = gMultiplayerState.battleTurnSentFlags;
+    pkt[2] = gMultiplayerState.battleTurnSentAction;
+    pkt[3] = gMultiplayerState.battleTurnSentMoveSlot;
+    pkt[4] = gMultiplayerState.battleTurnSentTarget;
+    pkt[5] = gMultiplayerState.battleTurnSentFlags;
+    pkt[6] = gMultiplayerState.battleTurnSentP3;
     MpRing_Write(&gMpSendRing, pkt, MP_PKT_SIZE_BATTLE_TURN);
 }
 
+// MOVE-only wrapper — dispatches a MOVE action (state beacon MOVE re-carry,
+// existing native tests).
 void Multiplayer_HandleBattleTurn(u8 seq, u8 moveSlot, u8 target, u8 flags)
+{
+    Multiplayer_HandleBattleAction(seq, MP_TURN_ACT_MOVE, moveSlot, target, flags, 0);
+}
+
+void Multiplayer_HandleBattleAction(u8 seq, u8 action, u8 p0, u8 p1, u8 p2, u8 p3)
 {
     // Dedup + ordering: apply only turns strictly newer than the last applied
     // (wraparound-aware).  diff==0 is a repeat (beacon re-carry, reconnect
@@ -2278,16 +2348,35 @@ void Multiplayer_HandleBattleTurn(u8 seq, u8 moveSlot, u8 target, u8 flags)
         return;
     gMultiplayerState.battleTurnSeqApplied = seq;
 
-    // The partner's sim is mirrored: their own mon is battler 0 on their
-    // screen but battler 2 on ours (and vice versa).  Opponent indices (1/3)
-    // line up unchanged.  Remap ally-side targets into our index space.
-    if (target == 0)
-        target = 2;
-    else if (target == 2)
-        target = 0;
-    gMultiplayerState.battleTurnMoveSlot = moveSlot;
-    gMultiplayerState.battleTurnTarget   = target;
-    gMultiplayerState.battleTurnFlags    = flags;
+    gMultiplayerState.battleTurnAction = action;
+    switch (action)
+    {
+    case MP_TURN_ACT_SWITCH:
+    case MP_TURN_ACT_REPLACE:
+        // p0 = sender-local party index; remap onto our partner half.
+        gMultiplayerState.battleTurnPartyIdx = CoopRemapPartyIndex(p0);
+        break;
+    case MP_TURN_ACT_ITEM:
+        // p0/p1 = item id hi/lo; p2 = target party index (remapped); p3 = move slot.
+        gMultiplayerState.battleTurnItemId     = (u16)((p0 << 8) | p1);
+        gMultiplayerState.battleTurnItemTarget = CoopRemapPartyIndex(p2);
+        gMultiplayerState.battleTurnItemMove   = p3;
+        break;
+    case MP_TURN_ACT_MOVE:
+    default:
+        // The partner's sim is mirrored: their own mon is battler 0 on their
+        // screen but battler 2 on ours (and vice versa).  Opponent indices
+        // (1/3) line up unchanged.  Remap ally-side targets into our index
+        // space.  Only MOVE carries a battler target.
+        if (p1 == 0)
+            p1 = 2;
+        else if (p1 == 2)
+            p1 = 0;
+        gMultiplayerState.battleTurnMoveSlot = p0;
+        gMultiplayerState.battleTurnTarget   = p1;
+        gMultiplayerState.battleTurnFlags    = p2;
+        break;
+    }
     gMultiplayerState.battleTurnReceived = TRUE;
 }
 

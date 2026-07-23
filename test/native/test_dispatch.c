@@ -375,7 +375,10 @@ static void PushBeacon(u8 gender, u16 starter, u8 bossId)
     Mp_Push(&gMpRecvRing, (u8)(starter >> 8));
     Mp_Push(&gMpRecvRing, (u8)(starter & 0xFF));
     Mp_Push(&gMpRecvRing, bossId);
-    // Battle-turn repair payload (turn_seq 0 = no cached turn).
+    // Battle-turn repair payload pkt[5..10] = seq + action + p0..p3
+    // (turn_seq 0 = no cached turn).
+    Mp_Push(&gMpRecvRing, 0);
+    Mp_Push(&gMpRecvRing, 0);
     Mp_Push(&gMpRecvRing, 0);
     Mp_Push(&gMpRecvRing, 0);
     Mp_Push(&gMpRecvRing, 0);

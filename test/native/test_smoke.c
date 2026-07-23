@@ -1056,12 +1056,14 @@ static void TestBossReadyBeaconIgnoredDuringCoopBattle(void)
     gBattleTypeFlags = BATTLE_TYPE_COOP; // pretend the coop battle is running
 
     // Beacon body (opcode is stripped by the dispatcher): gender, starterHi,
-    // starterLo, bossId=BROCK, then 4 idle turn bytes.
+    // starterLo, bossId=BROCK, then 6 idle turn bytes (seq + action + p0..p3).
     Mp_Push(&gMpRecvRing, MP_PKT_STATE_BEACON);
     Mp_Push(&gMpRecvRing, 0);
     Mp_Push(&gMpRecvRing, 0);
     Mp_Push(&gMpRecvRing, 0);
     Mp_Push(&gMpRecvRing, BOSS_ID_BROCK);
+    Mp_Push(&gMpRecvRing, 0);
+    Mp_Push(&gMpRecvRing, 0);
     Mp_Push(&gMpRecvRing, 0);
     Mp_Push(&gMpRecvRing, 0);
     Mp_Push(&gMpRecvRing, 0);

@@ -317,6 +317,20 @@ struct MultiplayerState {
     u16 starterClaimSpecies;    // species being claimed; valid while not IDLE
     u16 starterClaimTimer;      // frames spent PENDING (timeout backstop)
     u8  _pad7[2];               // padding to keep the struct 4-byte aligned
+    // Co-op battle turn action union (MP_TURN_ACT_*).  battleTurn{MoveSlot,
+    // Target,Flags} above stay the MOVE payload; these carry the non-move
+    // actions so the partner controller can replay switch / after-faint
+    // replacement / item use.  Received values are already remapped into OUR
+    // battler/party index space (party idx += MULTI_PARTY_SIZE for the partner
+    // half; item target half-swapped), so the controllers consume them raw.
+    // Session scratch, zeroed by Multiplayer_Init.
+    u8  battleTurnAction;       // MP_TURN_ACT_* of the last applied partner turn
+    u8  battleTurnPartyIdx;     // SWITCH/REPLACE: remapped gPlayerParty index
+    u8  battleTurnItemTarget;   // ITEM: remapped target party index
+    u8  battleTurnItemMove;     // ITEM: move slot sub-arg (Ether/PP-restore)
+    u16 battleTurnItemId;       // ITEM: item id
+    u8  battleTurnSentAction;   // MP_TURN_ACT_* of our cached sent turn (beacon re-carry)
+    u8  battleTurnSentP3;       // 4th sent payload byte (item move slot); p0..p2 reuse the Sent{MoveSlot,Target,Flags} fields
 };
 
 extern struct MultiplayerState gMultiplayerState;
@@ -426,9 +440,24 @@ void Multiplayer_SetupCoopBattle(void);
 // re-emits the cached turn unchanged (reconnect path — must NOT bump the seq).
 // HandleBattleTurn drops duplicates and stale (reordered) turns by seq, so it is
 // safe to feed it from both the direct packet and the repeating state beacon.
+// MOVE-only wrappers (unchanged signatures — existing call sites in
+// battle_controller_player.c keep working). SendBattleTurn emits action=MOVE;
+// HandleBattleTurn dispatches a MOVE action into HandleBattleAction.
 void Multiplayer_SendBattleTurn(u8 moveSlot, u8 target, u8 flags);
 void Multiplayer_ResendBattleTurn(void);
 void Multiplayer_HandleBattleTurn(u8 seq, u8 moveSlot, u8 target, u8 flags);
+// Generic tagged-action send/dispatch. action is MP_TURN_ACT_*; p0..p3 are the
+// action-specific payload bytes (see include/constants/multiplayer.h). Switch
+// and replacement use the SendBattleSwitch/SendBattleItem convenience wrappers.
+void Multiplayer_SendBattleAction(u8 action, u8 p0, u8 p1, u8 p2, u8 p3);
+void Multiplayer_HandleBattleAction(u8 seq, u8 action, u8 p0, u8 p1, u8 p2, u8 p3);
+// Voluntary "Pokémon" switch (isReplace=FALSE) or forced after-faint replacement
+// (isReplace=TRUE). partyIdx is the sender-local gPlayerParty index (0-2); the
+// receiver remaps it onto its partner half (gPlayerParty[3..5]).
+void Multiplayer_SendBattleSwitch(u8 partyIdx, bool8 isReplace);
+// "Bag" item use. itemId is 16-bit; target is a party index; moveSlot is the
+// PP/revive sub-selection (e.g. which move Ether restores).
+void Multiplayer_SendBattleItem(u16 itemId, u8 target, u8 moveSlot);
 // Returns TRUE when running a BATTLE_TYPE_COOP battle.
 bool32 Multiplayer_IsCoopBattle(void);
 // Maps a role-canonical player index (0/1, agreed by both sims) to the LOCAL

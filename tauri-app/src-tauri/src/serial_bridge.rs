@@ -184,14 +184,14 @@ const PKT_GENDER:               u8 = 0x10; // 2 bytes: type + gender
 const PKT_NAME:                 u8 = 0x11; // 8 bytes: type + 7 name bytes
 const PKT_PARTY_SYNC:           u8 = 0x12; // 2 + n_mons*58 + 4 bytes (trailing battle RNG seed)
 const PKT_FOLLOWER_GFX:         u8 = 0x13; // 3 bytes: type + gfx_hi + gfx_lo
-const PKT_BATTLE_TURN:          u8 = 0x14; // 5 bytes: type + seq + move_slot + target + flags
+const PKT_BATTLE_TURN:          u8 = 0x14; // 7 bytes: type + seq + action + p0 + p1 + p2 + p3
 const PKT_TRAINER_BUSY:         u8 = 0x15; // 4 bytes: type + localId + mapGroup + mapNum
 const PKT_PING:                 u8 = 0x16; // 1 byte heartbeat (ROM -> relay only)
 const PKT_HOST_MIGRATE:         u8 = 0x17; // 1 byte (relay -> ROM only)
 const PKT_EVENT_LOG:            u8 = 0x18; // 2 + count*4 bytes
 const PKT_TRAINER_FREE:         u8 = 0x19; // 1 byte
-const PKT_STATE_BEACON:         u8 = 0x1A; // 9 bytes: type + gender + starter_hi + starter_lo + boss_ready_id
-                                           //          + turn_seq + move_slot + target + flags
+const PKT_STATE_BEACON:         u8 = 0x1A; // 11 bytes: type + gender + starter_hi + starter_lo + boss_ready_id
+                                           //           + turn_seq + action + p0 + p1 + p2 + p3
 const PKT_ROLE_ASSIGN:          u8 = 0x1B; // 2 bytes: type + role (1=host, 2=guest); relay -> ROM only
 const PKT_TRAINER_APPROACH:     u8 = 0x1C; // 6 bytes: type + localId + mapGroup + mapNum + direction + distance
 const PKT_STARTER_VERDICT:      u8 = 0x1D; // 4 bytes: type + verdict (1=ok/0=denied) + species_hi + species_lo; relay -> ROM only
@@ -614,7 +614,7 @@ fn packet_size(raw: &[u8], pos: usize) -> usize {
             2 + raw[pos + 1] as usize * PARTY_SYNC_MON_SIZE + PARTY_SYNC_SEED_SIZE
         }
         PKT_FOLLOWER_GFX         => 3,
-        PKT_BATTLE_TURN          => 5,
+        PKT_BATTLE_TURN          => 7, // type + seq + action + p0..p3
         PKT_TRAINER_BUSY         => 4,
         PKT_PING                 => 1,
         PKT_HOST_MIGRATE         => 1,
@@ -625,7 +625,7 @@ fn packet_size(raw: &[u8], pos: usize) -> usize {
             2 + raw[pos + 1] as usize * EVENT_LOG_ENTRY_SIZE
         }
         PKT_TRAINER_FREE         => 1,
-        PKT_STATE_BEACON         => 9,
+        PKT_STATE_BEACON         => 11, // gender + starter_hi/lo + boss_id + turn(seq+action+p0..p3)
         PKT_ROLE_ASSIGN          => 2,
         PKT_TRAINER_APPROACH     => 6,
         PKT_STARTER_VERDICT      => 4,
@@ -743,7 +743,7 @@ fn packet_to_json(pkt: &[u8]) -> Option<Value> {
 
         // Battle turn / party sync use their existing relay message types with
         // the full raw packet (type byte included) hex-encoded as payload.
-        PKT_BATTLE_TURN if pkt.len() == 5 => {
+        PKT_BATTLE_TURN if pkt.len() == 7 => {
             Some(json!({ "type": "battle_turn", "turnData": to_hex(pkt) }))
         }
         PKT_PARTY_SYNC => {
@@ -979,12 +979,12 @@ mod tests {
         assert_eq!(packet_size(&[PKT_GENDER, 0],                          0), 2);
         assert_eq!(packet_size(&[PKT_NAME, 0, 0, 0, 0, 0, 0, 0],          0), 8);
         assert_eq!(packet_size(&[PKT_FOLLOWER_GFX, 0, 0],                 0), 3);
-        assert_eq!(packet_size(&[PKT_BATTLE_TURN, 1, 0, 0, 0],            0), 5);
+        assert_eq!(packet_size(&[PKT_BATTLE_TURN, 1, 0, 0, 0, 0, 0],      0), 7);
         assert_eq!(packet_size(&[PKT_TRAINER_BUSY, 0, 0, 0],              0), 4);
         assert_eq!(packet_size(&[PKT_PING],                               0), 1);
         assert_eq!(packet_size(&[PKT_HOST_MIGRATE],                       0), 1);
         assert_eq!(packet_size(&[PKT_TRAINER_FREE],                       0), 1);
-        assert_eq!(packet_size(&[PKT_STATE_BEACON, 0, 0, 0, 0, 0, 0, 0, 0], 0), 9);
+        assert_eq!(packet_size(&[PKT_STATE_BEACON, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 0), 11);
         assert_eq!(packet_size(&[PKT_ROLE_ASSIGN, 1],                     0), 2);
         assert_eq!(packet_size(&[PKT_STARTER_VERDICT, 1, 0, 0],           0), 4);
         // Variable: party sync with 2 mons = 2 + 2*58 + 4 (trailing RNG seed)
@@ -1014,7 +1014,7 @@ mod tests {
     fn raw_roundtrip_via_json() {
         // Outbound: a state beacon becomes a raw message; inbound: it decodes
         // back to the identical packet bytes.
-        let pkt = vec![PKT_STATE_BEACON, 1, 0x00, 0x07, 14, 3, 2, 1, 0];
+        let pkt = vec![PKT_STATE_BEACON, 1, 0x00, 0x07, 14, 3, 0, 2, 1, 0, 0];
         let msg = packet_to_json(&pkt).expect("beacon must map to JSON");
         assert_eq!(msg.get("type").unwrap().as_str().unwrap(), "raw");
         let back = json_to_packet(&msg).expect("raw must decode");
@@ -1035,7 +1035,7 @@ mod tests {
 
     #[test]
     fn battle_turn_and_party_sync_roundtrip() {
-        let turn = vec![PKT_BATTLE_TURN, 1, 2, 1, 0];
+        let turn = vec![PKT_BATTLE_TURN, 1, 0, 2, 1, 0, 0]; // seq + action(MOVE) + p0..p3
         let msg = packet_to_json(&turn).unwrap();
         assert_eq!(msg.get("type").unwrap().as_str().unwrap(), "battle_turn");
         assert_eq!(json_to_packet(&msg).unwrap(), turn);

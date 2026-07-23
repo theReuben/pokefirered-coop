@@ -638,18 +638,21 @@ static void TestSendBattleTurnAssignsSeq(void)
     for (i = 0; i < MP_PKT_SIZE_BATTLE_TURN; i++)
         Mp_Pop(&gMpSendRing, &b[i]);
     ASSERT_EQ(b[0], MP_PKT_BATTLE_TURN);
-    ASSERT_EQ(b[1], 1); // seq
-    ASSERT_EQ(b[2], 2); // moveSlot
-    ASSERT_EQ(b[3], 1); // target
-    ASSERT_EQ(b[4], 0); // flags
+    ASSERT_EQ(b[1], 1);                 // seq
+    ASSERT_EQ(b[2], MP_TURN_ACT_MOVE);  // action
+    ASSERT_EQ(b[3], 2);                 // p0 = moveSlot
+    ASSERT_EQ(b[4], 1);                 // p1 = target
+    ASSERT_EQ(b[5], 0);                 // p2 = flags
+    ASSERT_EQ(b[6], 0);                 // p3 = 0 for MOVE
 
     // Second logical turn gets the next seq.
     Multiplayer_SendBattleTurn(0, 3, 1);
     ASSERT_EQ(gMultiplayerState.battleTurnSeqOut, 2);
     for (i = 0; i < MP_PKT_SIZE_BATTLE_TURN; i++)
         Mp_Pop(&gMpSendRing, &b[i]);
-    ASSERT_EQ(b[1], 2);
-    ASSERT_EQ(b[2], 0);
+    ASSERT_EQ(b[1], 2);                 // seq
+    ASSERT_EQ(b[2], MP_TURN_ACT_MOVE);  // action
+    ASSERT_EQ(b[3], 0);                 // p0 = moveSlot
 }
 
 static void TestResendBattleTurnKeepsSeq(void)
@@ -667,8 +670,9 @@ static void TestResendBattleTurnKeepsSeq(void)
     ASSERT_EQ(Mp_Available(&gMpSendRing), MP_PKT_SIZE_BATTLE_TURN);
     for (i = 0; i < MP_PKT_SIZE_BATTLE_TURN; i++)
         Mp_Pop(&gMpSendRing, &b[i]);
-    ASSERT_EQ(b[1], 1);
-    ASSERT_EQ(b[2], 1);
+    ASSERT_EQ(b[1], 1);                 // seq unchanged
+    ASSERT_EQ(b[2], MP_TURN_ACT_MOVE);  // action
+    ASSERT_EQ(b[3], 1);                 // p0 = moveSlot unchanged
 
     // No cached turn → no packet.
     gMultiplayerState.battleTurnSent = FALSE;
@@ -716,6 +720,96 @@ static void TestHandleBattleTurnDedupAndOrdering(void)
     ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 1);
 }
 
+// ---- BATTLE_TURN action variants (switch / replace / item) ------------------
+
+static void TestSendBattleSwitchAndReplaceEncode(void)
+{
+    u8 b[MP_PKT_SIZE_BATTLE_TURN];
+    u8 i;
+
+    Multiplayer_Init();
+
+    // Voluntary "Pokémon" switch to sender-local party slot 2.
+    Multiplayer_SendBattleSwitch(2, FALSE);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqOut, 1);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), MP_PKT_SIZE_BATTLE_TURN);
+    for (i = 0; i < MP_PKT_SIZE_BATTLE_TURN; i++)
+        Mp_Pop(&gMpSendRing, &b[i]);
+    ASSERT_EQ(b[0], MP_PKT_BATTLE_TURN);
+    ASSERT_EQ(b[1], 1);                  // seq
+    ASSERT_EQ(b[2], MP_TURN_ACT_SWITCH); // action
+    ASSERT_EQ(b[3], 2);                  // p0 = party idx (sender-local)
+    ASSERT_EQ(b[4], 0);
+    ASSERT_EQ(b[5], 0);
+    ASSERT_EQ(b[6], 0);
+
+    // After-faint replacement to slot 1 — same wire shape, REPLACE action.
+    Multiplayer_SendBattleSwitch(1, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqOut, 2);
+    for (i = 0; i < MP_PKT_SIZE_BATTLE_TURN; i++)
+        Mp_Pop(&gMpSendRing, &b[i]);
+    ASSERT_EQ(b[1], 2);                   // next seq
+    ASSERT_EQ(b[2], MP_TURN_ACT_REPLACE);
+    ASSERT_EQ(b[3], 1);
+}
+
+static void TestSendBattleItemEncodes16BitId(void)
+{
+    u8 b[MP_PKT_SIZE_BATTLE_TURN];
+    u8 i;
+
+    Multiplayer_Init();
+
+    // Item id 0x0121 (>255 proves the hi/lo split), target party slot 1, move slot 3.
+    Multiplayer_SendBattleItem(0x0121, 1, 3);
+    ASSERT_EQ(Mp_Available(&gMpSendRing), MP_PKT_SIZE_BATTLE_TURN);
+    for (i = 0; i < MP_PKT_SIZE_BATTLE_TURN; i++)
+        Mp_Pop(&gMpSendRing, &b[i]);
+    ASSERT_EQ(b[0], MP_PKT_BATTLE_TURN);
+    ASSERT_EQ(b[1], 1);                // seq
+    ASSERT_EQ(b[2], MP_TURN_ACT_ITEM); // action
+    ASSERT_EQ(b[3], 0x01);             // p0 = item id hi
+    ASSERT_EQ(b[4], 0x21);             // p1 = item id lo
+    ASSERT_EQ(b[5], 1);                // p2 = target party idx (sender-local)
+    ASSERT_EQ(b[6], 3);                // p3 = move slot
+}
+
+static void TestHandleBattleActionDispatchAndRemap(void)
+{
+    Multiplayer_Init();
+
+    // SWITCH: sender-local party idx 0 remaps onto our partner half (0 -> 3),
+    // since the partner's mons live at gPlayerParty[3..5] on our instance.
+    Multiplayer_HandleBattleAction(1, MP_TURN_ACT_SWITCH, 0, 0, 0, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnAction, MP_TURN_ACT_SWITCH);
+    ASSERT_EQ(gMultiplayerState.battleTurnPartyIdx, 3);
+
+    // REPLACE: slot 2 -> 5, action recorded distinctly from SWITCH.
+    gMultiplayerState.battleTurnReceived = FALSE;
+    Multiplayer_HandleBattleAction(2, MP_TURN_ACT_REPLACE, 2, 0, 0, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnAction, MP_TURN_ACT_REPLACE);
+    ASSERT_EQ(gMultiplayerState.battleTurnPartyIdx, 5);
+
+    // ITEM: 16-bit id reassembled; target party idx remapped (1 -> 4); move kept.
+    gMultiplayerState.battleTurnReceived = FALSE;
+    Multiplayer_HandleBattleAction(3, MP_TURN_ACT_ITEM, 0x01, 0x21, 1, 3);
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnAction, MP_TURN_ACT_ITEM);
+    ASSERT_EQ(gMultiplayerState.battleTurnItemId, 0x0121);
+    ASSERT_EQ(gMultiplayerState.battleTurnItemTarget, 4);
+    ASSERT_EQ(gMultiplayerState.battleTurnItemMove, 3);
+
+    // The 0<->2 ally-target mirror applies to MOVE only — a SWITCH/ITEM p0 is a
+    // party index, never mirrored.  A following MOVE still mirrors its target.
+    gMultiplayerState.battleTurnReceived = FALSE;
+    Multiplayer_HandleBattleAction(4, MP_TURN_ACT_MOVE, 1, 0, 0, 0);
+    ASSERT_EQ(gMultiplayerState.battleTurnAction, MP_TURN_ACT_MOVE);
+    ASSERT_EQ(gMultiplayerState.battleTurnMoveSlot, 1);
+    ASSERT_EQ(gMultiplayerState.battleTurnTarget, 2); // ally 0 mirrored to 2
+}
+
 static void TestSetupCoopBattleResetsTurnStateAndSeedsRng(void)
 {
     Multiplayer_Init();
@@ -735,19 +829,40 @@ static void TestSetupCoopBattleResetsTurnStateAndSeedsRng(void)
 
 // ---- STATE_BEACON battle-turn repair ----------------------------------------
 
+// A MOVE-action turn re-carried in a beacon: turn slot pkt[5..10] =
+// seq + action + p0(moveSlot) + p1(target) + p2(flags) + p3(0).
 static void PushBeacon(u8 turnSeq, u8 moveSlot, u8 target, u8 flags)
 {
     u8 pkt[MP_PKT_SIZE_STATE_BEACON];
     u8 i;
-    pkt[0] = MP_PKT_STATE_BEACON;
-    pkt[1] = 0; // gender MALE
-    pkt[2] = 0; // starter hi
-    pkt[3] = 0; // starter lo (0 = no pick; ignored)
-    pkt[4] = 0; // no boss readiness
-    pkt[5] = turnSeq;
-    pkt[6] = moveSlot;
-    pkt[7] = target;
-    pkt[8] = flags;
+    pkt[0]  = MP_PKT_STATE_BEACON;
+    pkt[1]  = 0; // gender MALE
+    pkt[2]  = 0; // starter hi
+    pkt[3]  = 0; // starter lo (0 = no pick; ignored)
+    pkt[4]  = 0; // no boss readiness
+    pkt[5]  = turnSeq;
+    pkt[6]  = MP_TURN_ACT_MOVE;
+    pkt[7]  = moveSlot;
+    pkt[8]  = target;
+    pkt[9]  = flags;
+    pkt[10] = 0;
+    for (i = 0; i < MP_PKT_SIZE_STATE_BEACON; i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+}
+
+// A SWITCH/REPLACE/ITEM turn re-carried in a beacon (full tagged action).
+static void PushBeaconAction(u8 turnSeq, u8 action, u8 p0, u8 p1, u8 p2, u8 p3)
+{
+    u8 pkt[MP_PKT_SIZE_STATE_BEACON];
+    u8 i;
+    memset(pkt, 0, sizeof(pkt));
+    pkt[0]  = MP_PKT_STATE_BEACON;
+    pkt[5]  = turnSeq;
+    pkt[6]  = action;
+    pkt[7]  = p0;
+    pkt[8]  = p1;
+    pkt[9]  = p2;
+    pkt[10] = p3;
     for (i = 0; i < MP_PKT_SIZE_STATE_BEACON; i++)
         Mp_Push(&gMpRecvRing, pkt[i]);
 }
@@ -794,6 +909,39 @@ static void TestBeaconRepairsDroppedBattleTurn(void)
     ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 2);
 }
 
+static void TestBeaconRepairsDroppedSwitchAndItem(void)
+{
+    struct SaveBlock1 save;
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gBattleTypeFlags = BATTLE_TYPE_COOP;
+
+    // A dropped SWITCH turn re-carried by the beacon (full tagged action).
+    // Sender-local slot 1 -> our partner half slot 4.
+    PushBeaconAction(1, MP_TURN_ACT_SWITCH, 1, 0, 0, 0);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnAction, MP_TURN_ACT_SWITCH);
+    ASSERT_EQ(gMultiplayerState.battleTurnPartyIdx, 4);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 1);
+
+    // A dropped ITEM turn (newer seq): 16-bit id + remapped target survive the
+    // beacon path exactly as the direct packet would — reliability rides the beacon.
+    gMultiplayerState.battleTurnReceived = FALSE;
+    PushBeaconAction(2, MP_TURN_ACT_ITEM, 0x00, 0x0D, 0, 2);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.battleTurnReceived, TRUE);
+    ASSERT_EQ(gMultiplayerState.battleTurnAction, MP_TURN_ACT_ITEM);
+    ASSERT_EQ(gMultiplayerState.battleTurnItemId, 0x000D);
+    ASSERT_EQ(gMultiplayerState.battleTurnItemTarget, 3); // slot 0 -> 3
+    ASSERT_EQ(gMultiplayerState.battleTurnItemMove, 2);
+    ASSERT_EQ(gMultiplayerState.battleTurnSeqApplied, 2);
+
+    gBattleTypeFlags = 0;
+}
+
 static void TestBeaconSenderCarriesCachedTurnOnlyInCoopBattle(void)
 {
     u8 pkt[MP_PKT_SIZE_STATE_BEACON];
@@ -820,10 +968,12 @@ static void TestBeaconSenderCarriesCachedTurnOnlyInCoopBattle(void)
     }
     for (i = 1; i < MP_PKT_SIZE_STATE_BEACON; i++)
         Mp_Pop(&gMpSendRing, &pkt[i]);
-    ASSERT_EQ(pkt[5], 1); // seq
-    ASSERT_EQ(pkt[6], 2); // moveSlot
-    ASSERT_EQ(pkt[7], 1); // target
-    ASSERT_EQ(pkt[8], 1); // flags
+    ASSERT_EQ(pkt[5], 1);                // seq
+    ASSERT_EQ(pkt[6], MP_TURN_ACT_MOVE); // action
+    ASSERT_EQ(pkt[7], 2);                // moveSlot
+    ASSERT_EQ(pkt[8], 1);                // target
+    ASSERT_EQ(pkt[9], 1);                // flags
+    ASSERT_EQ(pkt[10], 0);               // p3
 
     // Outside battle the same cached turn must NOT ride the beacon.
     gBattleTypeFlags = 0;
@@ -842,6 +992,8 @@ static void TestBeaconSenderCarriesCachedTurnOnlyInCoopBattle(void)
     ASSERT_EQ(pkt[6], 0);
     ASSERT_EQ(pkt[7], 0);
     ASSERT_EQ(pkt[8], 0);
+    ASSERT_EQ(pkt[9], 0);
+    ASSERT_EQ(pkt[10], 0);
 }
 
 static void TestBattleTickPumpsBeaconAndRecv(void)
@@ -877,8 +1029,9 @@ static void TestBattleTickPumpsBeaconAndRecv(void)
     }
     for (i = 1; i < MP_PKT_SIZE_STATE_BEACON; i++)
         Mp_Pop(&gMpSendRing, &pkt[i]);
-    ASSERT_EQ(pkt[5], 1); // cached turn seq
-    ASSERT_EQ(pkt[6], 1); // moveSlot
+    ASSERT_EQ(pkt[5], 1);                // cached turn seq
+    ASSERT_EQ(pkt[6], MP_TURN_ACT_MOVE); // action
+    ASSERT_EQ(pkt[7], 1);                // moveSlot
 
     // BattleTick also drains the recv ring (the partner controller only
     // polls inside its ChooseMove window).
@@ -899,6 +1052,7 @@ static void PushBeaconBusyTrainer(u8 localId, u8 mapGroup, u8 mapNum, bool8 pres
 {
     u8 pkt[MP_PKT_SIZE_STATE_BEACON];
     u8 i;
+    memset(pkt, 0, sizeof(pkt)); // pkt[9..10] stay zero (turn p2/p3 idle)
     pkt[0] = MP_PKT_STATE_BEACON;
     pkt[1] = 0; // gender MALE, no party ack
     pkt[2] = 0; // starter hi
@@ -1683,8 +1837,12 @@ int main(void)
     TestSendBattleTurnAssignsSeq();
     TestResendBattleTurnKeepsSeq();
     TestHandleBattleTurnDedupAndOrdering();
+    TestSendBattleSwitchAndReplaceEncode();
+    TestSendBattleItemEncodes16BitId();
+    TestHandleBattleActionDispatchAndRemap();
     TestSetupCoopBattleResetsTurnStateAndSeedsRng();
     TestBeaconRepairsDroppedBattleTurn();
+    TestBeaconRepairsDroppedSwitchAndItem();
     TestBeaconSenderCarriesCachedTurnOnlyInCoopBattle();
     TestBattleTickPumpsBeaconAndRecv();
 
