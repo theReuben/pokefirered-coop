@@ -250,6 +250,58 @@ Confirm by connecting two app instances and exchanging a position message.
 
 ---
 
+## Convergence Metrics — capturing state for co-op verification
+
+The serial bridge emits two `log::info!` lines once per second (per instance).
+These are the structured metrics to capture during a live two-player run so the
+result can be verified by **diffing the two instances' logs** rather than
+eyeballing screenshots. They read live ROM state and per-packet-type wire
+counts; no ROM rebuild is needed (bridge-only, `serial_bridge.rs`).
+
+### How to capture
+
+`env_logger` writes to **stderr** and is gated by `RUST_LOG`. Run each instance
+with info logging and tee stderr to a per-player file:
+
+```bash
+# Instance A (host)
+RUST_LOG=info npm run tauri dev              2> host.log
+# Instance B (guest)
+RUST_LOG=info npm run tauri dev              2> guest.log
+```
+
+(On a release build, run the packaged binary the same way with `RUST_LOG=info`
+and `2> host.log`.) Send both `host.log` and `guest.log` back for diffing.
+
+### The two lines
+
+```
+mp      tick=… partner=… connState=… snd(h/t/magic) rcv(h/t/magic) sent=… recv=…
+mp-conv tick=… role=… boss(me=/partner=) turnseq(out=/applied=) coopRng=… frameErr=… sent[TT:n …] recv[TT:n …]
+```
+
+### What each `mp-conv` field proves (host vs guest)
+
+| Field | Healthy signature | Failure it catches |
+|---|---|---|
+| `role` | host=1, guest=2 (must **differ**) | `role=0` on either = role heartbeat never landed → AI-target desync (`8f8fb3198e`) |
+| `boss(me/partner)` | during boss-ready both go nonzero and **equal** | partner stuck at 0 = dropped `BOSS_READY` the beacon must repair (`57a8226ab8`) |
+| `turnseq(out/applied)` | advance in lockstep across a coop battle | `applied` lagging `out` on one side = a lost `MP_PKT_BATTLE_TURN` |
+| `coopRng` | **byte-identical** across both logs at the same turn | divergence = RNG/order-lockstep break (`b77fb67ed2`) |
+| `frameErr` | stays `0` | nonzero = ROM/bridge packet-table mismatch, stream-framing corruption (`4fba00a5`) |
+| `sent[TT:n]` / `recv[TT:n]` | host `sent` for type TT ≈ guest `recv` for TT | a per-type send-vs-recv gap localises which packet the relay dropped |
+
+The same snapshot is also exposed on the `DebugState` overlay JSON
+(`get_debug_state`) — `framing_errors`, `boss_ready_id`, `partner_boss_id`,
+`turn_seq_out`, `turn_seq_applied`, `coop_rng_state`, `sent_by_type`,
+`recv_by_type` — so a UI-driven capture works too.
+
+> Note: these metrics are additive Rust in `serial_bridge.rs`; they compile only
+> in CI / a local `make check-tauri` (no Rust toolchain on the primary dev box),
+> so treat CI's `check-tauri` as the gate before relying on a live run.
+
+---
+
 ## Known Limitations (v1)
 
 - **Stub emulator:** Dev builds without `--features mgba` run the StubBackend, which

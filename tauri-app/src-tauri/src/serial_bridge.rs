@@ -58,6 +58,18 @@ static mut ENCOUNTER_SEED: u32 = 0;
 static mut TICK_COUNT:    u64 = 0;
 static mut PACKETS_SENT:  u64 = 0;
 static mut PACKETS_RECV:  u64 = 0;
+// Per-packet-type sent/recv counters (indexed by the packet's type byte).
+// The MCP in-process relay is lossless and ordered; the real PartyKit/WebSocket
+// path is neither.  A per-type send-vs-recv gap across the two instances' logs
+// is the only way to see which packet type is being dropped on the wire — the
+// exact blind spot that hid the ghost-gender and starter-sync losses (rule 5).
+static mut PKT_SENT_BY_TYPE: [u64; 256] = [0; 256];
+static mut PKT_RECV_BY_TYPE: [u64; 256] = [0; 256];
+// Count of send-ring bytes the bridge could not frame (unknown type id).  A
+// nonzero value is the signature of a ROM/bridge packet-table mismatch — the
+// stream-framing corruption of 4fba00a5 (rule 4).  Must stay 0 in a healthy
+// session; previously logged per-occurrence but never counted.
+static mut FRAMING_ERRORS: u64 = 0;
 // Role received from relay: 0=none, 1=host, 2=guest.  Re-asserted into
 // gMultiplayerState.role every frame by the role heartbeat in tick() — the
 // relay sends `role` only once, but Multiplayer_Init zeroes it afterward.
@@ -80,6 +92,9 @@ pub fn reset_discovery() {
         RECEIVED_ROLE          = 0;
         PACKETS_SENT           = 0;
         PACKETS_RECV           = 0;
+        PKT_SENT_BY_TYPE       = [0; 256];
+        PKT_RECV_BY_TYPE       = [0; 256];
+        FRAMING_ERRORS         = 0;
         TICK_COUNT             = 0;
         ENCOUNTER_SEED         = 0;
     }
@@ -236,7 +251,10 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
     let outbound = drain_send_ring(emu);
     for pkt in outbound {
         if let Some(msg) = packet_to_json(&pkt) {
-            unsafe { PACKETS_SENT += 1; }
+            unsafe {
+                PACKETS_SENT += 1;
+                PKT_SENT_BY_TYPE[pkt[0] as usize] += 1; // pkt non-empty (packet_size > 0)
+            }
             net.send(msg);
         }
     }
@@ -275,7 +293,10 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
             _ => {}
         }
         if let Some(pkt) = json_to_packet(&msg) {
-            unsafe { PACKETS_RECV += 1; }
+            unsafe {
+                PACKETS_RECV += 1;
+                if !pkt.is_empty() { PKT_RECV_BY_TYPE[pkt[0] as usize] += 1; }
+            }
             push_recv_ring(emu, &pkt);
         }
     }
@@ -338,7 +359,60 @@ pub fn tick(emu: &mut EmulatorHandle, net: &NetHandle) {
             unsafe { PACKETS_SENT },
             unsafe { PACKETS_RECV },
         );
+
+        // Convergence snapshot — the fields diffed between the two instances'
+        // logs to confirm co-op state actually converged on the real relay:
+        //   role        must DIFFER (host=1 vs guest=2); NONE=0 means the role
+        //               heartbeat never landed → AI-target desync (8f8fb3198e).
+        //   boss(me/partner)  both nonzero + equal = boss-ready handshake met;
+        //               a partner stuck at 0 is the dropped-BOSS_READY hang
+        //               the beacon repair (57a8226ab8) must close.
+        //   turnseq(out/applied)  advance in lockstep across a coop battle;
+        //               applied lagging out on one side = a lost MP_PKT_BATTLE_TURN.
+        //   coopRng     must MATCH byte-for-byte across instances during a coop
+        //               battle — divergence here is the RNG/order-lockstep class.
+        //   frameErr    must stay 0 (nonzero = ROM/bridge packet-table mismatch).
+        //   sent/recv[type]  per-type wire counts; a send-vs-recv gap across the
+        //               two logs localises which packet type the relay dropped.
+        let mp = unsafe { MULTIPLAYER_STATE_ADDR };
+        let role_b = emu.read_bytes(mp,      1);
+        let boss   = emu.read_bytes(mp + 8,  2); // bossReadyBossId, partnerBossId (contiguous)
+        let seqs   = emu.read_bytes(mp + 59, 2); // battleTurnSeqOut, battleTurnSeqApplied (contiguous)
+        let rng    = emu.read_bytes(mp + 68, 4); // coopRngState (u32 LE)
+        let b0 = |v: &Vec<u8>, i: usize| -> u8 { v.get(i).copied().unwrap_or(0) };
+        let coop_rng = if rng.len() >= 4 {
+            u32::from_le_bytes([rng[0], rng[1], rng[2], rng[3]])
+        } else { 0 };
+        // Copy by value (Copy arrays) so the formatter borrows a local.
+        let sent_copy = unsafe { PKT_SENT_BY_TYPE };
+        let recv_copy = unsafe { PKT_RECV_BY_TYPE };
+        log::info!(
+            "mp-conv tick={} role={} boss(me={} partner={}) turnseq(out={} applied={}) coopRng={:08X} frameErr={} sent[{}] recv[{}]",
+            tick,
+            b0(&role_b, 0),
+            b0(&boss, 0), b0(&boss, 1),
+            b0(&seqs, 0), b0(&seqs, 1),
+            coop_rng,
+            unsafe { FRAMING_ERRORS },
+            fmt_counters_by_type(&sent_copy),
+            fmt_counters_by_type(&recv_copy),
+        );
     }
+}
+
+/// Format a per-type counter array as a compact "TT:count" list of the nonzero
+/// entries (e.g. "01:412 12:6 14:57"), or "-" when empty.  Used for the
+/// mp-conv log line so a per-packet-type send-vs-recv gap is visible at a glance.
+fn fmt_counters_by_type(arr: &[u64; 256]) -> String {
+    let mut s = String::new();
+    for (t, &c) in arr.iter().enumerate() {
+        if c != 0 {
+            if !s.is_empty() { s.push(' '); }
+            s.push_str(&format!("{:02X}:{}", t, c));
+        }
+    }
+    if s.is_empty() { s.push('-'); }
+    s
 }
 
 /// Snapshot of multiplayer bridge state for the debug overlay.
@@ -356,6 +430,16 @@ pub struct DebugState {
     pub packets_sent:      u64,
     pub packets_recv:      u64,
     pub ticks:             u64,
+    // Convergence snapshot (same fields as the mp-conv log line) so a live test
+    // can capture the overlay JSON instead of scraping logs.
+    pub framing_errors:    u64,
+    pub boss_ready_id:     u8,  // gMultiplayerState.bossReadyBossId
+    pub partner_boss_id:   u8,  // gMultiplayerState.partnerBossId
+    pub turn_seq_out:      u8,  // gMultiplayerState.battleTurnSeqOut
+    pub turn_seq_applied:  u8,  // gMultiplayerState.battleTurnSeqApplied
+    pub coop_rng_state:    u32, // gMultiplayerState.coopRngState (must match across instances in a coop battle)
+    pub sent_by_type:      String, // "TT:count" of nonzero send counters
+    pub recv_by_type:      String, // "TT:count" of nonzero recv counters
 }
 
 pub fn get_debug_state(emu: &EmulatorHandle) -> DebugState {
@@ -366,10 +450,25 @@ pub fn get_debug_state(emu: &EmulatorHandle) -> DebugState {
         let v = emu.read_bytes(mp_addr + 1, 1); // +1 = connState offset
         if v.is_empty() { 0 } else { v[0] }
     } else { 0 };
+    // Convergence bytes (see mp-conv log line for offset rationale).
+    let (boss_me, boss_partner, seq_out, seq_applied, coop_rng) = if mp_addr != 0 {
+        let boss = emu.read_bytes(mp_addr + 8,  2);
+        let seqs = emu.read_bytes(mp_addr + 59, 2);
+        let rng  = emu.read_bytes(mp_addr + 68, 4);
+        let g = |v: &Vec<u8>, i: usize| -> u8 { v.get(i).copied().unwrap_or(0) };
+        let rng_val = if rng.len() >= 4 {
+            u32::from_le_bytes([rng[0], rng[1], rng[2], rng[3]])
+        } else { 0 };
+        (g(&boss, 0), g(&boss, 1), g(&seqs, 0), g(&seqs, 1), rng_val)
+    } else { (0, 0, 0, 0, 0) };
     let sr = if send_addr != 0 { emu.read_bytes(send_addr + RING_HEAD_OFF, 3) } else { vec![] };
     let rr = if recv_addr != 0 { emu.read_bytes(recv_addr + RING_HEAD_OFF, 3) } else { vec![] };
     let (sh, st, sm) = if sr.len() >= 3 { (sr[0], sr[1], sr[2]) } else { (0, 0, 0) };
     let (rh, rt, rm) = if rr.len() >= 3 { (rr[0], rr[1], rr[2]) } else { (0, 0, 0) };
+    // Copy the counter arrays by value (they are Copy) so the formatter borrows
+    // a local, never a reference to the `static mut` itself.
+    let sent_copy = unsafe { PKT_SENT_BY_TYPE };
+    let recv_copy = unsafe { PKT_RECV_BY_TYPE };
     unsafe {
         DebugState {
             partner_connected: PARTNER_CONNECTED,
@@ -384,6 +483,14 @@ pub fn get_debug_state(emu: &EmulatorHandle) -> DebugState {
             packets_sent:      PACKETS_SENT,
             packets_recv:      PACKETS_RECV,
             ticks:             TICK_COUNT,
+            framing_errors:    FRAMING_ERRORS,
+            boss_ready_id:     boss_me,
+            partner_boss_id:   boss_partner,
+            turn_seq_out:      seq_out,
+            turn_seq_applied:  seq_applied,
+            coop_rng_state:    coop_rng,
+            sent_by_type:      fmt_counters_by_type(&sent_copy),
+            recv_by_type:      fmt_counters_by_type(&recv_copy),
         }
     }
 }
@@ -418,7 +525,9 @@ fn drain_send_ring(emu: &mut EmulatorHandle) -> Vec<Vec<u8>> {
     while consumed < ring_data.len() {
         let size = packet_size(&ring_data, consumed);
         if size == 0 {
-            log::warn!("serial_bridge: unknown send-ring packet type 0x{:02X} — draining", ring_data[consumed]);
+            unsafe { FRAMING_ERRORS += 1; }
+            log::warn!("serial_bridge: unknown send-ring packet type 0x{:02X} — draining (framing_errors={})",
+                       ring_data[consumed], unsafe { FRAMING_ERRORS });
             consumed += 1;
             continue;
         }
@@ -830,6 +939,21 @@ fn build_full_sync_payload(flags: &[Value]) -> [u8; FULL_SYNC_PAYLOAD_SIZE] {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // ── metrics formatting ────────────────────────────────────────────────────
+
+    #[test]
+    fn fmt_counters_by_type_lists_nonzero_hex() {
+        let mut a = [0u64; 256];
+        assert_eq!(fmt_counters_by_type(&a), "-"); // empty → dash
+        a[PKT_POSITION as usize] = 412;
+        a[PKT_BATTLE_TURN as usize] = 57;
+        // Entries appear in ascending type order, two-hex-digit type ids.
+        assert_eq!(
+            fmt_counters_by_type(&a),
+            format!("{:02X}:412 {:02X}:57", PKT_POSITION, PKT_BATTLE_TURN)
+        );
+    }
 
     // ── packet_size ───────────────────────────────────────────────────────────
 
