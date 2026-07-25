@@ -496,7 +496,13 @@ void Multiplayer_ApplyFullSync(const u8 *payload, u16 payloadLen);
 
 // Flag/var sync helpers
 bool32 IsSyncableFlag(u16 flagId);
-bool32 IsSyncableVar(u16 varId);   // returns FALSE until var audit in Phase 3
+bool32 IsSyncableVar(u16 varId);   // TRUE iff varId is a curated story-milestone var
+
+// Curated story-milestone var sync (see sCoopMilestones[] in multiplayer.c).
+bool32 Multiplayer_IsMilestoneWrite(u16 varId, u16 value); // exact (var,value) is a milestone
+void Multiplayer_OnLocalMilestone(u16 varId, u16 value);   // sender: durable flag + checkpoint
+void Multiplayer_ApplyMilestoneVar(u16 varId, u16 value);  // receiver: forward-only, prereq-gated apply
+void Multiplayer_SendMilestoneCatchup(void);               // replay reached milestones on (re)connect
 
 // Remote update handlers — called by ProcessOneRecvPacket when a FLAG_SET or
 // VAR_SET arrives from the partner. These set sIsRemoteUpdate before calling
@@ -504,6 +510,9 @@ bool32 IsSyncableVar(u16 varId);   // returns FALSE until var audit in Phase 3
 void Multiplayer_HandleRemoteFlagSet(u16 flagId);
 void Multiplayer_HandleRemoteFlagClear(u16 flagId);
 void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value);
+// Echo-suppression guard accessor (defined in event_data.c) so multiplayer.c can
+// wrap its own guarded VarSet/FlagSet in Multiplayer_ApplyMilestoneVar.
+void Multiplayer_SetRemoteUpdate(bool8 on);
 
 // Script mutex — called from ScriptContext_SetupScript / ScriptContext_RunScript.
 // Advisory only: sends SCRIPT_LOCK / SCRIPT_UNLOCK to inform the partner.

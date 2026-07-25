@@ -687,10 +687,14 @@ static void TestAsyncCheckpointSaveSequencing(void)
     gLinkSaveSectorsToWrite = 14; // NUM_SECTORS_PER_SLOT on the real target
 
     gMultiplayerState.connState = MP_STATE_CONNECTED;
-    SetPlayerMap(3, 5); // lastCkptMap defaults to 0xFF/0xFF, so this is "new"
+    SetPlayerMap(3, 5); // provides gSaveBlock1Ptr that Multiplayer_Update derefs
 
-    // First update: detects the map change, requests the save, and runs the
-    // INIT step (LinkFullSave_Init) — but no sector has been written yet.
+    // Arm the async save via a still-existing trigger (battle end).  The old
+    // per-map-change trigger was removed because it stalled scene transitions;
+    // the save MACHINE is unchanged, and this exercises it end to end.
+    Multiplayer_OnBattleEnd();
+
+    // First update runs the INIT step (LinkFullSave_Init) — no sector yet.
     Multiplayer_Update();
     ASSERT_EQ(gLinkSaveInitCalls,  1);
     ASSERT_EQ(gLinkSaveWriteCalls, 0);
@@ -708,7 +712,9 @@ static void TestAsyncCheckpointSaveSequencing(void)
     // Exact ordering: Init, 14 sector writes, replace-last, signature.
     ASSERT(strcmp(gLinkSaveOrder, "IWWWWWWWWWWWWWWRS") == 0);
 
-    // A second update once idle must NOT start another save (map unchanged).
+    // A second update once idle must NOT start another save on its own
+    // (Multiplayer_Update no longer arms checkpoints — only battle end,
+    // milestones, and the ~5min periodic timer do).
     Multiplayer_Update();
     ASSERT_EQ(gMultiplayerState.saveState, 0);
     ASSERT_EQ(gLinkSaveInitCalls, 1);

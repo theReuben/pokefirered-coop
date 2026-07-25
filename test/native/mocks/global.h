@@ -29,6 +29,10 @@ typedef u32 bool32;
 #define TRUE  1
 #define FALSE 0
 
+#ifndef ARRAY_COUNT
+#define ARRAY_COUNT(array) (size_t)(sizeof(array) / sizeof((array)[0]))
+#endif
+
 // GBA memory-section attributes — no-ops for native host builds.
 #define EWRAM_DATA
 #define IWRAM_DATA
@@ -157,6 +161,7 @@ extern struct SaveBlock2 *gSaveBlock2Ptr;
 #define VAR_TEMP_2          (TEMP_VARS_START + 0x2)
 u16   VarGet(u16 varId);
 bool8 VarSet(u16 varId, u16 value);
+bool8 FlagGet(u16 flagId);   // backed by the SaveBlock1 flags array in stubs.c
 
 // Badge count for event_data.h array declaration.
 #define NUM_BADGES          8

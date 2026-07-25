@@ -222,8 +222,14 @@ bool8 VarSet(u16 id, u16 value)
     if (!ptr)
         return FALSE;
     *ptr = value;
-    if (!sIsRemoteUpdate && IsSyncableVar(id))
+    // Only broadcast a var write when this exact (id, value) is a curated story
+    // milestone — intermediate per-player scene writes to a milestone var must
+    // not leak (they would skip the partner's own cutscene).
+    if (!sIsRemoteUpdate && Multiplayer_IsMilestoneWrite(id, value))
+    {
         Multiplayer_SendVarSet(id, value);
+        Multiplayer_OnLocalMilestone(id, value); // durable flag + checkpoint on sender
+    }
     return TRUE;
 }
 
@@ -316,11 +322,19 @@ void Multiplayer_HandleRemoteFlagClear(u16 flagId)
     sIsRemoteUpdate = FALSE;
 }
 
+// Setter so multiplayer.c can wrap its own guarded VarSet/FlagSet (used by
+// Multiplayer_ApplyMilestoneVar) with the same echo-suppression guard the
+// remote handlers here use.
+void Multiplayer_SetRemoteUpdate(bool8 on)
+{
+    sIsRemoteUpdate = on;
+}
+
 void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value)
 {
     if (gSaveBlock1Ptr == NULL)
         return;
-    sIsRemoteUpdate = TRUE;
-    VarSet(varId, value);
-    sIsRemoteUpdate = FALSE;
+    // All synced var writes are curated milestones; apply forward-only with the
+    // prereq/deferral + completeFlag logic (and echo guard) in multiplayer.c.
+    Multiplayer_ApplyMilestoneVar(varId, value);
 }

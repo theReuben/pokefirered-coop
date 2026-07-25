@@ -245,6 +245,12 @@
 #define SYNC_FLAG_STORY_START       0x020
 #define SYNC_FLAG_STORY_END         0x2FF
 
+// Co-op-defined story-gate flags. These live inside the syncable story range
+// above (0x020-0x2FF) so they propagate via the normal FlagSet sync + full_sync
+// OR-merge. Reuses an unused vanilla flag slot — keep in sync with the
+// corresponding FLAG_UNUSED_* entry in include/constants/flags.h.
+#define FLAG_COOP_GOT_PARCEL        0x264   // Oak's Parcel obtained (aliases FLAG_UNUSED_0x264)
+
 // Hidden ground items (A-button pickup spots).
 // FLAG_HIDDEN_ITEMS_START = 0x3E8; last used item is at offset 190 = 0x4A6.
 // 0x4A7 = FLAG_UNUSED_0x4A7, used for the Mega Ring one-time NPC gift.

@@ -5,7 +5,7 @@ INCLUDE := -I mocks -I ../../include
 SRCDIR  := ../../src
 TESTDIR := .
 
-TESTS   := test_smoke test_packets test_starter test_dispatch test_send_throttle
+TESTS   := test_smoke test_packets test_starter test_dispatch test_send_throttle test_milestone
 
 .PHONY: all clean
 
@@ -31,6 +31,9 @@ test_dispatch: $(TESTDIR)/test_dispatch.c $(SRCDIR)/multiplayer.c $(STUBS)
 	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $^
 
 test_send_throttle: $(TESTDIR)/test_send_throttle.c $(SRCDIR)/multiplayer.c $(STUBS)
+	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $^
+
+test_milestone: $(TESTDIR)/test_milestone.c $(SRCDIR)/multiplayer.c $(STUBS)
 	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $^
 
 clean:

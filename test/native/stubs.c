@@ -153,6 +153,13 @@ void Multiplayer_HandleRemoteVarSet(u16 varId, u16 value)
     gTestLastRemoteVarValue = value;
 }
 
+// Echo-suppression guard accessor (real impl in event_data.c, not linked here).
+// The stub FlagSet/VarSet don't consult the guard, so this is a no-op.
+void Multiplayer_SetRemoteUpdate(bool8 on)
+{
+    (void)on;
+}
+
 // FlagSet/FlagGet/FlagClear stubs — backed by the SaveBlock1 flags array.
 void FlagSet(u16 flagId)
 {

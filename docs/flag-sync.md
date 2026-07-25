@@ -101,6 +101,35 @@ bool32 IsSyncableFlag(u16 flagId)
 
 ---
 
+## Var Sync (Story Milestones)
+
+Most game **vars** are NOT synced. `VAR_MAP_SCENE_*` in particular drive
+per-player cutscene playback (each player runs the starter/rival scenes
+independently), so mirroring them wholesale would shove a partner past a
+sequence they haven't played — the starter-lockout bug class.
+
+Instead, a **curated milestone table** (`sCoopMilestones[]` in
+`src/multiplayer.c`) lists specific `(var → value)` writes that represent
+genuinely shared world progress. Only those exact writes sync, and only
+forward (never regress a partner who is ahead):
+
+- `IsSyncableVar(varId)` → true iff the var appears in the table.
+- `Multiplayer_IsMilestoneWrite(varId, value)` gates the outgoing `VAR_SET`
+  in `VarSet()`, so an intermediate per-player write to a milestone var is
+  never broadcast.
+- `Multiplayer_ApplyMilestoneVar()` applies a received value forward-only,
+  gated on an optional `prereqFlag` (deferral for a receiver mid-cutscene),
+  and sets an optional `completeFlag` (a syncable story-range flag, for
+  durable OR-merge robustness / future script gates).
+- Reliability: reached milestones are re-broadcast on (re)connect
+  (`Multiplayer_SendMilestoneCatchup`, both sides, idempotent) and on a
+  periodic timer, so a dropped `VAR_SET` self-heals. Reuses the existing
+  `MP_PKT_VAR_SET` packet — no transport-layer change.
+
+First milestone: `VAR_MAP_SCENE_VIRIDIAN_CITY_MART → 1` (Oak's Parcel
+obtained → `FLAG_COOP_GOT_PARCEL`), which makes the partner's Oak recognize
+the parcel and hand over the Pokédex.
+
 ## Edge Cases
 
 - **Late joiner**: guest receives `FULL_SYNC` on connect and applies all

@@ -56,6 +56,18 @@ EWRAM_DATA static u8 sMpEventLogCount;
 // battle-end LoadPlayerParty.
 EWRAM_DATA static struct Pokemon sPartnerBattleParty[MULTI_PARTY_SIZE];
 
+// Periodic save/sync cadences driven from Multiplayer_Update (session-tier, reset
+// by Multiplayer_Init).  Zero-initialized file statics (ENGINEERING_DISCIPLINE:
+// statics must be zero-init or const for the GBA link).
+//  - Autosave: ~5 min safety net replacing the removed per-warp checkpoint.
+//  - Milestone resync: ~10s re-broadcast so a dropped incremental milestone
+//    VAR_SET self-heals without a reconnect (chaos convergence, rule 5), reusing
+//    the wired VAR_SET packet so it stays ROM-only.
+#define MP_AUTOSAVE_INTERVAL_FRAMES 18000
+#define MP_MILESTONE_RESYNC_FRAMES  600
+static u16 sAutosaveTimer;
+static u16 sMilestoneResyncTimer;
+
 // Address discovery table in IWRAM.  Populated once by Multiplayer_Init.
 // Tauri scans IWRAM for MP_DISCOVERY_MAGIC at index 0, then reads [1]–[5].
 IWRAM_DATA u32 gMpAddrTable[6];
@@ -413,10 +425,13 @@ static bool8 ProcessOneRecvPacket(void)
         if (Multiplayer_IsCoopBattle() && gMultiplayerState.battleTurnSent)
             Multiplayer_ResendBattleTurn();
         // Send accumulated event log to bring the reconnecting partner up to date.
-        // Host authority rule: on reconnect the host sends full_sync; the guest's
-        // locally-set flags are preserved because Multiplayer_ApplyFullSync ORs flags.
         Multiplayer_SendEventLog();
         Multiplayer_ClearEventLog();
+        // Replay reached story milestones so a late/reconnecting partner (or one
+        // that dropped the original incremental VAR_SET under packet loss) catches
+        // up.  Both sides send; forward-only apply makes it idempotent and covers
+        // a guest that advanced a milestone while the host was disconnected.
+        Multiplayer_SendMilestoneCatchup();
         break;
 
     case MP_PKT_PARTNER_DISCONNECTED:
@@ -936,6 +951,8 @@ static void GhostMapCheck(void)
 
 void Multiplayer_Init(void)
 {
+    sAutosaveTimer        = 0;
+    sMilestoneResyncTimer = 0;
     gMultiplayerState.role               = MP_ROLE_NONE;
     gMultiplayerState.connState          = MP_STATE_DISCONNECTED;
     gMultiplayerState.partnerMapGroup    = 0xFF;
@@ -1195,8 +1212,8 @@ enum {
 };
 
 // Kick off an auto-checkpoint save if one isn't already running.  Shared by
-// the map-change checkpoint and Multiplayer_OnBattleEnd so both stalls die
-// with one fix (rule 2: fix the class, not the call site).
+// the periodic autosave, story milestones, and Multiplayer_OnBattleEnd so all
+// of those stalls die with one fix (rule 2: fix the class, not the call site).
 static void Multiplayer_RequestCheckpointSave(void)
 {
     if (gMultiplayerState.saveState == MP_SAVE_IDLE)
@@ -1295,12 +1312,15 @@ void Multiplayer_Update(void)
         // mid-battle pump in Multiplayer_BattleTick).
         TickPingAndBeacon();
 
-        // Auto-checkpoint: save on map change so progress isn't lost on
-        // disconnect.  Kicked off asynchronously (one sector/frame) so it never
-        // stalls the transition.  Only detect a new map while idle: if a save is
-        // still running we leave lastCkptMap unchanged so a second boundary
-        // crossed mid-save is caught on the frame the save completes.
-        if (gSaveBlock1Ptr && gMultiplayerState.saveState == MP_SAVE_IDLE)
+        // Map-change detection for the reconnect event log.  The per-map-change
+        // auto-checkpoint save was REMOVED here: it kicked off a full 14-sector
+        // flash save on every warp, and each sector's host-side flash sync stalls
+        // the emulator thread, so the destination map-load/fade-in rendered at
+        // ~5fps in the real Tauri app (the "slow area transition" bug).  Progress
+        // is now made durable on battle end (Multiplayer_OnBattleEnd), on story
+        // milestones (Multiplayer_ApplyMilestoneVar), and by the periodic autosave
+        // below — none of which land on the warp critical path.
+        if (gSaveBlock1Ptr)
         {
             u8 curMapGroup = (u8)gSaveBlock1Ptr->location.mapGroup;
             u8 curMapNum   = (u8)gSaveBlock1Ptr->location.mapNum;
@@ -1309,9 +1329,29 @@ void Multiplayer_Update(void)
             {
                 gMultiplayerState.lastCkptMapGroup = curMapGroup;
                 gMultiplayerState.lastCkptMapNum   = curMapNum;
-                Multiplayer_RequestCheckpointSave();
                 Multiplayer_LogEvent(MPEVENT_MAP_ENTERED, curMapGroup, curMapNum, 0);
             }
+        }
+
+        // Periodic autosave (~5 min at 60fps) — the safety net that replaces the
+        // per-warp checkpoint.  Bounds worst-case progress loss on an unexpected
+        // close/crash to one interval of event-free wandering.  Overworld-only and
+        // gated on the async machine being idle, so it never stalls a transition.
+        sAutosaveTimer++;
+        if (sAutosaveTimer >= MP_AUTOSAVE_INTERVAL_FRAMES)
+        {
+            sAutosaveTimer = 0;
+            if (gMultiplayerState.saveState == MP_SAVE_IDLE && !gMain.inBattle)
+                Multiplayer_RequestCheckpointSave();
+        }
+
+        // Periodic milestone re-broadcast — self-heals a dropped incremental
+        // milestone VAR_SET mid-session (see MP_MILESTONE_RESYNC_FRAMES above).
+        sMilestoneResyncTimer++;
+        if (sMilestoneResyncTimer >= MP_MILESTONE_RESYNC_FRAMES)
+        {
+            sMilestoneResyncTimer = 0;
+            Multiplayer_SendMilestoneCatchup();
         }
     }
     if (gMultiplayerState.connState == MP_STATE_CONNECTED &&
@@ -1940,17 +1980,131 @@ bool32 IsSyncableFlag(u16 flagId)
         || (flagId >= SYNC_FLAG_BADGES_START   && flagId <= SYNC_FLAG_BADGES_END);
 }
 
+// ---------------------------------------------------------------------------
+// Curated story-milestone var sync
+//
+// Most VAR_MAP_SCENE_* vars (0x4050-0x408B) are per-player cutscene playback and
+// must NOT sync wholesale — forcing a partner's scene var forward can skip a
+// per-player sequence (e.g. player A picking a starter advancing player B's lab
+// scene past the starter choice).  So instead of a blanket range, we curate a
+// small table of (var -> value) MILESTONES that represent genuinely shared world
+// progress, and sync only those, forward-only.
+//
+// Rules enforced by the send/apply paths below:
+//   - Only a write whose (varId, value) matches a table row is ever transmitted
+//     (Multiplayer_IsMilestoneWrite), so intermediate per-player writes to a
+//     table var never leak.
+//   - Apply is forward-only (never regress a partner who is ahead) and gated on
+//     an optional prereqFlag (deferral: a receiver mid-cutscene is not forced
+//     forward; the milestone is re-offered later via the host's connect-time
+//     replay in the MP_PKT_PARTNER_CONNECTED handler).
+//   - completeFlag, if set, is a syncable story-range flag also set on apply, so
+//     the shared gate survives via the robust OR-merge flag path as well.
+//
+// Only VAR_MAP_SCENE_VIRIDIAN_CITY_MART (0x4057) is listed for now: it is NOT
+// dual-use (only the Viridian mart parcel scene writes it), and Oak's Pokédex
+// hand-off is gated on it (`goto_if_ge VAR_MAP_SCENE_VIRIDIAN_CITY_MART, 1` in
+// PalletTown_ProfessorOaksLab_Frlg/scripts.inc), so syncing value 1 makes the
+// partner's Oak recognize the parcel.  The dual-use lab scene var
+// (VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB) is deliberately NOT listed.
+struct CoopMilestone {
+    u16 varId;
+    u16 value;
+    u16 prereqFlag;   // 0 = none; else receiver must have this flag before applying
+    u16 completeFlag; // 0 = none; else also set this syncable story-range flag on apply
+};
+
+static const struct CoopMilestone sCoopMilestones[] = {
+    { VAR_MAP_SCENE_VIRIDIAN_CITY_MART, 1, 0, FLAG_COOP_GOT_PARCEL },
+};
+
+static const struct CoopMilestone *FindMilestone(u16 varId, u16 value)
+{
+    u32 i;
+    for (i = 0; i < ARRAY_COUNT(sCoopMilestones); i++)
+    {
+        if (sCoopMilestones[i].varId == varId && sCoopMilestones[i].value == value)
+            return &sCoopMilestones[i];
+    }
+    return NULL;
+}
+
 bool32 IsSyncableVar(u16 varId)
 {
-    // VAR_MAP_SCENE_* (0x4050-0x408B) control per-player scripted cutscene
-    // progression.  Each player must run through intro/scene sequences
-    // independently, so these must NOT sync.  Syncing them overwrites the
-    // partner's scene state mid-sequence (e.g. player A picking a starter
-    // advances the lab scene var and blocks player B from choosing).
-    // No other var range currently needs cross-player sync; trainer/badge/
-    // story state is all stored in flags, not vars.
-    (void)varId;
+    u32 i;
+    for (i = 0; i < ARRAY_COUNT(sCoopMilestones); i++)
+    {
+        if (sCoopMilestones[i].varId == varId)
+            return TRUE;
+    }
     return FALSE;
+}
+
+// TRUE only when this exact (varId, value) write is a curated milestone.  The
+// send path uses this so an intermediate per-player write to a milestone var
+// (e.g. an early scene value) is never broadcast.
+bool32 Multiplayer_IsMilestoneWrite(u16 varId, u16 value)
+{
+    return FindMilestone(varId, value) != NULL;
+}
+
+// A milestone is now reached on THIS instance (either written locally or applied
+// from the partner).  Record it durably: set the completeFlag (unguarded, so it
+// also propagates to the partner via the normal story-flag sync / OR-merge) and
+// request a checkpoint save so progress follows meaningful story events (this is
+// what replaces the removed per-warp save).  Idempotent — callers only reach here
+// on the transition, and the !FlagGet guard means the flag broadcasts once.
+static void NoteMilestoneReached(const struct CoopMilestone *m)
+{
+    if (m->completeFlag && !FlagGet(m->completeFlag))
+        FlagSet(m->completeFlag);
+    Multiplayer_RequestCheckpointSave();
+}
+
+// Sender side: a milestone (varId,value) was just written locally (by a map
+// script) and broadcast via VAR_SET.  Record it durably here too so the sender
+// gets the same completeFlag + checkpoint the receiver does.
+void Multiplayer_OnLocalMilestone(u16 varId, u16 value)
+{
+    const struct CoopMilestone *m = FindMilestone(varId, value);
+    if (m != NULL)
+        NoteMilestoneReached(m);
+}
+
+// Receiver side: apply a milestone value received from the partner — forward-only,
+// prereq-gated, idempotent.
+void Multiplayer_ApplyMilestoneVar(u16 varId, u16 value)
+{
+    const struct CoopMilestone *m = FindMilestone(varId, value);
+    if (m == NULL)
+        return;                                  // not a recognized milestone
+    if (VarGet(varId) >= value)
+        return;                                  // forward-only: partner is ahead
+    if (m->prereqFlag && !FlagGet(m->prereqFlag))
+        return;                                  // deferred until prereq met
+
+    Multiplayer_SetRemoteUpdate(TRUE);
+    VarSet(varId, value);                        // guarded: don't echo the VAR_SET
+    Multiplayer_SetRemoteUpdate(FALSE);
+
+    NoteMilestoneReached(m);
+}
+
+// On (re)connect, replay every milestone this side has already reached so the
+// partner converges even if the original incremental VAR_SET was dropped (chaos)
+// or the partner joined late.  Called from both sides — apply is forward-only and
+// idempotent, so a milestone the partner already has is a no-op, and a milestone
+// the guest reached while the host was away still propagates.
+void Multiplayer_SendMilestoneCatchup(void)
+{
+    u32 i;
+    if (!gSaveBlock1Ptr)
+        return;
+    for (i = 0; i < ARRAY_COUNT(sCoopMilestones); i++)
+    {
+        if (VarGet(sCoopMilestones[i].varId) >= sCoopMilestones[i].value)
+            Multiplayer_SendVarSet(sCoopMilestones[i].varId, sCoopMilestones[i].value);
+    }
 }
 
 // ---------------------------------------------------------------------------
