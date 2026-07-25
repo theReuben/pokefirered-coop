@@ -109,15 +109,24 @@ PokemonLeague_ChampionsRoom_EventScript_QuestLogEnd::
 	end
 
 PokemonLeague_ChampionsRoom_EventScript_Battle::
-	call_if_eq VAR_STARTER_MON, 2, PokemonLeague_ChampionsRoom_EventScript_BattleSquirtle
-	call_if_eq VAR_STARTER_MON, 1, PokemonLeague_ChampionsRoom_EventScript_BattleBulbasaur
-	call_if_eq VAR_STARTER_MON, 0, PokemonLeague_ChampionsRoom_EventScript_BattleCharmander
+	@ The champion IS the rival, so in co-op key the team on the shared
+	@ remaining-starter key -- VAR_STARTER_MON differs per instance and would
+	@ pick a different champion team on each ROM -> mid-battle desync.
+	copyvar VAR_TEMP_0, VAR_STARTER_MON
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	call_if_eq VAR_RESULT, 1, EventScript_CoopRivalBattleKey
+	call_if_eq VAR_TEMP_0, 2, PokemonLeague_ChampionsRoom_EventScript_BattleSquirtle
+	call_if_eq VAR_TEMP_0, 1, PokemonLeague_ChampionsRoom_EventScript_BattleBulbasaur
+	call_if_eq VAR_TEMP_0, 0, PokemonLeague_ChampionsRoom_EventScript_BattleCharmander
 	return
 
 PokemonLeague_ChampionsRoom_EventScript_Rematch::
-	call_if_eq VAR_STARTER_MON, 2, PokemonLeague_ChampionsRoom_EventScript_RematchSquirtle
-	call_if_eq VAR_STARTER_MON, 1, PokemonLeague_ChampionsRoom_EventScript_RematchBulbasaur
-	call_if_eq VAR_STARTER_MON, 0, PokemonLeague_ChampionsRoom_EventScript_RematchCharmander
+	copyvar VAR_TEMP_0, VAR_STARTER_MON
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	call_if_eq VAR_RESULT, 1, EventScript_CoopRivalBattleKey
+	call_if_eq VAR_TEMP_0, 2, PokemonLeague_ChampionsRoom_EventScript_RematchSquirtle
+	call_if_eq VAR_TEMP_0, 1, PokemonLeague_ChampionsRoom_EventScript_RematchBulbasaur
+	call_if_eq VAR_TEMP_0, 0, PokemonLeague_ChampionsRoom_EventScript_RematchCharmander
 	return
 
 PokemonLeague_ChampionsRoom_EventScript_Intro::
