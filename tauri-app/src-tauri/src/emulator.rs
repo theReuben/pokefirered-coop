@@ -1,3 +1,4 @@
+use crate::audio::AudioSink;
 use crate::session::SessionInfo;
 
 // GBA display dimensions
@@ -11,6 +12,8 @@ pub struct EmulatorHandle {
     key_state: u16, // bitmask; matches GBA KEYINPUT register (active-low)
     frame_buf: Vec<u8>,
     sav_path: String,
+    /// Sample queue shared with the audio callback; filled once per frame.
+    audio: AudioSink,
 }
 
 enum EmuInner {
@@ -25,6 +28,20 @@ impl EmulatorHandle {
             key_state: 0x03FF, // all buttons released (active-low)
             frame_buf: vec![0u8; FRAME_BYTES],
             sav_path: String::new(),
+            audio: AudioSink::new(),
+        }
+    }
+
+    /// Clone of the sample queue, for the runner thread's audio stream.
+    pub fn audio_sink(&self) -> AudioSink {
+        self.audio.clone()
+    }
+
+    /// Tell the core which rate to resample to — the host device's actual
+    /// output rate, which is only known once the stream has been opened.
+    pub fn set_audio_rate(&mut self, rate: u32) {
+        if let EmuInner::Running(backend) = &mut self.inner {
+            backend.set_audio_rate(rate);
         }
     }
 
@@ -71,11 +88,11 @@ impl EmulatorHandle {
         Ok(())
     }
 
-    /// Step the emulator one frame and copy the resulting pixel data into
-    /// the internal frame buffer.
+    /// Step the emulator one frame, copy the resulting pixel data into the
+    /// internal frame buffer, and hand this frame's audio to the sink.
     pub fn step_frame(&mut self) {
         if let EmuInner::Running(backend) = &mut self.inner {
-            backend.step(self.key_state, &mut self.frame_buf);
+            backend.step(self.key_state, &mut self.frame_buf, &self.audio);
         }
     }
 
@@ -130,7 +147,8 @@ impl EmulatorHandle {
 // ── Backend trait ─────────────────────────────────────────────────────────────
 
 trait EmuBackend: Send {
-    fn step(&mut self, key_state: u16, frame_out: &mut Vec<u8>);
+    fn step(&mut self, key_state: u16, frame_out: &mut Vec<u8>, audio: &AudioSink);
+    fn set_audio_rate(&mut self, _rate: u32) {}
     fn read_u32(&self, addr: u32) -> u32;
     fn write_u32(&mut self, addr: u32, value: u32);
     fn read_bytes(&self, addr: u32, len: usize) -> Vec<u8>;
@@ -150,7 +168,8 @@ impl StubBackend {
 }
 
 impl EmuBackend for StubBackend {
-    fn step(&mut self, _key_state: u16, frame_out: &mut Vec<u8>) {
+    // Stub produces no audio; the runner falls back to wall-clock pacing.
+    fn step(&mut self, _key_state: u16, frame_out: &mut Vec<u8>, _audio: &AudioSink) {
         for (i, byte) in frame_out.iter_mut().enumerate() {
             *byte = match i % 4 {
                 0 | 1 | 2 => 0x20,
@@ -190,6 +209,8 @@ mod mgba_ffi {
         pub fn mgba_run_frame(ctx: *mut MgbaCtx);
         pub fn mgba_set_keys(ctx: *mut MgbaCtx, keys: u32);
         pub fn mgba_get_pixels(ctx: *mut MgbaCtx) -> *const u32;
+        pub fn mgba_set_audio_rate(ctx: *mut MgbaCtx, rate: u32);
+        pub fn mgba_read_audio(ctx: *mut MgbaCtx, out: *mut i16, frames: usize) -> usize;
         pub fn mgba_read32(ctx: *mut MgbaCtx, addr: u32) -> u32;
         pub fn mgba_write32(ctx: *mut MgbaCtx, addr: u32, val: u32);
         pub fn mgba_read8(ctx: *mut MgbaCtx, addr: u32) -> u8;
@@ -234,7 +255,7 @@ impl MgbaBackend {
 
 #[cfg(feature = "mgba")]
 impl EmuBackend for MgbaBackend {
-    fn step(&mut self, key_state: u16, frame_out: &mut Vec<u8>) {
+    fn step(&mut self, key_state: u16, frame_out: &mut Vec<u8>, audio: &AudioSink) {
         unsafe {
             // mGBA setKeys expects active-high (1=pressed); key_state is active-low (0=pressed).
             mgba_ffi::mgba_set_keys(self.ctx, (!key_state & 0x03FF) as u32);
@@ -250,7 +271,30 @@ impl EmuBackend for MgbaBackend {
                 frame_out[base + 2] = ((pixel >> 16) & 0xFF) as u8; // B
                 frame_out[base + 3] = 0xFF;                          // A
             }
+
+            // Drain this frame's resampled audio. ~800 stereo frames at 48 kHz,
+            // so a single pass normally empties it.
+            const CHUNK_FRAMES: usize = 1024;
+            let mut scratch = [0i16; CHUNK_FRAMES * 2];
+            loop {
+                let frames = mgba_ffi::mgba_read_audio(
+                    self.ctx,
+                    scratch.as_mut_ptr(),
+                    CHUNK_FRAMES,
+                );
+                if frames == 0 {
+                    break;
+                }
+                audio.push(&scratch[..frames * 2]);
+                if frames < CHUNK_FRAMES {
+                    break;
+                }
+            }
         }
+    }
+
+    fn set_audio_rate(&mut self, rate: u32) {
+        unsafe { mgba_ffi::mgba_set_audio_rate(self.ctx, rate); }
     }
 
     fn read_u32(&self, addr: u32) -> u32 {

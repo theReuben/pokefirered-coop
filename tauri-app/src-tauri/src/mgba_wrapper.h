@@ -32,6 +32,15 @@ void mgba_set_keys(MgbaCtx* ctx, uint32_t keys);
 // Valid until the next mgba_run_frame or mgba_destroy call.
 const uint32_t* mgba_get_pixels(MgbaCtx* ctx);
 
+// Point the audio resampler at the host device's actual output rate.
+// Safe to call at any time; the default is 48000 Hz.
+void mgba_set_audio_rate(MgbaCtx* ctx, unsigned rate);
+
+// Drain up to `frames` stereo frames (2 int16 samples each) of resampled
+// audio into `out`, which must hold at least `frames * 2` int16 values.
+// Returns the number of frames actually written (0 when the buffer is empty).
+size_t mgba_read_audio(MgbaCtx* ctx, int16_t* out, size_t frames);
+
 // Raw GBA memory read/write (segment = -1 for auto).
 uint32_t mgba_read32(MgbaCtx* ctx, uint32_t addr);
 void     mgba_write32(MgbaCtx* ctx, uint32_t addr, uint32_t val);

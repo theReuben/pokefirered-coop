@@ -208,6 +208,7 @@ jobs:
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
+            libasound2-dev \
             pkg-config \
             cmake \
             zlib1g-dev

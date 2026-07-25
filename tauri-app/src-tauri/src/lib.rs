@@ -1,6 +1,8 @@
+mod audio;
 mod commands;
 mod emulator;
 mod net;
+mod runner;
 mod serial_bridge;
 mod session;
 
@@ -12,6 +14,8 @@ pub use session::SessionInfo;
 pub struct AppState {
     pub emulator: std::sync::Mutex<emulator::EmulatorHandle>,
     pub net: std::sync::Mutex<net::NetHandle>,
+    /// Owns the thread that actually advances the emulator (see `runner`).
+    pub runner: std::sync::Mutex<runner::RunnerHandle>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -35,6 +39,7 @@ pub fn run() {
         .manage(AppState {
             emulator: std::sync::Mutex::new(emulator::EmulatorHandle::new()),
             net: std::sync::Mutex::new(net::NetHandle::new()),
+            runner: std::sync::Mutex::new(runner::RunnerHandle::new()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::create_new_session,

@@ -122,12 +122,25 @@ body, #root, .app {
   text-align: center;
 }
 
-.room-code strong {
+.room-code strong,
+.room-code-copy {
   font-size: 2rem;
   letter-spacing: 0.3em;
   color: var(--gold);
   font-family: "Courier New", monospace;
 }
+
+.room-code-copy {
+  background: none;
+  border: none;
+  padding: 0;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+.room-code-copy:hover { filter: brightness(1.2); }
+.room-code-copy:active { transform: scale(0.97); }
 
 .room-code small {
   color: var(--text-dim);
@@ -139,7 +152,13 @@ body, #root, .app {
   color: var(--text-dim);
   font-family: "Courier New", monospace;
   letter-spacing: 0.15em;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
+
+.room-code-small:hover { color: var(--gold); }
 
 /* ── Code Input ──────────────────────────────────────────────────────────── */
 
@@ -149,9 +168,9 @@ body, #root, .app {
   border-radius: 0.5rem;
   color: var(--gold);
   font-family: "Courier New", monospace;
-  font-size: 2rem;
+  font-size: 1.35rem;
   font-weight: 700;
-  letter-spacing: 0.4em;
+  letter-spacing: 0.25em;
   padding: 0.5rem 1rem;
   text-align: center;
   text-transform: uppercase;
@@ -162,6 +181,15 @@ body, #root, .app {
 .code-input:focus {
   border-color: var(--red);
   outline: none;
+}
+
+/* The placeholder is prose, not a code — keep it small enough to fit the box. */
+.code-input::placeholder {
+  font-size: 0.85rem;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  text-transform: none;
 }
 
 /* ── Toggle Row ──────────────────────────────────────────────────────────── */

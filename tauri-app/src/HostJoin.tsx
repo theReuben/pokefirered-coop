@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { copyText } from "./clipboard";
 import type { SessionInfo } from "./types";
 
 interface Props {
@@ -25,6 +26,14 @@ export default function HostJoin({ onSessionReady }: Props) {
   const [randomize, setRandomize] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopyCode() {
+    if (await copyText(roomCode)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  }
 
   // ── Host: New Game ─────────────────────────────────────────────────────────
 
@@ -251,8 +260,10 @@ export default function HostJoin({ onSessionReady }: Props) {
         {roomCode && (
           <div className="room-code">
             <span>Room code:</span>
-            <strong>{roomCode}</strong>
-            <small>Share this with your partner</small>
+            <button className="room-code-copy" onClick={handleCopyCode} title="Click to copy">
+              {roomCode}
+            </button>
+            <small>{copied ? "Copied!" : "Click to copy · share with your partner"}</small>
           </div>
         )}
 

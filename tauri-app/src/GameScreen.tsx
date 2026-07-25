@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import ConnectionStatus from "./ConnectionStatus";
+import { copyText } from "./clipboard";
 import type { ConnectionStatus as ConnStatus, SessionInfo } from "./types";
 
 interface MpDebug {
@@ -49,8 +50,19 @@ export default function GameScreen({ session, onDisconnect }: Props) {
   const [connStatus, setConnStatus] = useState<ConnStatus>("connecting");
   const [mpDebug, setMpDebug] = useState<MpDebug | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
   const keysHeld = useRef<Set<string>>(new Set());
   const animFrame = useRef<number>(0);
+
+  // Copy the room code, then hand keyboard focus straight back to the game so
+  // the player isn't left typing into the button.
+  async function handleCopyCode() {
+    if (await copyText(session.roomCode)) {
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 1500);
+    }
+    divRef.current?.focus();
+  }
 
   // Render loop: poll the backend for the latest frame buffer
   const renderLoop = useCallback(async () => {
@@ -136,7 +148,13 @@ export default function GameScreen({ session, onDisconnect }: Props) {
     <div ref={divRef} className="screen game-screen" tabIndex={0} onKeyDown={handleKeyDown} onKeyUp={handleKeyUp} onBlur={handleBlur}>
       <div className="top-bar">
         <ConnectionStatus status={connStatus} />
-        <span className="room-code-small">Room: {session.roomCode}</span>
+        <button
+          className="room-code-small"
+          onClick={handleCopyCode}
+          title="Click to copy the room code"
+        >
+          {codeCopied ? "Copied!" : `Room: ${session.roomCode}`}
+        </button>
         <button className="btn btn-ghost btn-small" onClick={onDisconnect}>
           Quit
         </button>

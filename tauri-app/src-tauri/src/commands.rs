@@ -138,21 +138,32 @@ pub async fn start_emulator(
 ) -> Result<(), String> {
     let rom_path = resolve_rom_path(&app)?;
 
-    let mut emu = state.emulator.lock().unwrap();
-    emu.start(&session, &rom_path).map_err(|e| e.to_string())?;
+    let sink = {
+        let mut emu = state.emulator.lock().unwrap();
+        emu.start(&session, &rom_path).map_err(|e| e.to_string())?;
 
-    // Prime the encounter seed so it's written to gCoopSettings.encounterSeed
-    // from the very first tick, before the ROM's Multiplayer_Init runs.
-    serial_bridge::set_encounter_seed(session.encounter_seed);
+        // Prime the encounter seed so it's written to gCoopSettings.encounterSeed
+        // from the very first tick, before the ROM's Multiplayer_Init runs.
+        serial_bridge::set_encounter_seed(session.encounter_seed);
 
-    let mut net = state.net.lock().unwrap();
-    net.connect(&session, app.clone()).map_err(|e| e.to_string())?;
+        let mut net = state.net.lock().unwrap();
+        net.connect(&session, app.clone()).map_err(|e| e.to_string())?;
+
+        emu.audio_sink()
+    };
+
+    // Locks released above: the runner takes them every frame.
+    state.runner.lock().unwrap().start(app, sink);
 
     Ok(())
 }
 
 #[tauri::command]
 pub async fn stop_emulator(state: State<'_, AppState>) -> Result<(), String> {
+    // Join the runner BEFORE taking the emulator lock — it holds that lock
+    // every frame, so joining while holding it deadlocks.
+    state.runner.lock().unwrap().stop();
+
     let mut emu = state.emulator.lock().unwrap();
     // Flush save first so the file is written before the emulator core is dropped.
     emu.flush_save().map_err(|e| e.to_string())?;
@@ -167,12 +178,14 @@ pub async fn stop_emulator(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Return the most recently emulated frame.
+///
+/// This does NOT advance the emulator — the runner thread does that, paced by
+/// the audio device. The webview may poll faster or slower than 60 Hz without
+/// changing game speed.
 #[tauri::command]
 pub async fn get_frame(state: State<'_, AppState>) -> Result<Vec<u8>, String> {
-    let mut emu = state.emulator.lock().unwrap();
-    let net = state.net.lock().unwrap();
-    emu.step_frame();
-    serial_bridge::tick(&mut emu, &net);
+    let emu = state.emulator.lock().unwrap();
     Ok(emu.get_frame_rgba())
 }
 
