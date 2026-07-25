@@ -38,9 +38,16 @@ Route22_EventScript_EarlyRival::
 	waitbossstart
 	closemessage
 Route22_EventScript_EarlyRivalBattleDispatch::
-	call_if_eq VAR_STARTER_MON, 2, Route22_EventScript_EarlyRivalSquirtle
-	call_if_eq VAR_STARTER_MON, 1, Route22_EventScript_EarlyRivalBulbasaur
-	call_if_eq VAR_STARTER_MON, 0, Route22_EventScript_EarlyRivalCharmander
+	@ Co-op: both ROMs MUST select the SAME rival team. VAR_STARTER_MON is the
+	@ LOCAL player's starter and differs per instance, so keying the dispatch on
+	@ it made each player build a different opponent party -> mid-battle desync.
+	@ Use the shared remaining-starter key (mirrors the Oak's Lab dispatch).
+	copyvar VAR_TEMP_0, VAR_STARTER_MON
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	call_if_eq VAR_RESULT, 1, EventScript_CoopRivalBattleKey
+	call_if_eq VAR_TEMP_0, 2, Route22_EventScript_EarlyRivalSquirtle
+	call_if_eq VAR_TEMP_0, 1, Route22_EventScript_EarlyRivalBulbasaur
+	call_if_eq VAR_TEMP_0, 0, Route22_EventScript_EarlyRivalCharmander
 	msgbox Route22_Text_EarlyRivalPostBattle
 	closemessage
 	delay 10
@@ -218,9 +225,14 @@ Route22_EventScript_LateRival::
 	waitbossstart
 	closemessage
 Route22_EventScript_LateRivalBattleDispatch::
-	call_if_eq VAR_STARTER_MON, 2, Route22_EventScript_LateRivalSquirtle
-	call_if_eq VAR_STARTER_MON, 1, Route22_EventScript_LateRivalBulbasaur
-	call_if_eq VAR_STARTER_MON, 0, Route22_EventScript_LateRivalCharmander
+	@ Co-op: same fix as the early rival dispatch above -- key the rival team on
+	@ the shared remaining-starter key, not the per-instance VAR_STARTER_MON.
+	copyvar VAR_TEMP_0, VAR_STARTER_MON
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	call_if_eq VAR_RESULT, 1, EventScript_CoopRivalBattleKey
+	call_if_eq VAR_TEMP_0, 2, Route22_EventScript_LateRivalSquirtle
+	call_if_eq VAR_TEMP_0, 1, Route22_EventScript_LateRivalBulbasaur
+	call_if_eq VAR_TEMP_0, 0, Route22_EventScript_LateRivalCharmander
 	msgbox Route22_Text_LateRivalPostBattle
 	closemessage
 	delay 10

@@ -97,7 +97,8 @@ ViridianCity_EventScript_OldManGymLeaderReturned::
 ViridianCity_EventScript_TutorialOldMan::
 	lock
 	faceplayer
-	goto_if_set FLAG_BADGE01_GET, ViridianCity_EventScript_AskIfTeachyTVHelpful
+	@ Once his event has triggered (scene >= 2) he just brags about his Weedles,
+	@ badge or not -- same line as the "tutorial".
 	goto_if_ge VAR_MAP_SCENE_VIRIDIAN_CITY_OLD_MAN, 2, ViridianCity_EventScript_TutorialCompleted
 	goto_if_eq VAR_MAP_SCENE_VIRIDIAN_CITY_OLD_MAN, 1, ViridianCity_EventScript_TutorialStart
 	goto_if_eq VAR_MAP_SCENE_VIRIDIAN_CITY_OLD_MAN, 0, ViridianCity_EventScript_TutorialNotReady
@@ -116,7 +117,7 @@ ViridianCity_EventScript_TeachyTVNotHelpful::
 	end
 
 ViridianCity_EventScript_TutorialCompleted::
-	msgbox ViridianCity_Text_WeakenMonsFirstToCatch
+	msgbox ViridianCity_Text_SoManyWeedles
 	release
 	end
 
@@ -205,7 +206,7 @@ ViridianCity_EventScript_TutorialTriggerLeft::
 	applymovement LOCALID_PLAYER, Common_Movement_WalkInPlaceFasterRight
 	waitmovement 0
 	call ViridianCity_EventScript_DoTutorialBattle
-	release
+	releaseall
 	end
 
 ViridianCity_EventScript_TutorialTriggerRight::
@@ -216,20 +217,14 @@ ViridianCity_EventScript_TutorialTriggerRight::
 	applymovement LOCALID_PLAYER, Common_Movement_WalkInPlaceFasterLeft
 	waitmovement 0
 	call ViridianCity_EventScript_DoTutorialBattle
-	release
+	releaseall
 	end
 
 ViridianCity_EventScript_DoTutorialBattle::
-	msgbox ViridianCity_Text_ShowYouHowToCatchMons
-	closemessage
-	special StartOldManTutorialBattle
-	waitstate
-	lock
-	faceplayer
-	msgbox ViridianCity_Text_ThatWasEducationalTakeThis
+	@ Skip the whole catching tutorial -- the old man can't be bothered.
+	@ Still advance the scene so the road north unblocks (progression intact).
+	msgbox ViridianCity_Text_SoManyWeedles
 	setvar VAR_MAP_SCENE_VIRIDIAN_CITY_OLD_MAN, 2
-	giveitem ITEM_TEACHY_TV
-	msgbox ViridianCity_Text_WatchThatToLearnBasics
 	return
 
 ViridianCity_Text_CanCarryMonsAnywhere::
@@ -274,6 +269,9 @@ ViridianCity_Text_ThisIsPrivateProperty::
 	.string "I absolutely forbid you from\n"
 	.string "going through here!\p"
 	.string "This is private property!$"
+
+ViridianCity_Text_SoManyWeedles::
+	.string "Bro I have so many weedles$"
 
 ViridianCity_Text_ShowYouHowToCatchMons::
 	.string "Well, now, I've had my coffee, and\n"

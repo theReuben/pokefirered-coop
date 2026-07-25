@@ -146,3 +146,13 @@ Std_MsgboxAutoclose::
 	waitbuttonpress
 	release
 	return
+
+@ Co-op rival dispatch key. Overwrites VAR_TEMP_0 with the shared
+@ remaining-starter key (Multiplayer_GetRivalBattleKey) so BOTH ROMs select
+@ the same rival team. The per-map rival dispatch scripts default VAR_TEMP_0
+@ to the local VAR_STARTER_MON, then call this only when connected --
+@ VAR_STARTER_MON differs per instance, so keying the dispatch on it directly
+@ made each player build a different opponent party -> mid-battle desync.
+EventScript_CoopRivalBattleKey::
+	specialvar VAR_TEMP_0, Multiplayer_GetRivalBattleKey
+	return

@@ -50,9 +50,14 @@ SilphCo_7F_EventScript_RivalScene::
 	waitbossstart
 	closemessage
 SilphCo_7F_EventScript_RivalBattleDispatch::
-	call_if_eq VAR_STARTER_MON, 2, SilphCo_7F_EventScript_RivalSquirtle
-	call_if_eq VAR_STARTER_MON, 1, SilphCo_7F_EventScript_RivalBulbasaur
-	call_if_eq VAR_STARTER_MON, 0, SilphCo_7F_EventScript_RivalCharmander
+	@ Co-op: key the rival team on the shared remaining-starter key so both
+	@ ROMs fight the same opponent (VAR_STARTER_MON differs per instance).
+	copyvar VAR_TEMP_0, VAR_STARTER_MON
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	call_if_eq VAR_RESULT, 1, EventScript_CoopRivalBattleKey
+	call_if_eq VAR_TEMP_0, 2, SilphCo_7F_EventScript_RivalSquirtle
+	call_if_eq VAR_TEMP_0, 1, SilphCo_7F_EventScript_RivalBulbasaur
+	call_if_eq VAR_TEMP_0, 0, SilphCo_7F_EventScript_RivalCharmander
 	msgbox SilphCo_7F_Text_RivalPostBattle
 	closemessage
 	playbgm MUS_RG_RIVAL_EXIT, 0

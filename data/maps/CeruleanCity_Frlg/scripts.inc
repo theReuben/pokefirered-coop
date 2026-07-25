@@ -50,9 +50,14 @@ CeruleanCity_EventScript_Rival::
 	waitbossstart
 	closemessage
 CeruleanCity_EventScript_RivalBattleDispatch::
-	call_if_eq VAR_STARTER_MON, 2, CeruleanCity_EventScript_RivalSquirtle
-	call_if_eq VAR_STARTER_MON, 1, CeruleanCity_EventScript_RivalBulbasaur
-	call_if_eq VAR_STARTER_MON, 0, CeruleanCity_EventScript_RivalCharmander
+	@ Co-op: key the rival team on the shared remaining-starter key so both
+	@ ROMs fight the same opponent (VAR_STARTER_MON differs per instance).
+	copyvar VAR_TEMP_0, VAR_STARTER_MON
+	specialvar VAR_RESULT, Multiplayer_IsConnected
+	call_if_eq VAR_RESULT, 1, EventScript_CoopRivalBattleKey
+	call_if_eq VAR_TEMP_0, 2, CeruleanCity_EventScript_RivalSquirtle
+	call_if_eq VAR_TEMP_0, 1, CeruleanCity_EventScript_RivalBulbasaur
+	call_if_eq VAR_TEMP_0, 0, CeruleanCity_EventScript_RivalCharmander
 	famechecker FAMECHECKER_BILL, 0
 	msgbox CeruleanCity_Text_RivalPostBattle
 	closemessage
