@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import ConnectionStatus from "./ConnectionStatus";
 import { copyText } from "./clipboard";
+import { pollGamepad } from "./gamepad";
 import type { ConnectionStatus as ConnStatus, SessionInfo } from "./types";
 
 interface MpDebug {
@@ -54,6 +55,27 @@ export default function GameScreen({ session, onDisconnect }: Props) {
   const keysHeld = useRef<Set<string>>(new Set());
   const animFrame = useRef<number>(0);
 
+  // Input is tracked PER SOURCE and only the union is sent to the backend.
+  // `key_state` in emulator.rs is a single u16 with no notion of who pressed
+  // what, so releasing a button on the gamepad would otherwise clear a key the
+  // keyboard is still holding (and vice versa).
+  const keyboardMask = useRef(0);
+  const gamepadMask = useRef(0);
+  const appliedMask = useRef(0);
+
+  // Push the current union to the backend, emitting only the edges.
+  const syncInput = useCallback(() => {
+    const want = keyboardMask.current | gamepadMask.current;
+    const have = appliedMask.current;
+    if (want === have) return;
+    appliedMask.current = want;
+
+    const pressed = want & ~have;
+    const released = have & ~want;
+    if (pressed) void invoke("set_key_pressed", { keyMask: pressed });
+    if (released) void invoke("set_key_released", { keyMask: released });
+  }, []);
+
   // Copy the room code, then hand keyboard focus straight back to the game so
   // the player isn't left typing into the button.
   async function handleCopyCode() {
@@ -66,6 +88,12 @@ export default function GameScreen({ session, onDisconnect }: Props) {
 
   // Render loop: poll the backend for the latest frame buffer
   const renderLoop = useCallback(async () => {
+    // Controller polling rides the existing frame loop — no second timer.
+    // navigator.getGamepads() is a snapshot poll, so there is no event to
+    // listen for; this is the only way to read a pad.
+    gamepadMask.current = pollGamepad();
+    syncInput();
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -85,7 +113,7 @@ export default function GameScreen({ session, onDisconnect }: Props) {
     }
 
     animFrame.current = requestAnimationFrame(() => void renderLoop());
-  }, []);
+  }, [syncInput]);
 
   useEffect(() => {
     // Auto-focus so keyboard events are captured immediately
@@ -107,13 +135,23 @@ export default function GameScreen({ session, onDisconnect }: Props) {
       void invoke<MpDebug>("get_mp_debug").then(setMpDebug).catch(() => {});
     }, 2000);
 
+    // A pad unplugged mid-hold never reports a release, so drop its bits.
+    const onPadLost = () => { gamepadMask.current = 0; syncInput(); };
+    window.addEventListener("gamepaddisconnected", onPadLost);
+
     return () => {
       cancelAnimationFrame(animFrame.current);
       clearInterval(debugInterval);
+      window.removeEventListener("gamepaddisconnected", onPadLost);
+      // Release everything; the emulator is about to be torn down but the
+      // masks must not survive into a following session.
+      keyboardMask.current = 0;
+      gamepadMask.current = 0;
+      syncInput();
       void invoke("stop_emulator");
       void unlistenConn.then((f) => f());
     };
-  }, [session, renderLoop]);
+  }, [session, renderLoop, syncInput]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "F3") { setShowDebug(v => !v); return; }
@@ -121,7 +159,8 @@ export default function GameScreen({ session, onDisconnect }: Props) {
     keysHeld.current.add(e.key);
     const mask = GBA_BUTTONS[e.key];
     if (mask !== undefined) {
-      void invoke("set_key_pressed", { keyMask: mask });
+      keyboardMask.current |= mask;
+      syncInput();
     }
   }
 
@@ -129,19 +168,18 @@ export default function GameScreen({ session, onDisconnect }: Props) {
     keysHeld.current.delete(e.key);
     const mask = GBA_BUTTONS[e.key];
     if (mask !== undefined) {
-      void invoke("set_key_released", { keyMask: mask });
+      keyboardMask.current &= ~mask;
+      syncInput();
     }
   }
 
   function handleBlur() {
-    // Release every held button so keys don't get stuck when focus leaves the window
-    for (const key of keysHeld.current) {
-      const mask = GBA_BUTTONS[key];
-      if (mask !== undefined) {
-        void invoke("set_key_released", { keyMask: mask });
-      }
-    }
+    // Release every held KEY so keys don't get stuck when focus leaves the
+    // window.  The gamepad is deliberately left alone — it doesn't need focus
+    // and stays live (e.g. right after clicking the room-code button).
     keysHeld.current.clear();
+    keyboardMask.current = 0;
+    syncInput();
   }
 
   return (
@@ -170,6 +208,7 @@ export default function GameScreen({ session, onDisconnect }: Props) {
 
       <div className="controls-hint">
         Z=A &nbsp; X=B &nbsp; Enter=Start &nbsp; Backspace=Select &nbsp; Arrows=D-pad &nbsp; A/S=L/R
+        &nbsp;|&nbsp; Controller supported
         &nbsp;|&nbsp; <span style={{cursor:"pointer",textDecoration:"underline"}} onClick={() => setShowDebug(v=>!v)}>F3=debug</span>
       </div>
 
