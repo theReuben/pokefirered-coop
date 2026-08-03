@@ -1,0 +1,10 @@
+{
+  "instance_id": "p2",
+  "captured_at": "2026-08-03T19:50:20.452258Z",
+  "claim": "Same tie, guest turn order 2,1,0,3 = same physical mons in same order",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}

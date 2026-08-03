@@ -1,0 +1,10 @@
+{
+  "instance_id": "p1",
+  "captured_at": "2026-08-03T20:18:30.604428Z",
+  "claim": "Role-swapped + chaos drop=0.3: host local=Charmander, turn order 0,1,2,3",
+  "box_open": true,
+  "printing": false,
+  "waiting_for_input": true,
+  "in_native_script": false,
+  "text": "Choose POK?MON and confirm."
+}
