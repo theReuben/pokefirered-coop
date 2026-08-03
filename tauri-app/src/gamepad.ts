@@ -16,8 +16,10 @@ export const GBA_RIGHT  = 1 << 4;
 export const GBA_LEFT   = 1 << 5;
 export const GBA_UP     = 1 << 6;
 export const GBA_DOWN   = 1 << 7;
-export const GBA_L      = 1 << 8;
-export const GBA_R      = 1 << 9;
+// NB: in the GBA KEYINPUT register R is bit 8 and L is bit 9 — that order is
+// easy to get backwards, and did ship backwards here.
+export const GBA_R      = 1 << 8;
+export const GBA_L      = 1 << 9;
 
 // Standard Gamepad button indices (https://w3c.github.io/gamepad/#remapping).
 // Both shoulder and trigger map to L/R so either feels natural.

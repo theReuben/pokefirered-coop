@@ -41,8 +41,8 @@ const GBA_BUTTONS: Record<string, number> = {
   x:          1 << 1, // B
   Enter:      1 << 3, // Start
   Backspace:  1 << 2, // Select
-  a:          1 << 8, // L
-  s:          1 << 9, // R
+  a:          1 << 9, // L  (KEYINPUT bit 9 — R is bit 8, not the other way round)
+  s:          1 << 8, // R
 };
 
 export default function GameScreen({ session, onDisconnect }: Props) {
