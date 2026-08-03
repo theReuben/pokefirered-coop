@@ -271,7 +271,7 @@ ViridianCity_Text_ThisIsPrivateProperty::
 	.string "This is private property!$"
 
 ViridianCity_Text_SoManyWeedles::
-	.string "Bro I have so many weedles$"
+	.string "Bro I have so many weedles.$"
 
 ViridianCity_Text_ShowYouHowToCatchMons::
 	.string "Well, now, I've had my coffee, and\n"
