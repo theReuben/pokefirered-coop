@@ -249,6 +249,20 @@ enum RandomTag
     RNG_AI_TRY_OHKO,
     RNG_AI_PROTECT,
     RNG_AI_RISKY_ALL_STATS_UP,
+    // Coop: same reason, for battle-logic (non-AI) rolls that are reachable in
+    // a coop double battle. Obedience matters most — partner mons carry the
+    // partner's OT, so they are traded-equivalent and disobey routinely.
+    RNG_OBEDIENCE,
+    RNG_OBEDIENCE_MOVE,
+    RNG_LOAF_STRING,
+    RNG_PSYWAVE,
+    RNG_MIMIC_MOVE,
+    RNG_CONVERSION_2_TYPE,
+    RNG_ACUPRESSURE_STAT,
+    RNG_MIRROR_MOVE_FALLBACK,
+    RNG_ASSIST_MOVE,
+    RNG_SLEEP_TALK_MOVE,
+    RNG_SKY_DROP_CONFUSION_TURNS,
 };
 
 #define RandomWeighted(tag, ...) \

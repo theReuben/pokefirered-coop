@@ -59,13 +59,10 @@ EWRAM_DATA static struct Pokemon sPartnerBattleParty[MULTI_PARTY_SIZE];
 // Periodic save/sync cadences driven from Multiplayer_Update (session-tier, reset
 // by Multiplayer_Init).  Zero-initialized file statics (ENGINEERING_DISCIPLINE:
 // statics must be zero-init or const for the GBA link).
-//  - Autosave: ~5 min safety net replacing the removed per-warp checkpoint.
 //  - Milestone resync: ~10s re-broadcast so a dropped incremental milestone
 //    VAR_SET self-heals without a reconnect (chaos convergence, rule 5), reusing
 //    the wired VAR_SET packet so it stays ROM-only.
-#define MP_AUTOSAVE_INTERVAL_FRAMES 18000
 #define MP_MILESTONE_RESYNC_FRAMES  600
-static u16 sAutosaveTimer;
 static u16 sMilestoneResyncTimer;
 
 // Address discovery table in IWRAM.  Populated once by Multiplayer_Init.
@@ -275,6 +272,7 @@ static void Multiplayer_SpawnFollowerGhost(void);
 static void Multiplayer_DespawnFollowerGhost(void);
 static void Multiplayer_UpdateFollowerGhostPosition(void);
 static void Multiplayer_PersistStarterOutcome(void);
+static void Multiplayer_RequestCheckpointSave(void);
 
 // Apply a partner starter species learned from any packet (one-shot pick or
 // state beacon).  Validates against the three legal starters, persists the
@@ -444,6 +442,12 @@ static bool8 ProcessOneRecvPacket(void)
         gMultiplayerState.battleGraceTimer       = 0;
         gMultiplayerState.partnerHasBusyTrainer  = FALSE;
         gMultiplayerState.sentBusyTrainer        = FALSE;
+        // The ONLY remaining checkpoint save (autosave is otherwise gone — see
+        // the note in Multiplayer_Update).  A dropped session would otherwise
+        // lose everything since the player's last menu save, and here the
+        // session has already ended, so the flash stall costs no play time.
+        Multiplayer_RequestCheckpointSave();
+        Multiplayer_LogEvent(MPEVENT_CHECKPOINT, 0, 0, 0);
         break;
 
     case MP_PKT_SCRIPT_LOCK:
@@ -835,12 +839,12 @@ static bool8 ProcessOneRecvPacket(void)
 // still follows smoothly, but below the typical post-battle gap (10+ tiles).
 #define GHOST_SNAP_DISTANCE 5
 
-// Returns the MOVEMENT_ACTION_WALK_NORMAL_* constant for the step direction,
-// or 0xFF if the ghost is already at the target.
-static u8 GhostNextStepAction(const struct ObjectEvent *ghost)
+// Returns the MOVEMENT_ACTION_WALK_NORMAL_* constant that steps `obj` one tile
+// toward (tx, ty), or 0xFF if it is already there.
+static u8 StepActionToward(const struct ObjectEvent *obj, u8 tx, u8 ty)
 {
-    s16 dx = (s16)gMultiplayerState.targetX - ghost->currentCoords.x;
-    s16 dy = (s16)gMultiplayerState.targetY - ghost->currentCoords.y;
+    s16 dx = (s16)tx - obj->currentCoords.x;
+    s16 dy = (s16)ty - obj->currentCoords.y;
 
     if (dx == 0 && dy == 0)
         return 0xFF; // at target
@@ -852,12 +856,55 @@ static u8 GhostNextStepAction(const struct ObjectEvent *ghost)
     return MOVEMENT_ACTION_WALK_NORMAL_UP;
 }
 
+// Walks a network-driven ghost object one tile per held movement toward
+// (tx, ty), snapping instead when it has fallen too far behind, and facing
+// `faceIfIdle` once it arrives.
+//
+// Both ghosts MUST go through this rather than teleporting per frame: a held
+// movement is what drives the walking sprite animation, and a bare
+// SetObjectEventDirection only writes the facingDirection field — it never
+// touches the sprite, so the object keeps whatever animation frame it was
+// spawned with. ObjectEventTurn does the missing StartSpriteAnim half. (This
+// pair of omissions is why the follower ghost rendered permanently down-facing
+// and never animated, and why partner turns-in-place were invisible.)
+static void DriveGhostToward(struct ObjectEvent *obj, u8 tx, u8 ty, u8 faceIfIdle)
+{
+    s16 dx  = (s16)tx - obj->currentCoords.x;
+    s16 dy  = (s16)ty - obj->currentCoords.y;
+    s16 adx = dx < 0 ? -dx : dx;
+    s16 ady = dy < 0 ? -dy : dy;
+    u8 action;
+
+    // Snap on a large positional jump (battle-exit / warp backlog drain) instead
+    // of sliding one tile at a time. Checked before the heldMovementActive guard
+    // so an in-progress slide is pre-empted.
+    if ((adx > ady ? adx : ady) >= GHOST_SNAP_DISTANCE)
+    {
+        MoveObjectEventToMapCoords(obj, tx, ty);
+        ObjectEventTurn(obj, faceIfIdle);
+        return;
+    }
+
+    ObjectEventClearHeldMovementIfFinished(obj);
+
+    if (obj->heldMovementActive)
+        return;
+
+    action = StepActionToward(obj, tx, ty);
+    if (action == 0xFF)
+    {
+        ObjectEventTurn(obj, faceIfIdle);
+        return;
+    }
+
+    ObjectEventSetHeldMovement(obj, action);
+}
+
 // Steps the ghost one tile towards its target each frame.
 static void GhostTick(void)
 {
     u8 objId = gMultiplayerState.ghostObjectEventId;
     struct ObjectEvent *ghost;
-    u8 action;
 
     if (objId >= OBJECT_EVENTS_COUNT || !gObjectEvents[objId].active)
         return;
@@ -872,39 +919,12 @@ static void GhostTick(void)
     // (Multiplayer_IsPartnerInScript) still blocks talking to the same NPC.
     ghost = &gObjectEvents[objId];
 
-    // Snap on a large positional jump (battle-exit / warp backlog drain) instead
-    // of sliding one tile at a time.  Checked before the heldMovementActive guard
-    // so an in-progress slide is pre-empted.  Mirrors the follower ghost, which
-    // already teleports every frame (Multiplayer_UpdateFollowerGhostPosition).
-    {
-        s16 dx  = (s16)gMultiplayerState.targetX - ghost->currentCoords.x;
-        s16 dy  = (s16)gMultiplayerState.targetY - ghost->currentCoords.y;
-        s16 adx = dx < 0 ? -dx : dx;
-        s16 ady = dy < 0 ? -dy : dy;
-        if ((adx > ady ? adx : ady) >= GHOST_SNAP_DISTANCE)
-        {
-            MoveObjectEventToMapCoords(ghost, gMultiplayerState.targetX,
-                                       gMultiplayerState.targetY);
-            SetObjectEventDirection(ghost, gMultiplayerState.targetFacing);
-            Multiplayer_UpdateFollowerGhostPosition();
-            return;
-        }
-    }
+    DriveGhostToward(ghost, gMultiplayerState.targetX, gMultiplayerState.targetY,
+                     gMultiplayerState.targetFacing);
 
-    ObjectEventClearHeldMovementIfFinished(ghost);
-
-    if (ghost->heldMovementActive)
-        return;
-
-    action = GhostNextStepAction(ghost);
-    if (action == 0xFF)
-    {
-        SetObjectEventDirection(ghost, gMultiplayerState.targetFacing);
-        return;
-    }
-
-    ObjectEventSetHeldMovement(ghost, action);
-    // Keep follower ghost 1 tile behind.
+    // Keep the follower ghost 1 tile behind.  Ticked EVERY frame, not only on
+    // the frames the ghost itself steps: the follower runs its own held
+    // movement now, so it needs a tick to finish and to start the next one.
     Multiplayer_UpdateFollowerGhostPosition();
 }
 
@@ -951,7 +971,6 @@ static void GhostMapCheck(void)
 
 void Multiplayer_Init(void)
 {
-    sAutosaveTimer        = 0;
     sMilestoneResyncTimer = 0;
     gMultiplayerState.role               = MP_ROLE_NONE;
     gMultiplayerState.connState          = MP_STATE_DISCONNECTED;
@@ -1211,9 +1230,10 @@ enum {
     MP_SAVE_SIGNATURE,
 };
 
-// Kick off an auto-checkpoint save if one isn't already running.  Shared by
-// the periodic autosave, story milestones, and Multiplayer_OnBattleEnd so all
-// of those stalls die with one fix (rule 2: fix the class, not the call site).
+// Kick off an auto-checkpoint save if one isn't already running.  Exactly one
+// caller remains: the MP_PKT_PARTNER_DISCONNECTED handler.  The periodic,
+// per-warp, story-milestone and battle-end callers were all removed because
+// each flash sector's host-side sync stalls the emulator thread.
 static void Multiplayer_RequestCheckpointSave(void)
 {
     if (gMultiplayerState.saveState == MP_SAVE_IDLE)
@@ -1312,14 +1332,19 @@ void Multiplayer_Update(void)
         // mid-battle pump in Multiplayer_BattleTick).
         TickPingAndBeacon();
 
-        // Map-change detection for the reconnect event log.  The per-map-change
-        // auto-checkpoint save was REMOVED here: it kicked off a full 14-sector
-        // flash save on every warp, and each sector's host-side flash sync stalls
-        // the emulator thread, so the destination map-load/fade-in rendered at
-        // ~5fps in the real Tauri app (the "slow area transition" bug).  Progress
-        // is now made durable on battle end (Multiplayer_OnBattleEnd), on story
-        // milestones (Multiplayer_ApplyMilestoneVar), and by the periodic autosave
-        // below — none of which land on the warp critical path.
+        // Map-change detection for the reconnect event log.
+        //
+        // AUTOSAVE IS GONE.  A full checkpoint is a 14-sector flash write, and
+        // each sector's host-side flash sync stalls the emulator thread, so
+        // wherever a checkpoint fired the game visibly hitched.  The per-warp
+        // save was removed first (the "slow area transition" bug); the
+        // battle-end, story-milestone and periodic ~5-min saves that replaced
+        // it had exactly the same effect one step later — the battle-end one
+        // landing on the return-to-overworld fade of every wild battle.
+        //
+        // Progress is now durable only via the normal in-game save menu, plus
+        // one checkpoint on partner disconnect (MP_PKT_PARTNER_DISCONNECTED),
+        // where play has already stopped so the stall costs nothing.
         if (gSaveBlock1Ptr)
         {
             u8 curMapGroup = (u8)gSaveBlock1Ptr->location.mapGroup;
@@ -1331,18 +1356,6 @@ void Multiplayer_Update(void)
                 gMultiplayerState.lastCkptMapNum   = curMapNum;
                 Multiplayer_LogEvent(MPEVENT_MAP_ENTERED, curMapGroup, curMapNum, 0);
             }
-        }
-
-        // Periodic autosave (~5 min at 60fps) — the safety net that replaces the
-        // per-warp checkpoint.  Bounds worst-case progress loss on an unexpected
-        // close/crash to one interval of event-free wandering.  Overworld-only and
-        // gated on the async machine being idle, so it never stalls a transition.
-        sAutosaveTimer++;
-        if (sAutosaveTimer >= MP_AUTOSAVE_INTERVAL_FRAMES)
-        {
-            sAutosaveTimer = 0;
-            if (gMultiplayerState.saveState == MP_SAVE_IDLE && !gMain.inBattle)
-                Multiplayer_RequestCheckpointSave();
         }
 
         // Periodic milestone re-broadcast — self-heals a dropped incremental
@@ -1404,7 +1417,7 @@ void Multiplayer_SpawnGhostNPC(u8 mapGroup, u8 mapNum, u8 x, u8 y, u8 facing)
 
     gObjectEvents[objId].mapGroup = (u8)mapGroup;
     gObjectEvents[objId].mapNum   = (u8)mapNum;
-    SetObjectEventDirection(&gObjectEvents[objId], facing);
+    ObjectEventTurn(&gObjectEvents[objId], facing);
     gMultiplayerState.ghostObjectEventId = objId;
     Multiplayer_SpawnFollowerGhost();
 }
@@ -1498,7 +1511,9 @@ static void Multiplayer_SpawnFollowerGhost(void)
         GHOST_ELEVATION);
     if (objId >= OBJECT_EVENTS_COUNT)
         return;
-    SetObjectEventDirection(&gObjectEvents[objId], gMultiplayerState.targetFacing);
+    // ObjectEventTurn, not SetObjectEventDirection: the latter sets the facing
+    // fields only and leaves the sprite on its spawn animation frame.
+    ObjectEventTurn(&gObjectEvents[objId], gMultiplayerState.targetFacing);
     gMultiplayerState.followerGhostObjId = objId;
 }
 
@@ -1525,10 +1540,32 @@ static void Multiplayer_UpdateFollowerGhostPosition(void)
         Multiplayer_SpawnFollowerGhost();
         return;
     }
-    FollowerBehindPos(gMultiplayerState.targetX, gMultiplayerState.targetY,
-                      gMultiplayerState.targetFacing, &fx, &fy);
-    MoveObjectEventToMapCoords(&gObjectEvents[objId], fx, fy);
-    SetObjectEventDirection(&gObjectEvents[objId], gMultiplayerState.targetFacing);
+    // Follow the partner GHOST's tile, not the raw network target: the ghost
+    // deliberately lags the target by up to a few tiles, and trailing the
+    // target directly is what made the follower teleport rather than walk.
+    // Falling back to the target keeps the follower sane if the ghost is gone.
+    {
+        u8 ghostId = gMultiplayerState.ghostObjectEventId;
+        u8 leadX, leadY, leadFacing;
+
+        if (ghostId < OBJECT_EVENTS_COUNT && gObjectEvents[ghostId].active)
+        {
+            leadX      = (u8)gObjectEvents[ghostId].currentCoords.x;
+            leadY      = (u8)gObjectEvents[ghostId].currentCoords.y;
+            leadFacing = (u8)gObjectEvents[ghostId].facingDirection;
+        }
+        else
+        {
+            leadX      = gMultiplayerState.targetX;
+            leadY      = gMultiplayerState.targetY;
+            leadFacing = gMultiplayerState.targetFacing;
+        }
+
+        FollowerBehindPos(leadX, leadY, leadFacing, &fx, &fy);
+        // Idle facing is the leader's facing, which from the tile directly
+        // behind the leader is also "face the leader" — correct on corners too.
+        DriveGhostToward(&gObjectEvents[objId], fx, fy, leadFacing);
+    }
 }
 
 void Multiplayer_SendFollowerGfx(u16 gfxId)
@@ -2049,16 +2086,19 @@ bool32 Multiplayer_IsMilestoneWrite(u16 varId, u16 value)
 }
 
 // A milestone is now reached on THIS instance (either written locally or applied
-// from the partner).  Record it durably: set the completeFlag (unguarded, so it
-// also propagates to the partner via the normal story-flag sync / OR-merge) and
-// request a checkpoint save so progress follows meaningful story events (this is
-// what replaces the removed per-warp save).  Idempotent — callers only reach here
-// on the transition, and the !FlagGet guard means the flag broadcasts once.
+// from the partner).  Set the completeFlag (unguarded, so it also propagates to
+// the partner via the normal story-flag sync / OR-merge).  Idempotent — callers
+// only reach here on the transition, and the !FlagGet guard means the flag
+// broadcasts once.
+//
+// This used to also request a checkpoint save; that is gone with the rest of
+// autosave (a milestone often fires right as a cutscene ends, so the flash
+// stall was very visible).  The flag itself is still shared live; it just is
+// not written to the save file until the player saves.
 static void NoteMilestoneReached(const struct CoopMilestone *m)
 {
     if (m->completeFlag && !FlagGet(m->completeFlag))
         FlagSet(m->completeFlag);
-    Multiplayer_RequestCheckpointSave();
 }
 
 // Sender side: a milestone (varId,value) was just written locally (by a map
@@ -2385,10 +2425,26 @@ bool32 Multiplayer_IsCoopBattle(void)
 // single-player / pre-connect case where there is no partner sim to disagree.
 u32 Multiplayer_CanonicalPlayerTarget(u32 canonicalIdx)
 {
-    canonicalIdx &= 1;
-    if (gMultiplayerState.role == MP_ROLE_GUEST)
-        return (1 - canonicalIdx) * 2;
-    return canonicalIdx * 2;
+    return Multiplayer_CanonicalBattler((canonicalIdx & 1) * 2);
+}
+
+// Local battler id -> role-canonical battler id.  Canonically, battler 0 is
+// always the HOST's mon and battler 2 the GUEST's; locally each sim runs its
+// own player at 0, so the guest's two player slots are swapped relative to
+// canon.  Opponent battlers 1/3 are identical on both sims and pass through.
+//
+// This is the same involution as Multiplayer_CanonicalPlayerTarget (which goes
+// the other way but, being an involution over {0,2}, is the same map), so the
+// two share one implementation and one role fallback.  Role comes from the
+// session tier and is kept non-NONE by the transport heartbeat; when it is NONE
+// (single-player / pre-connect) the host mapping is the identity, which is what
+// unmirrored single-player code expects.
+u32 Multiplayer_CanonicalBattler(u32 localBattler)
+{
+    if ((localBattler & 1) == 0 && localBattler < MAX_BATTLERS_COUNT
+        && gMultiplayerState.role == MP_ROLE_GUEST)
+        return 2 - localBattler;
+    return localBattler;
 }
 
 // Canonical order for iterating candidate battlers during opponent-AI
@@ -3124,9 +3180,10 @@ void Multiplayer_OnBattleEnd(void)
 
     if (gMultiplayerState.connState != MP_STATE_CONNECTED)
         return;
-    // Async (one sector/frame), completed by Multiplayer_TickAsyncSave once
-    // control returns to the overworld — same anti-stall fix as the map-change
-    // checkpoint rather than a synchronous TrySavingData here.
-    Multiplayer_RequestCheckpointSave();
-    Multiplayer_LogEvent(MPEVENT_CHECKPOINT, 0, 0, 0);
+    // NO checkpoint save here.  Even async (one sector/frame), the 14 flash
+    // writes queued here landed on the battle-exit fade / return-to-field
+    // frames of EVERY battle, wild ones included — the same multi-second hitch
+    // the per-warp checkpoint caused on map transitions (user-reported
+    // 2026-08-03: "same delay as changing areas occurs when leaving a wild
+    // battle").  See the autosave note in Multiplayer_Update.
 }

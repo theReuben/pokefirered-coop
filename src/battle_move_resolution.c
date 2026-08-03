@@ -193,7 +193,7 @@ static enum CancelerResult CancelerObedience(struct BattleContext *ctx)
         case DISOBEYS_LOAFS:
             // Randomly select, then print a disobedient string
             // B_MSG_LOAFING, B_MSG_WONT_OBEY, B_MSG_TURNED_AWAY, or B_MSG_PRETEND_NOT_NOTICE
-            gBattleCommunication[MULTISTRING_CHOOSER] = MOD(Random(), NUM_LOAF_STRINGS);
+            gBattleCommunication[MULTISTRING_CHOOSER] = RandomUniform(RNG_LOAF_STRING, 0, NUM_LOAF_STRINGS - 1);
             gBattlescriptCurrInstr = BattleScript_MoveUsedLoafingAround;
             gBattleStruct->moveResultFlags[ctx->battlerDef] |= MOVE_RESULT_MISSED;
             return CANCELER_RESULT_FAILURE;
@@ -4054,7 +4054,7 @@ static enum Move GetMirrorMoveMove(void)
 
     move = gBattleStruct->lastTakenMove[gBattlerAttacker];
     if ((move == MOVE_NONE || move == MOVE_UNAVAILABLE) && validMovesCount != 0)
-        move = validMoves[Random() % validMovesCount];
+        move = validMoves[RandomUniform(RNG_MIRROR_MOVE_FALLBACK, 0, validMovesCount - 1)];
 
     if (GetActiveGimmick(gBattlerAttacker) == GIMMICK_Z_MOVE && !IsBattleMoveStatus(move))
         move = GetTypeBasedZMove(move);
@@ -4143,7 +4143,7 @@ static enum Move GetAssistMove(void)
     }
 
     if (chooseableMovesNo)
-        move = validMoves[Random() % chooseableMovesNo];
+        move = validMoves[RandomUniform(RNG_ASSIST_MOVE, 0, chooseableMovesNo - 1)];
 
     return move;
 }
@@ -4190,7 +4190,7 @@ static enum Move GetSleepTalkMove(void)
     gBattleMons[gBattlerAttacker].volatiles.usedMoves |= 1u << gCurrMovePos;
     do
     {
-        movePosition = MOD(Random(), MAX_MON_MOVES);
+        movePosition = RandomUniform(RNG_SLEEP_TALK_MOVE, 0, MAX_MON_MOVES - 1);
     } while ((1u << movePosition) & unusableMovesBits);
 
     move = gBattleMons[gBattlerAttacker].moves[movePosition];

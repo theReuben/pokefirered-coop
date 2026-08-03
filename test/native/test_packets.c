@@ -1775,6 +1775,127 @@ static void TestCoopAiEvalBattlerOrder(void)
     ASSERT_EQ(Multiplayer_CoopAiEvalBattler(3), 3);
 }
 
+// Local battler id -> canonical battler id. Involution on both roles, and the
+// guest MUST swap 0<->2 while opponents 1/3 stay put.
+static void TestCoopCanonicalBattlerIsInvolution(void)
+{
+    Multiplayer_Init();
+
+    gMultiplayerState.role = MP_ROLE_HOST;
+    for (u32 b = 0; b < 4; b++)
+        ASSERT_EQ(Multiplayer_CanonicalBattler(b), b); // host is canonical
+
+    gMultiplayerState.role = MP_ROLE_GUEST;
+    ASSERT_EQ(Multiplayer_CanonicalBattler(0), 2);
+    ASSERT_EQ(Multiplayer_CanonicalBattler(1), 1);
+    ASSERT_EQ(Multiplayer_CanonicalBattler(2), 0);
+    ASSERT_EQ(Multiplayer_CanonicalBattler(3), 3);
+
+    // Applying it twice is the identity, for both roles.
+    for (u32 role = MP_ROLE_HOST; role <= MP_ROLE_GUEST; role++)
+    {
+        gMultiplayerState.role = role;
+        for (u32 b = 0; b < 4; b++)
+            ASSERT_EQ(Multiplayer_CanonicalBattler(Multiplayer_CanonicalBattler(b)), b);
+    }
+}
+
+// The speed-tie break in GetWhichBattlerFaster ranks battlers by
+// sBattlerOrders[perm][battler]. Indexing by the LOCAL id makes the two
+// mirrored sims execute a tied turn in opposite order (each ranks its own
+// battler 0), which desyncs every subsequent lockstep draw. Indexing by the
+// canonical id must make both sims agree on the winning PHYSICAL mon, for
+// every permutation and every battler pair.
+static void TestCoopSpeedTieRankAgreesAcrossRoles(void)
+{
+    // Mirror of sBattlerOrders in src/battle_main.c (all 24 permutations of
+    // {0,1,2,3} in lexicographic order).
+    static const unsigned char orders[24][4] = {
+        {0,1,2,3},{0,1,3,2},{0,2,1,3},{0,2,3,1},{0,3,1,2},{0,3,2,1},
+        {1,0,2,3},{1,0,3,2},{1,2,0,3},{1,2,3,0},{1,3,0,2},{1,3,2,0},
+        {2,0,1,3},{2,0,3,1},{2,1,0,3},{2,1,3,0},{2,3,0,1},{2,3,1,0},
+        {3,0,1,2},{3,0,2,1},{3,1,0,2},{3,1,2,0},{3,2,0,1},{3,2,1,0},
+    };
+
+    Multiplayer_Init();
+
+    for (u32 perm = 0; perm < 24; perm++)
+    {
+        // canonA/canonB name PHYSICAL mons, identical on both sims.
+        for (u32 canonA = 0; canonA < 4; canonA++)
+        {
+            for (u32 canonB = 0; canonB < 4; canonB++)
+            {
+                if (canonA == canonB)
+                    continue;
+
+                // Each sim holds the physical mon at its own local index, which
+                // is CanonicalBattler applied to the canonical id (involution).
+                gMultiplayerState.role = MP_ROLE_HOST;
+                u32 hostA = Multiplayer_CanonicalBattler(canonA);
+                u32 hostB = Multiplayer_CanonicalBattler(canonB);
+                // ...and the comparator canonicalises before the lookup.
+                int hostAFirst = orders[perm][Multiplayer_CanonicalBattler(hostA)]
+                               < orders[perm][Multiplayer_CanonicalBattler(hostB)];
+
+                gMultiplayerState.role = MP_ROLE_GUEST;
+                u32 guestA = Multiplayer_CanonicalBattler(canonA);
+                u32 guestB = Multiplayer_CanonicalBattler(canonB);
+                int guestAFirst = orders[perm][Multiplayer_CanonicalBattler(guestA)]
+                                < orders[perm][Multiplayer_CanonicalBattler(guestB)];
+
+                // Both sims must agree that the same physical mon strikes first.
+                ASSERT_EQ(hostAFirst, guestAFirst);
+            }
+        }
+    }
+}
+
+// SortBattlersBySpeed (src/battle_util.c) is a separate, second tie-break site:
+// it is a stable insertion sort on raw speeds and never reaches
+// GetWhichBattlerFaster's comparator, so on a tie vanilla just preserves the
+// caller's array order — which is LOCAL battler indices, mirrored between the
+// two sims. This replicates that sort (all speeds equal = worst case) with the
+// coop tie-break applied, and asserts both roles end up with the same PHYSICAL
+// sequence. Without the tie-break both sims produce the identical index array
+// {0,1,2,3}, which names opposite physical mons.
+static void TestCoopSpeedTieSortAgreesAcrossRoles(void)
+{
+    u32 role, i, j;
+    u32 physical[2][4];   // [role][slot] -> canonical (physical) battler
+
+    Multiplayer_Init();
+
+    for (role = MP_ROLE_HOST; role <= MP_ROLE_GUEST; role++)
+    {
+        u32 battlers[4] = {0, 1, 2, 3};   // local index order, as the callers pass it
+
+        gMultiplayerState.role = role;
+
+        // Insertion sort with every speed equal, so ONLY the tie-break orders it.
+        for (i = 1; i < 4; i++)
+        {
+            u32 curr = battlers[i];
+            j = i;
+            while (j > 0
+                   && Multiplayer_CanonicalBattler(curr)
+                        < Multiplayer_CanonicalBattler(battlers[j - 1]))
+            {
+                battlers[j] = battlers[j - 1];
+                j--;
+            }
+            battlers[j] = curr;
+        }
+
+        for (i = 0; i < 4; i++)
+            physical[role - MP_ROLE_HOST][i] = Multiplayer_CanonicalBattler(battlers[i]);
+    }
+
+    // Same physical mons, in the same order, on both sims.
+    for (i = 0; i < 4; i++)
+        ASSERT_EQ(physical[0][i], physical[1][i]);
+}
+
 int main(void)
 {
     // Ring buffer
@@ -1876,6 +1997,9 @@ int main(void)
     // Coop battle target canonicalization (role-wipe targeting-desync guard)
     TestCoopCanonicalTargetRoleConsistent();
     TestCoopAiEvalBattlerOrder();
+    TestCoopCanonicalBattlerIsInvolution();
+    TestCoopSpeedTieRankAgreesAcrossRoles();
+    TestCoopSpeedTieSortAgreesAcrossRoles();
 
     TEST_SUMMARY();
 }

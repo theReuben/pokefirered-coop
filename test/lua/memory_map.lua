@@ -3,14 +3,14 @@
 
 local M = {}
 
-M.BeginBattleIntro = 0x08087BBC
+M.BeginBattleIntro = 0x08087C18
 M.HandleChooseMoveAfterDma3 = 0x0805B378
 M.HandleInputChooseMove = 0x0805CA70
 M.PlayerHandleChooseMove = 0x0805E004
 M.SetControllerToOpponent = 0x08059F70
 M.SetControllerToPlayer = 0x0805C2C0
 M.SetControllerToPlayerPartner = 0x0805EC0C
-M.Task_HandleYesNoInput = 0x081FFF58
+M.Task_HandleYesNoInput = 0x081FFF48
 M.gAbsentBattlerFlags = 0x0200030A
 M.gBackupMapLayout = 0x03002698
 M.gBattleCommunication = 0x020001BC

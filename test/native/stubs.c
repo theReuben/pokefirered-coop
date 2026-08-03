@@ -104,6 +104,14 @@ void SetObjectEventDirection(struct ObjectEvent *objectEvent, enum Direction dir
     (void)objectEvent; (void)direction;
 }
 
+// Real implementation sets the facing fields AND repaints the sprite animation;
+// only the former is observable here.
+void ObjectEventTurn(struct ObjectEvent *objectEvent, enum Direction direction)
+{
+    if (objectEvent)
+        objectEvent->facingDirection = direction;
+}
+
 u8 ObjectEventClearHeldMovementIfFinished(struct ObjectEvent *objectEvent)
 {
     if (objectEvent && objectEvent->heldMovementFinished)

@@ -5723,7 +5723,17 @@ enum Obedience GetAttackerObedienceForAction(void)
     if (levelReferenced <= obedienceLevel)
         return OBEYS;
 
-    rnd = Random();
+    // Coop lockstep: this was one untagged Random(), whose three bytes fed the
+    // three checks below. Untagged draws come from the free-running shared
+    // stream, so the two battle sims disagree on whether a mon obeys — and
+    // partner mons carry the partner's OT, so they are traded-equivalent and
+    // hit this path routinely. Drawn as three tagged bytes, eagerly, so the
+    // draw count is the same on both sides regardless of which branch is taken.
+    u32 obedienceRoll1 = RandomUniform(RNG_OBEDIENCE, 0, 255);
+    u32 obedienceRoll2 = RandomUniform(RNG_OBEDIENCE, 0, 255);
+    u32 obedienceRoll3 = RandomUniform(RNG_OBEDIENCE, 0, 255);
+
+    rnd = obedienceRoll1 | (obedienceRoll2 << 8) | (obedienceRoll3 << 16);
     calc = (levelReferenced + obedienceLevel) * (rnd & 255) >> 8;
     if (calc < obedienceLevel)
         return OBEYS;
@@ -5750,7 +5760,7 @@ enum Obedience GetAttackerObedienceForAction(void)
             return DISOBEYS_LOAFS;
         else // use a random move
             do
-                gCurrMovePos = gChosenMovePos = MOD(Random(), MAX_MON_MOVES);
+                gCurrMovePos = gChosenMovePos = RandomUniform(RNG_OBEDIENCE_MOVE, 0, MAX_MON_MOVES - 1);
             while ((1u << gCurrMovePos) & calc);
         return DISOBEYS_RANDOM_MOVE;
     }
@@ -7785,17 +7795,17 @@ s32 DoFixedDamageMoveCalc(struct BattleContext *ctx)
     case EFFECT_PSYWAVE:
         if (B_PSYWAVE_DMG >= GEN_5)
         {
-            randDamage = Random() % 101;
+            randDamage = RandomUniform(RNG_PSYWAVE, 0, 100); // tagged for coop lockstep
             dmg = gBattleMons[ctx->battlerAtk].level * (randDamage + 50) / 100;
         }
         else if (B_PSYWAVE_DMG >= GEN_3)
         {
-            randDamage = Random() % 11;
+            randDamage = RandomUniform(RNG_PSYWAVE, 0, 10);
             dmg = gBattleMons[ctx->battlerAtk].level * ((randDamage * 10) + 50) / 100;
         }
         else
         {
-            dmg = Random() % ((gBattleMons[ctx->battlerAtk].level + (gBattleMons[ctx->battlerAtk].level / 2)) + 1);
+            dmg = RandomUniform(RNG_PSYWAVE, 0, gBattleMons[ctx->battlerAtk].level + (gBattleMons[ctx->battlerAtk].level / 2));
         }
         break;
     case EFFECT_FIXED_HP_DAMAGE:
@@ -9245,6 +9255,24 @@ bool32 CanFling(enum BattlerId battlerAtk)
 
 // Sort an array of battlers by speed
 // Useful for effects like pickpocket, eject button, red card, dancer
+// Coop tie-break for SortBattlersBySpeed.  This is an insertion sort, so on a
+// speed tie vanilla just preserves the caller's array order — and that order is
+// battler *indices*, which are mirrored between the two instances (each runs its
+// own player as battler 0).  The two sims therefore agreed on the index array
+// while disagreeing on which physical mon it named, and end-of-turn effects
+// (residual damage, ability triggers, Speed Boost...) resolved in opposite
+// order.  Same bug as the action-order tie in GetWhichBattlerFaster, but this
+// function never reaches that comparator, so it needs its own fix.
+//
+// Returns TRUE when `a` must sort before `b` given they tie on speed.  Outside
+// coop it returns FALSE, which reproduces vanilla stability exactly.
+static bool32 CoopSpeedTieBefore(enum BattlerId a, enum BattlerId b)
+{
+    if (!Multiplayer_IsCoopBattle())
+        return FALSE;
+    return Multiplayer_CanonicalBattler(a) < Multiplayer_CanonicalBattler(b);
+}
+
 void SortBattlersBySpeed(enum BattlerId *battlers, bool32 slowToFast)
 {
     int i, j, currSpeed;
@@ -9265,7 +9293,9 @@ void SortBattlersBySpeed(enum BattlerId *battlers, bool32 slowToFast)
 
         if (slowToFast)
         {
-            while (j >= 0 && speeds[j] > currSpeed)
+            while (j >= 0 && (speeds[j] > currSpeed
+                              || (speeds[j] == currSpeed
+                                  && CoopSpeedTieBefore(currBattler, battlers[j]))))
             {
                 battlers[j + 1] = battlers[j];
                 speeds[j + 1] = speeds[j];
@@ -9274,7 +9304,9 @@ void SortBattlersBySpeed(enum BattlerId *battlers, bool32 slowToFast)
         }
         else
         {
-            while (j >= 0 && speeds[j] < currSpeed)
+            while (j >= 0 && (speeds[j] < currSpeed
+                              || (speeds[j] == currSpeed
+                                  && CoopSpeedTieBefore(currBattler, battlers[j]))))
             {
                 battlers[j + 1] = battlers[j];
                 speeds[j + 1] = speeds[j];

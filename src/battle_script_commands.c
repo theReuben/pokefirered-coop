@@ -8376,7 +8376,7 @@ static void Cmd_tryconversiontypechange(void)
         {
             do
             {
-                while ((moveChecked = MOD(Random(), MAX_MON_MOVES)) >= validMoves);
+                while ((moveChecked = RandomUniform(RNG_MIMIC_MOVE, 0, MAX_MON_MOVES - 1)) >= validMoves);
 
                 moveType = GetMoveType(gBattleMons[gBattlerAttacker].moves[moveChecked]);
 
@@ -8895,7 +8895,7 @@ static void Cmd_settypetorandomresistance(void)
 
         while (resistTypes != 0)
         {
-            i = Random() % NUMBER_OF_MON_TYPES;
+            i = RandomUniform(RNG_CONVERSION_2_TYPE, 0, NUMBER_OF_MON_TYPES - 1);
             if (resistTypes & 1u << i)
             {
                 if (IS_BATTLER_OF_TYPE(gBattlerAttacker, i))
@@ -13636,7 +13636,7 @@ void BS_TryAcupressure(void)
         u32 statId;
         do
         {
-            statId = (Random() % (NUM_BATTLE_STATS - 1)) + 1;
+            statId = RandomUniform(RNG_ACUPRESSURE_STAT, 1, NUM_BATTLE_STATS - 1);
         } while (!(bits & (1u << statId)));
 
         SET_STATCHANGER(statId, 2, FALSE);

@@ -465,6 +465,13 @@ bool32 Multiplayer_IsCoopBattle(void);
 // resolve to the same physical mon on both instances despite the mirrored
 // battler layout. See the definition for the host/guest mapping.
 u32 Multiplayer_CanonicalPlayerTarget(u32 canonicalIdx);
+// Inverse direction: maps a LOCAL battler id onto the role-canonical battler id
+// that both sims agree on (host: identity — guest: 0<->2, opponents 1/3 fixed).
+// Use this anywhere battle logic keys a decision on a raw battler INDEX rather
+// than on the mon itself; indexing by the local id makes the two mirrored sims
+// pick different physical mons. Involution, and safe to call outside coop
+// (returns the input unchanged when role is not GUEST).
+u32 Multiplayer_CanonicalBattler(u32 localBattler);
 // Canonical battler-iteration order for opponent-AI target evaluation
 // (host: 0,1,2,3 — guest: 2,1,0,3), so per-matchup lockstep RNG draws and
 // tie arrays line up physically on both sims. See the definition.
@@ -500,7 +507,7 @@ bool32 IsSyncableVar(u16 varId);   // TRUE iff varId is a curated story-mileston
 
 // Curated story-milestone var sync (see sCoopMilestones[] in multiplayer.c).
 bool32 Multiplayer_IsMilestoneWrite(u16 varId, u16 value); // exact (var,value) is a milestone
-void Multiplayer_OnLocalMilestone(u16 varId, u16 value);   // sender: durable flag + checkpoint
+void Multiplayer_OnLocalMilestone(u16 varId, u16 value);   // sender: set durable flag + broadcast
 void Multiplayer_ApplyMilestoneVar(u16 varId, u16 value);  // receiver: forward-only, prereq-gated apply
 void Multiplayer_SendMilestoneCatchup(void);               // replay reached milestones on (re)connect
 
@@ -538,7 +545,9 @@ u16  Multiplayer_GetRandomizedStarter(u8 slot);
 u32  Multiplayer_GenerateSeed(void);
 void Multiplayer_SendSeedSync(u32 seed);
 
-// Auto-checkpoint — call when a battle ends to trigger a background save.
+// Called when a battle ends (from ReturnFromBattleToOverworld).  Restores the
+// stashed pre-coop-battle party.  Does NOT save — autosave was removed; the
+// checkpoint that used to fire here stalled the exit of every wild battle.
 void Multiplayer_OnBattleEnd(void);
 
 // Event log — async partner event batching.

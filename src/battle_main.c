@@ -3470,7 +3470,7 @@ const u8* FaintClearSetData(enum BattlerId battler)
                     || gBattleMons[otherSkyDropper].volatiles.confusionTurns
                     || IsMistyTerrainAffected(otherSkyDropper, ability, GetBattlerHoldEffect(otherSkyDropper), gFieldStatuses)))
                 {
-                    gBattleMons[otherSkyDropper].volatiles.confusionTurns = ((Random()) % 4) + 2;
+                    gBattleMons[otherSkyDropper].volatiles.confusionTurns = RandomUniform(RNG_SKY_DROP_CONFUSION_TURNS, 2, 5);
                     gBattlerAttacker = otherSkyDropper;
                     result = BattleScript_ThrashConfuses;
                 }
@@ -4994,8 +4994,21 @@ s32 GetWhichBattlerFaster(struct BattleCalcValues *calcValues, bool32 ignoreChos
     s32 strikesFirst = GetWhichBattlerFasterOrTies(calcValues, ignoreChosenMoves);
     if (strikesFirst == 0)
     {
-        s32 order1 = sBattlerOrders[gBattleStruct->speedTieBreaks][calcValues->battlerAtk];
-        s32 order2 = sBattlerOrders[gBattleStruct->speedTieBreaks][calcValues->battlerDef];
+        // Coop: sBattlerOrders is indexed by battler id, but the two instances
+        // mirror the player slots (each runs its own mon as battler 0), so the
+        // identical lockstep-drawn permutation would rank *different physical
+        // mons* first on each side and the turn would execute in opposite
+        // order.  Rank by the canonical id instead.  Covers every re-sort path
+        // that routes through this comparator (SetActionsAndBattlersTurnOrder,
+        // TryChangeTurnOrder, CheckChangingTurnOrderEffects, SortBattlersBySpeed).
+        u32 atk = calcValues->battlerAtk, def = calcValues->battlerDef;
+        if (Multiplayer_IsCoopBattle())
+        {
+            atk = Multiplayer_CanonicalBattler(atk);
+            def = Multiplayer_CanonicalBattler(def);
+        }
+        s32 order1 = sBattlerOrders[gBattleStruct->speedTieBreaks][atk];
+        s32 order2 = sBattlerOrders[gBattleStruct->speedTieBreaks][def];
         if (order1 < order2)
             strikesFirst = 1;
         else

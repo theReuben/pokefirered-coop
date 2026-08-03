@@ -485,6 +485,6 @@ Then point two Tauri app instances at `localhost:1999` via the `COOP_RELAY_URL` 
 - [x] Ghost NPC despawns within ~0.5s of partner disconnect
 - [x] Host migration on disconnect mid-session
 - [x] Battle grace timer — AI fallback after 30s of partner silence mid-battle
-- [x] Auto-checkpoint save on every map transition while connected
+- [x] Checkpoint save on partner disconnect (autosave otherwise removed 2026-08-03 — every checkpoint is a 14-sector flash write whose host-side sync stalls the emulator thread, so the per-warp, periodic, story-milestone and battle-end saves each produced a visible hitch; progress is otherwise durable via the normal in-game save menu)
 - [x] Event log replay on reconnect so partner catches up on missed flag/var events
 - [x] CI pipeline — ROM build, native unit tests, save-state smoke test, release packaging

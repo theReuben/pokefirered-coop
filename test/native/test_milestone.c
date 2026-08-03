@@ -69,7 +69,9 @@ static void TestApplyAdvancesForwardAndSetsFlagAndSaves(void)
 
     ASSERT_EQ(VarGet(VAR_MAP_SCENE_VIRIDIAN_CITY_MART), 1);       // var advanced
     ASSERT(FlagGet(FLAG_COOP_GOT_PARCEL));                        // completeFlag set
-    ASSERT_EQ(gMultiplayerState.saveState, SAVE_INIT);           // checkpoint requested
+    // Autosave is gone: a milestone typically lands as a cutscene ends, which
+    // is exactly where the 14-sector flash stall was most visible.
+    ASSERT_EQ(gMultiplayerState.saveState, SAVE_IDLE);
 }
 
 static void TestApplyIsForwardOnly(void)
@@ -105,7 +107,7 @@ static void TestOnLocalMilestoneSetsFlagAndSaves(void)
     Multiplayer_OnLocalMilestone(VAR_MAP_SCENE_VIRIDIAN_CITY_MART, 1);
 
     ASSERT(FlagGet(FLAG_COOP_GOT_PARCEL));                       // durable flag set on sender
-    ASSERT_EQ(gMultiplayerState.saveState, SAVE_INIT);          // checkpoint requested
+    ASSERT_EQ(gMultiplayerState.saveState, SAVE_IDLE);          // but no checkpoint
 }
 
 static void TestOnLocalMilestoneIgnoresNonMilestone(void)
@@ -160,8 +162,9 @@ static void TestMapChangeDoesNotSave(void)
     sTestSave.location.mapNum = 2;
     Multiplayer_Update();
 
-    // The per-warp save trigger was removed: crossing a boundary must NOT kick a
-    // checkpoint. (Durability now rides battle-end / milestone / periodic saves.)
+    // The per-warp save trigger was removed: crossing a boundary must NOT kick
+    // a checkpoint.  (Nor does anything else now — autosave was removed
+    // entirely; the only checkpoint left is on partner disconnect.)
     ASSERT_EQ(gMultiplayerState.saveState, SAVE_IDLE);
     // ...but the map-entry detection still ran (feeds the reconnect event log).
     ASSERT_EQ(gMultiplayerState.lastCkptMapNum, 2);

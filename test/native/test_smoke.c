@@ -673,11 +673,11 @@ static void TestGhostFollowsDuringPartnerScript(void)
 
 // ---- Async auto-checkpoint save --------------------------------------------
 
-// The map-change / battle-end checkpoint save must run one flash sector per
-// frame (driven by Multiplayer_Update) instead of busy-looping every sector in
-// one frame, so it never stalls a scene transition.  This drives the state
-// machine through a full save and asserts the LinkFullSave_* primitives fire
-// once each, in order, with exactly one WriteSector per sector.
+// The disconnect checkpoint save must run one flash sector per frame (driven
+// by Multiplayer_Update) instead of busy-looping every sector in one frame.
+// This drives the state machine through a full save and asserts the
+// LinkFullSave_* primitives fire once each, in order, with exactly one
+// WriteSector per sector.
 static void TestAsyncCheckpointSaveSequencing(void)
 {
     int frames;
@@ -689,12 +689,13 @@ static void TestAsyncCheckpointSaveSequencing(void)
     gMultiplayerState.connState = MP_STATE_CONNECTED;
     SetPlayerMap(3, 5); // provides gSaveBlock1Ptr that Multiplayer_Update derefs
 
-    // Arm the async save via a still-existing trigger (battle end).  The old
-    // per-map-change trigger was removed because it stalled scene transitions;
-    // the save MACHINE is unchanged, and this exercises it end to end.
-    Multiplayer_OnBattleEnd();
-
-    // First update runs the INIT step (LinkFullSave_Init) — no sector yet.
+    // Arm the async save via the only remaining trigger: partner disconnect.
+    // The per-map-change, periodic, milestone and battle-end triggers were all
+    // removed because each stalled the frame it landed on; the save MACHINE is
+    // unchanged, and this exercises it end to end.  The same Update that
+    // handles the packet also runs the INIT step (LinkFullSave_Init) — no
+    // sector yet.
+    Mp_Push(&gMpRecvRing, MP_PKT_PARTNER_DISCONNECTED);
     Multiplayer_Update();
     ASSERT_EQ(gLinkSaveInitCalls,  1);
     ASSERT_EQ(gLinkSaveWriteCalls, 0);
@@ -712,35 +713,34 @@ static void TestAsyncCheckpointSaveSequencing(void)
     // Exact ordering: Init, 14 sector writes, replace-last, signature.
     ASSERT(strcmp(gLinkSaveOrder, "IWWWWWWWWWWWWWWRS") == 0);
 
-    // A second update once idle must NOT start another save on its own
-    // (Multiplayer_Update no longer arms checkpoints — only battle end,
-    // milestones, and the ~5min periodic timer do).
-    Multiplayer_Update();
+    // Further updates once idle must NOT start another save on its own —
+    // autosave is gone entirely, so nothing in the overworld loop arms one.
+    for (frames = 0; frames < 8; frames++)
+        Multiplayer_Update();
     ASSERT_EQ(gMultiplayerState.saveState, 0);
     ASSERT_EQ(gLinkSaveInitCalls, 1);
 }
 
-// Battle-end checkpoint must request a save only while connected, and must do
-// it asynchronously (request without busy-looping the sectors inline).
-static void TestOnBattleEndRequestsAsyncSave(void)
+// Regression guard for the user-reported battle-exit stall (2026-08-03):
+// Multiplayer_OnBattleEnd runs from ReturnFromBattleToOverworld on EVERY
+// non-link battle, wild ones included, so a checkpoint armed here lands its
+// 14 flash sectors on the return-to-field frames.  It must not save at all.
+static void TestOnBattleEndDoesNotSave(void)
 {
-    // Connected: OnBattleEnd should arm the async save (saveState leaves idle)
-    // without having driven any sector writes itself.
+    int frames;
+
     ResetAll();
     LinkSave_ResetStubCounters();
     gMultiplayerState.connState = MP_STATE_CONNECTED;
-    Multiplayer_OnBattleEnd();
-    ASSERT(gMultiplayerState.saveState != 0);
-    ASSERT_EQ(gLinkSaveInitCalls,  0); // not written inline — Update ticks it
-    ASSERT_EQ(gLinkSaveWriteCalls, 0);
+    SetPlayerMap(3, 5);
 
-    // Disconnected: OnBattleEnd must be a no-op (no orphaned save).
-    ResetAll();
-    LinkSave_ResetStubCounters();
-    gMultiplayerState.connState = MP_STATE_DISCONNECTED;
     Multiplayer_OnBattleEnd();
     ASSERT_EQ(gMultiplayerState.saveState, 0);
-    ASSERT_EQ(gLinkSaveInitCalls, 0);
+
+    for (frames = 0; frames < 32; frames++)
+        Multiplayer_Update();
+    ASSERT_EQ(gLinkSaveInitCalls,  0);
+    ASSERT_EQ(gLinkSaveWriteCalls, 0);
 }
 
 // ---- Step 4.2: Seeded PRNG --------------------------------------------------
@@ -1395,6 +1395,6 @@ int main(void)
     // set up their own fixture, so they must not run mid-suite where later
     // tests silently inherit a non-NULL gSaveBlock1Ptr from earlier ones.
     TestAsyncCheckpointSaveSequencing();
-    TestOnBattleEndRequestsAsyncSave();
+    TestOnBattleEndDoesNotSave();
     TEST_SUMMARY();
 }
