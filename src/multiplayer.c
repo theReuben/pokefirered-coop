@@ -344,8 +344,18 @@ static bool8 ProcessOneRecvPacket(void)
         { u8 i; for (i = 1; i < MP_PKT_SIZE_POSITION; i++) Mp_Pop(&gMpRecvRing, &pkt[i]); }
         if (Mp_DecodePosition(pkt, MP_PKT_SIZE_POSITION, &mapGroup, &mapNum, &x, &y, &facing))
         {
-            // Partner is in the overworld — clear any active trainer-busy state.
-            gMultiplayerState.partnerHasBusyTrainer = FALSE;
+            // NOTE: a position packet is NOT evidence the partner is
+            // trainer-free, and clearing partnerHasBusyTrainer here broke the
+            // lock outright.  The pre-battle "!" + trainer-approach + intro all
+            // run on the FIELD, so the partner keeps sending MP_PKT_POSITION
+            // (every ~4 frames from Multiplayer_Update) throughout — each one
+            // wiping the lock ~4 frames after MP_PKT_TRAINER_BUSY set it, i.e.
+            // for exactly the window in which we are most likely to walk into
+            // the same trainer's cone.  This is the receiver-side twin of the
+            // sender-side clear removed on 2026-06-18 (see the NOTE in
+            // Multiplayer_Update).  The lock is cleared only by an explicit
+            // MP_PKT_TRAINER_FREE, a state beacon with MP_BEACON_BUSYTRAINER_BIT
+            // clear, or partner disconnect — reliability rides the beacon.
             Multiplayer_UpdateGhostPosition(mapGroup, mapNum, x, y, facing);
         }
         break;

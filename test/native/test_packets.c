@@ -1109,6 +1109,43 @@ static void TestBeaconRepairsDroppedTrainerFree(void)
     ASSERT_EQ(gMultiplayerState.partnerHasBusyTrainer, FALSE);
 }
 
+// Regression (reported live 2026-08-03: "the trainer triggered for both
+// players").  The MP_PKT_POSITION handler used to clear partnerHasBusyTrainer,
+// on the theory that a position packet proves the partner is in the overworld.
+// It does not: the "!" mark, the trainer's approach walk and the intro dialogue
+// all run on the FIELD, so the partner keeps sending positions every ~4 frames
+// right through them — wiping the lock almost immediately after TRAINER_BUSY
+// set it, and again after every 16-frame beacon re-armed it.  A position must
+// move the ghost and leave the lock alone.
+static void TestPositionDoesNotClearBusyTrainer(void)
+{
+    struct SaveBlock1 save;
+    u8 pkt[MP_PKT_SIZE_POSITION];
+    u8 len, i;
+
+    memset(&save, 0, sizeof(save));
+    gSaveBlock1Ptr = &save;
+
+    Multiplayer_Init();
+    gBattleTypeFlags = 0; // overworld
+
+    // Partner has claimed trainer localId 5 on map 3:16.
+    PushBeaconBusyTrainer(5, 3, 16, TRUE);
+    Multiplayer_Update();
+    ASSERT_EQ(gMultiplayerState.partnerHasBusyTrainer, TRUE);
+
+    // ...and now walks toward it, still on the field.
+    len = Mp_EncodePosition(pkt, 3, 16, 6, 23, DIR_NORTH);
+    for (i = 0; i < len; i++)
+        Mp_Push(&gMpRecvRing, pkt[i]);
+    Multiplayer_Update();
+
+    ASSERT_EQ(gMultiplayerState.partnerHasBusyTrainer, TRUE);
+    ASSERT_EQ(gMultiplayerState.partnerBusyTrainerLocalId, 5);
+    ASSERT_EQ(gMultiplayerState.partnerBusyTrainerMapGroup, 3);
+    ASSERT_EQ(gMultiplayerState.partnerBusyTrainerMapNum, 16);
+}
+
 static void TestSendTrainerBusyStoresCoords(void)
 {
     struct SaveBlock1 save;
@@ -1970,6 +2007,7 @@ int main(void)
     // STATE_BEACON field-trainer lock repair (Bug #18a)
     TestBeaconRepairsDroppedTrainerBusy();
     TestBeaconRepairsDroppedTrainerFree();
+    TestPositionDoesNotClearBusyTrainer();
     TestSendTrainerBusyStoresCoords();
     TestBeaconSenderCarriesBusyTrainerOutsideCoopBattle();
     TestBeaconBusyIgnoredDuringCoopBattle();
